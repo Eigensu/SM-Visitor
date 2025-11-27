@@ -1,0 +1,32 @@
+{
+  "folders": [
+    {
+      "path": ".",
+      "name": "sm-visitor"
+    },
+    {
+      "path": "apps/orbit",
+      "name": "orbit"
+    },
+    {
+      "path": "apps/pantry",
+      "name": "pantry"
+    }
+  ],
+  "settings": {
+    "files.exclude": {
+      "**/.git": true,
+      "**/.DS_Store": true,
+      "**/node_modules": true,
+      "**/.venv": true,
+      "**/venv": true
+    },
+    "search.exclude": {
+      "**/node_modules": true,
+      "**/.venv": true,
+      "**/venv": true
+    },
+    "terminal.integrated.cwd": "${workspaceFolder:root}",
+    "editor.formatOnSave": true
+  }
+}

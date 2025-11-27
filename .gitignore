@@ -1,0 +1,11 @@
+node_modules/
+.next/
+.turbo/
+dist/
+build/
+out/
+apps/pantry/.venv/
+apps/pantry/__pycache__/
+*.py[cod]
+*.egg-info/
+coverage/
