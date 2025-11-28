@@ -1,10 +1,13 @@
 {
   "name": "SM-Visitor",
   "version": "1.0.0",
-  "description": "",
+  "description": "Visitor Management System - Monorepo with Orbit (Guard), Horizon (Owner), and Pantry (Backend)",
   "main": "index.js",
   "scripts": {
     "dev": "turbo run dev --parallel",
+    "dev:orbit": "turbo run dev --filter=@sm-visitor/orbit",
+    "dev:horizon": "turbo run dev --filter=@sm-visitor/horizon",
+    "dev:pantry": "cd apps/pantry && python -m uvicorn main:app --reload --port 8000",
     "build": "turbo run build",
     "lint": "turbo run lint",
     "type-check": "turbo run type-check",

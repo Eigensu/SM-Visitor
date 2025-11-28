@@ -4,8 +4,18 @@ node_modules/
 dist/
 build/
 out/
+
+# Python
 apps/pantry/.venv/
 apps/pantry/__pycache__/
 *.py[cod]
 *.egg-info/
+
+# Environment files
+apps/pantry/.env
+apps/orbit/.env.local
+apps/horizon/.env.local
+
+# Coverage
 coverage/
+

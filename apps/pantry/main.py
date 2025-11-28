@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from database import connect_to_mongo, close_mongo_connection
 from config import ALLOWED_ORIGINS
+from routers import auth
 
 
 @asynccontextmanager
@@ -33,6 +34,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Include routers
+app.include_router(auth.router)
+
 
 @app.get("/")
 async def read_root() -> dict[str, str]:
@@ -42,4 +46,5 @@ async def read_root() -> dict[str, str]:
 @app.get("/health")
 async def health_check() -> dict[str, str]:
     return {"status": "ok"}
+
 

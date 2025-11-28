@@ -2,15 +2,19 @@
   "folders": [
     {
       "path": ".",
-      "name": "sm-visitor",
+      "name": "SM-Visitor (Root)",
     },
     {
       "path": "apps/orbit",
-      "name": "orbit",
+      "name": "Orbit (Guard App)",
+    },
+    {
+      "path": "apps/horizon",
+      "name": "Horizon (Owner App)",
     },
     {
       "path": "apps/pantry",
-      "name": "pantry",
+      "name": "Pantry (Backend)",
     },
   ],
   "settings": {
