@@ -1,5 +1,5 @@
 /**
- * API Client for Orbit Guard App
+ * API Client for Horizon Owner App
  * Handles all HTTP requests to the Pantry backend
  */
 import axios, { AxiosInstance, AxiosError } from "axios";
@@ -31,7 +31,6 @@ apiClient.interceptors.response.use(
   (response) => response,
   (error: AxiosError) => {
     if (error.response?.status === 401) {
-      // Unauthorized - clear token and redirect to login
       localStorage.removeItem("auth_token");
       localStorage.removeItem("user");
       if (typeof window !== "undefined") {
@@ -68,53 +67,94 @@ export const authAPI = {
 
 // Visits API
 export const visitsAPI = {
-  scanQR: async (qr_token: string) => {
-    const response = await apiClient.post("/visits/qr-scan", { qr_token });
+  getPending: async () => {
+    const response = await apiClient.get("/visits/pending");
     return response.data;
   },
 
-  startVisit: async (data: {
-    qr_token?: string;
-    owner_id?: string;
-    purpose?: string;
-    name?: string;
-    phone?: string;
-    photo_url?: string;
+  getPendingCount: async () => {
+    const response = await apiClient.get("/visits/pending/count");
+    return response.data.count;
+  },
+
+  getTodayCount: async () => {
+    const response = await apiClient.get("/visits/today/count");
+    return response.data.count;
+  },
+
+  approve: async (visitId: string) => {
+    const response = await apiClient.patch(`/visits/${visitId}/approve`);
+    return response.data;
+  },
+
+  reject: async (visitId: string, reason?: string) => {
+    const response = await apiClient.patch(`/visits/${visitId}/reject`, { reason });
+    return response.data;
+  },
+
+  getRecent: async (limit: number = 10) => {
+    const response = await apiClient.get(`/visits/recent?limit=${limit}`);
+    return response.data;
+  },
+
+  getRecentActivity: async (limit: number = 10) => {
+    const response = await apiClient.get(`/visits/recent?limit=${limit}`);
+    return response.data;
+  },
+
+  getNotifications: async () => {
+    const response = await apiClient.get("/visits/notifications");
+    return response.data;
+  },
+};
+
+// Regular Visitors API
+export const visitorsAPI = {
+  getRegular: async () => {
+    const response = await apiClient.get("/visitors/regular");
+    return response.data;
+  },
+
+  getRegularCount: async () => {
+    const response = await apiClient.get("/visitors/regular/count");
+    return response.data.count;
+  },
+
+  createRegular: async (data: {
+    name: string;
+    phone: string;
+    photo_id: string;
+    default_purpose: string;
   }) => {
-    const response = await apiClient.post("/visits/start", data);
+    const response = await apiClient.post("/visitors/regular", data);
     return response.data;
   },
 
-  getTodayVisits: async () => {
-    const response = await apiClient.get("/visits/today");
+  deleteRegular: async (visitorId: string) => {
+    const response = await apiClient.delete(`/visitors/regular/${visitorId}`);
     return response.data;
   },
+};
 
-  checkout: async (visitId: string) => {
-    const response = await apiClient.patch(`/visits/${visitId}/checkout`);
+// Temporary QR API
+export const tempQRAPI = {
+  generate: async (data: { guest_name?: string; validity_hours: number }) => {
+    const response = await apiClient.post("/temp-qr/generate", data);
     return response.data;
   },
 };
 
 // Uploads API
 export const uploadsAPI = {
-  uploadNewVisitorPhoto: async (file: File) => {
+  uploadRegularVisitorPhoto: async (file: File) => {
     const formData = new FormData();
     formData.append("photo", file);
 
-    const response = await apiClient.post("/uploads/photo/new-visitor", formData, {
+    const response = await apiClient.post("/uploads/photo/regular-visitor", formData, {
       headers: {
         "Content-Type": "multipart/form-data",
       },
     });
-    return response.data;
-  },
-};
-
-// Users API
-export const usersAPI = {
-  getOwners: async () => {
-    const response = await apiClient.get("/users?role=owner");
     return response.data;
   },
 };

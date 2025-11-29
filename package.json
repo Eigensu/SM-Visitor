@@ -1,17 +1,19 @@
 {
-  "name": "SM-Visitor",
+  "name": "sm-visitor",
   "version": "1.0.0",
   "description": "Visitor Management System - Monorepo with Orbit (Guard), Horizon (Owner), and Pantry (Backend)",
   "main": "index.js",
   "scripts": {
-    "dev": "turbo run dev --parallel",
+    "dev": "turbo run dev",
     "dev:orbit": "turbo run dev --filter=@sm-visitor/orbit",
     "dev:horizon": "turbo run dev --filter=@sm-visitor/horizon",
     "dev:pantry": "cd apps/pantry && python -m uvicorn main:app --reload --port 8000",
     "build": "turbo run build",
     "lint": "turbo run lint",
+    "lint:fix": "turbo run lint:fix",
     "type-check": "turbo run type-check",
-    "format": "prettier --write .",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,css,md}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,css,md}\"",
     "prepare": "husky install"
   },
   "keywords": [],
@@ -19,7 +21,7 @@
   "license": "ISC",
   "packageManager": "pnpm@10.24.0",
   "devDependencies": {
-    "eslint": "^8.57.0",
+    "eslint": "^8.57.1",
     "husky": "^9.1.7",
     "lint-staged": "^16.2.7",
     "prettier": "^3.7.1",

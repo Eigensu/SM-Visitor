@@ -35,7 +35,7 @@ async def connect_to_mongo():
         await create_indexes()
         
     except Exception as e:
-        print(f"❌ Failed to connect to MongoDB: {e}")
+        print(f"[X] Failed to connect to MongoDB: {e}")
         raise
 
 

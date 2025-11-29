@@ -18,9 +18,11 @@ DATABASE_NAME = os.getenv("DATABASE_NAME", "sm_visitor")
 
 # JWT
 JWT_SECRET = os.getenv("JWT_SECRET", "dev-secret-key-change-in-production-12345")
+JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 JWT_EXPIRY_DAYS = int(os.getenv("JWT_EXPIRY_DAYS", "7"))
 
 # OTP
+OTP_LENGTH = int(os.getenv("OTP_LENGTH", "6"))
 OTP_EXPIRY_MINUTES = int(os.getenv("OTP_EXPIRY_MINUTES", "5"))
 
 # Storage

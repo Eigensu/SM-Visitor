@@ -1,5 +1,5 @@
 /**
- * Login Page - Username/Password Authentication for Guards
+ * Login Page - Username/Password Authentication for Owners
  */
 "use client";
 
@@ -20,6 +20,7 @@ export default function LoginPage() {
     username: "",
     password: "",
     name: "",
+    flat_id: "",
   });
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -39,8 +40,13 @@ export default function LoginPage() {
       newErrors.password = "Password must be at least 6 characters";
     }
 
-    if (mode === "signup" && !formData.name.trim()) {
-      newErrors.name = "Name is required";
+    if (mode === "signup") {
+      if (!formData.name.trim()) {
+        newErrors.name = "Name is required";
+      }
+      if (!formData.flat_id.trim()) {
+        newErrors.flat_id = "Flat ID is required";
+      }
     }
 
     setErrors(newErrors);
@@ -61,7 +67,8 @@ export default function LoginPage() {
           username: formData.username,
           password: formData.password,
           name: formData.name,
-          role: "guard",
+          role: "owner",
+          flat_id: formData.flat_id,
         });
         toast.success("Account created successfully!");
       } else {
@@ -69,9 +76,9 @@ export default function LoginPage() {
         toast.success("Login successful!");
       }
 
-      // Check if user is a guard
-      if (data.user.role !== "guard") {
-        toast.error("Access denied. This app is for guards only.");
+      // Check if user is an owner
+      if (data.user.role !== "owner") {
+        toast.error("Access denied. This app is for owners only.");
         return;
       }
 
@@ -87,12 +94,12 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-blue-50 to-cyan-100 p-4">
+    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-purple-50 to-indigo-100 p-4">
       <div className="w-full max-w-md">
         <div className="rounded-2xl bg-white p-8 shadow-xl">
           {/* Header */}
           <div className="mb-8 text-center">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-blue-600">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-purple-600">
               <svg
                 className="h-8 w-8 text-white"
                 fill="none"
@@ -103,11 +110,11 @@ export default function LoginPage() {
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   strokeWidth={2}
-                  d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"
+                  d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
                 />
               </svg>
             </div>
-            <h1 className="text-2xl font-bold text-gray-900">Orbit Guard</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Horizon Owner</h1>
             <p className="mt-2 text-gray-600">Visitor Management System</p>
           </div>
 
@@ -118,7 +125,7 @@ export default function LoginPage() {
               onClick={() => setMode("login")}
               className={`flex-1 rounded-md py-2 text-sm font-medium transition-colors ${
                 mode === "login"
-                  ? "bg-white text-blue-600 shadow"
+                  ? "bg-white text-purple-600 shadow"
                   : "text-gray-600 hover:text-gray-900"
               }`}
             >
@@ -129,7 +136,7 @@ export default function LoginPage() {
               onClick={() => setMode("signup")}
               className={`flex-1 rounded-md py-2 text-sm font-medium transition-colors ${
                 mode === "signup"
-                  ? "bg-white text-blue-600 shadow"
+                  ? "bg-white text-purple-600 shadow"
                   : "text-gray-600 hover:text-gray-900"
               }`}
             >
@@ -140,16 +147,28 @@ export default function LoginPage() {
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
             {mode === "signup" && (
-              <Input
-                label="Name"
-                type="text"
-                placeholder="Enter your full name"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                error={errors.name}
-                required
-                autoFocus
-              />
+              <>
+                <Input
+                  label="Name"
+                  type="text"
+                  placeholder="Enter your full name"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  error={errors.name}
+                  required
+                  autoFocus
+                />
+
+                <Input
+                  label="Flat ID"
+                  type="text"
+                  placeholder="e.g., A-101"
+                  value={formData.flat_id}
+                  onChange={(e) => setFormData({ ...formData, flat_id: e.target.value })}
+                  error={errors.flat_id}
+                  required
+                />
+              </>
             )}
 
             <Input

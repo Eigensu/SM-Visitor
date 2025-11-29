@@ -1,187 +1,165 @@
 """
-Authentication router - handles login, OTP verification, and user info
+Authentication Routes - Username/Password based
 """
-from fastapi import APIRouter, HTTPException, status, Depends
-from pydantic import BaseModel, Field
-from datetime import datetime
-from database import get_users_collection
-from utils.otp_utils import generate_otp, get_otp_expiry, is_otp_valid, send_otp
-from utils.jwt_utils import create_access_token
-from middleware.auth import get_current_user
-from typing import Dict, Any
-
+from fastapi import APIRouter, HTTPException, Depends, Header
+from pydantic import BaseModel
+from datetime import datetime, timedelta
+from jose import jwt
+from passlib.context import CryptContext
+from database import db
+from config import JWT_SECRET, JWT_EXPIRY_DAYS
+from bson import ObjectId
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
+# Password hashing
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # Request/Response Models
-class LoginRequest(BaseModel):
-    phone: str = Field(..., min_length=10, max_length=15, description="Phone number")
-
-
-class LoginResponse(BaseModel):
-    success: bool
-    message: str
-
-
-class VerifyOTPRequest(BaseModel):
-    phone: str = Field(..., min_length=10, max_length=15)
-    otp: str = Field(..., min_length=6, max_length=6)
-
-
-class UserResponse(BaseModel):
-    _id: str
+class SignupRequest(BaseModel):
+    username: str
+    password: str
     name: str
-    phone: str
-    role: str
-    flat_id: str | None = None
-    created_at: datetime
+    role: str  # "guard" or "owner"
+    flat_id: str | None = None  # Required for owners
 
+class LoginRequest(BaseModel):
+    username: str
+    password: str
 
-class VerifyOTPResponse(BaseModel):
+class AuthResponse(BaseModel):
     token: str
-    user: UserResponse
+    user: dict
 
+# Helper functions
+def hash_password(password: str) -> str:
+    return pwd_context.hash(password)
 
-@router.post("/login", response_model=LoginResponse)
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return pwd_context.verify(plain_password, hashed_password)
+
+def create_access_token(data: dict) -> str:
+    to_encode = data.copy()
+    expire = datetime.utcnow() + timedelta(days=JWT_EXPIRY_DAYS)
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, JWT_SECRET, algorithm="HS256")
+
+# Endpoints
+@router.post("/signup", response_model=AuthResponse)
+async def signup(request: SignupRequest):
+    """Sign up a new user (guard or owner)"""
+    users = db.users
+    
+    # Check if username already exists
+    existing_user = await users.find_one({"username": request.username})
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Username already exists")
+    
+    # Validate role
+    if request.role not in ["guard", "owner"]:
+        raise HTTPException(status_code=400, detail="Invalid role")
+    
+    # Validate flat_id for owners
+    if request.role == "owner" and not request.flat_id:
+        raise HTTPException(status_code=400, detail="flat_id required for owners")
+    
+    # Create user
+    user_doc = {
+        "username": request.username,
+        "password": hash_password(request.password),
+        "name": request.name,
+        "role": request.role,
+        "created_at": datetime.utcnow(),
+    }
+    
+    if request.role == "owner":
+        user_doc["flat_id"] = request.flat_id
+    
+    result = await users.insert_one(user_doc)
+    user_id = str(result.inserted_id)
+    
+    # Create token
+    token = create_access_token({"user_id": user_id, "role": request.role})
+    
+    # Return response
+    user_response = {
+        "_id": user_id,
+        "username": request.username,
+        "name": request.name,
+        "role": request.role,
+    }
+    
+    if request.role == "owner":
+        user_response["flat_id"] = request.flat_id
+    
+    return {"token": token, "user": user_response}
+
+@router.post("/login", response_model=AuthResponse)
 async def login(request: LoginRequest):
-    """
-    Send OTP to phone number
-    Creates user if doesn't exist (defaults to owner role)
-    """
-    users = get_users_collection()
-    
-    # Find or create user
-    user = await users.find_one({"phone": request.phone})
-    
-    if not user:
-        # Create new user (default role: owner)
-        new_user = {
-            "name": f"User {request.phone[-4:]}",  # Temporary name
-            "phone": request.phone,
-            "role": "owner",
-            "created_at": datetime.utcnow(),
-        }
-        result = await users.insert_one(new_user)
-        user = await users.find_one({"_id": result.inserted_id})
-    
-    # Generate and store OTP
-    otp = generate_otp()
-    otp_expires_at = get_otp_expiry()
-    
-    await users.update_one(
-        {"_id": user["_id"]},
-        {
-            "$set": {
-                "otp_code": otp,
-                "otp_expires_at": otp_expires_at,
-            }
-        }
-    )
-    
-    # Send OTP (console for dev, SMS for prod)
-    send_otp(request.phone, otp)
-    
-    return LoginResponse(
-        success=True,
-        message=f"OTP sent to {request.phone}"
-    )
-
-
-@router.post("/verify", response_model=VerifyOTPResponse)
-async def verify_otp(request: VerifyOTPRequest):
-    """
-    Verify OTP and return JWT token
-    """
-    users = get_users_collection()
+    """Login with username and password"""
+    users = db.users
     
     # Find user
-    user = await users.find_one({"phone": request.phone})
-    
+    user = await users.find_one({"username": request.username})
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
-        )
+        raise HTTPException(status_code=401, detail="Invalid credentials")
     
-    # Check if OTP exists
-    if not user.get("otp_code"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No OTP requested. Please request OTP first."
-        )
+    # Verify password
+    if not verify_password(request.password, user["password"]):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
     
-    # Verify OTP
-    if user["otp_code"] != request.otp:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid OTP"
-        )
+    # Create token
+    user_id = str(user["_id"])
+    token = create_access_token({"user_id": user_id, "role": user["role"]})
     
-    # Check OTP expiry
-    if not is_otp_valid(user["otp_expires_at"]):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="OTP expired. Please request a new one."
-        )
-    
-    # Clear OTP and update last_seen
-    await users.update_one(
-        {"_id": user["_id"]},
-        {
-            "$set": {"last_seen": datetime.utcnow()},
-            "$unset": {"otp_code": "", "otp_expires_at": ""}
-        }
-    )
-    
-    # Create JWT token
-    token_data = {
-        "user_id": str(user["_id"]),
+    # Return response
+    user_response = {
+        "_id": user_id,
+        "username": user["username"],
+        "name": user["name"],
         "role": user["role"],
     }
     
     if user.get("flat_id"):
-        token_data["flat_id"] = user["flat_id"]
+        user_response["flat_id"] = user["flat_id"]
     
-    token = create_access_token(token_data)
-    
-    # Prepare user response
-    user_response = UserResponse(
-        _id=str(user["_id"]),
-        name=user["name"],
-        phone=user["phone"],
-        role=user["role"],
-        flat_id=user.get("flat_id"),
-        created_at=user["created_at"]
-    )
-    
-    return VerifyOTPResponse(
-        token=token,
-        user=user_response
-    )
+    return {"token": token, "user": user_response}
 
-
-@router.get("/me", response_model=UserResponse)
-async def get_current_user_info(current_user: Dict[str, Any] = Depends(get_current_user)):
-    """
-    Get current authenticated user information
-    """
-    users = get_users_collection()
+@router.get("/me")
+async def get_current_user(authorization: str = Header(None)):
+    """Get current authenticated user"""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing authorization")
     
-    from bson import ObjectId
-    user = await users.find_one({"_id": ObjectId(current_user["user_id"])})
+    token = authorization.replace("Bearer ", "")
     
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
-        )
-    
-    return UserResponse(
-        _id=str(user["_id"]),
-        name=user["name"],
-        phone=user["phone"],
-        role=user["role"],
-        flat_id=user.get("flat_id"),
-        created_at=user["created_at"]
-    )
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+        user_id = payload.get("user_id")
+        
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        
+        # Get user
+        user = await db.users.find_one({"_id": ObjectId(user_id)})
+        
+        if not user:
+            raise HTTPException(status_code=401, detail="User not found")
+        
+        # Return user info
+        user_response = {
+            "_id": str(user["_id"]),
+            "username": user["username"],
+            "name": user["name"],
+            "role": user["role"],
+        }
+        
+        if user.get("flat_id"):
+            user_response["flat_id"] = user["flat_id"]
+        
+        return user_response
+        
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except jwt.JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")

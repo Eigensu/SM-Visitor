@@ -14,6 +14,11 @@
       "outputs": [],
       "dependsOn": ["^lint"]
     },
+    "lint:fix": {
+      "outputs": [],
+      "cache": false,
+      "dependsOn": ["^lint:fix"]
+    },
     "type-check": {
       "outputs": [],
       "dependsOn": ["^type-check"]
