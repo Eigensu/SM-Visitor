@@ -124,7 +124,7 @@ export const createSSEConnection = (onEvent: (event: MessageEvent) => void) => {
   const token = localStorage.getItem("auth_token");
   if (!token) return null;
 
-  const eventSource = new EventSource(`${API_URL}/events/stream`, {
+  const eventSource = new EventSource(`${API_URL}/events/stream?token=${token}`, {
     withCredentials: false,
   });
 

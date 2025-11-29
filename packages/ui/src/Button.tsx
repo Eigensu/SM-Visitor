@@ -10,8 +10,8 @@ function cn(...inputs: ClassValue[]) {
 }
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: "primary" | "secondary" | "danger" | "ghost";
-  size?: "sm" | "md" | "lg";
+  variant?: "primary" | "secondary" | "danger" | "ghost" | "link" | "outline";
+  size?: "sm" | "md" | "lg" | "icon";
   children: ReactNode;
   isLoading?: boolean;
 }
@@ -33,12 +33,16 @@ export function Button({
     secondary: "bg-gray-200 text-gray-900 hover:bg-gray-300 focus:ring-gray-500",
     danger: "bg-red-600 text-white hover:bg-red-700 focus:ring-red-500",
     ghost: "bg-transparent text-gray-700 hover:bg-gray-100 focus:ring-gray-500",
+    link: "bg-transparent text-blue-600 hover:underline focus:ring-blue-500 shadow-none",
+    outline:
+      "bg-transparent border border-gray-300 text-gray-700 hover:bg-gray-50 focus:ring-gray-500",
   };
 
   const sizes = {
     sm: "px-3 py-1.5 text-sm min-h-[36px]",
     md: "px-4 py-2 text-base min-h-[44px]",
     lg: "px-6 py-3 text-lg min-h-[52px]",
+    icon: "h-10 w-10 p-2 flex items-center justify-center",
   };
 
   return (

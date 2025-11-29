@@ -1,13 +1,12 @@
-/**
- * Root Layout with SSE and Toaster
- */
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
-import { Toaster } from "react-hot-toast";
+import { Toaster } from "@/components/ui/toaster";
+import { Toaster as Sonner } from "@/components/ui/sonner";
+import { Providers } from "./providers";
 import { SSEProvider } from "@/components/SSEProvider";
 
-const inter = Inter({ subsets: ["latin"] });
+const font = Plus_Jakarta_Sans({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "Horizon - Owner Interface",
@@ -17,33 +16,12 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className={inter.className}>
-        <SSEProvider>{children}</SSEProvider>
-        <Toaster
-          position="top-right"
-          toastOptions={{
-            duration: 4000,
-            style: {
-              background: "#fff",
-              color: "#363636",
-              padding: "16px",
-              borderRadius: "8px",
-              boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
-            },
-            success: {
-              iconTheme: {
-                primary: "#10b981",
-                secondary: "#fff",
-              },
-            },
-            error: {
-              iconTheme: {
-                primary: "#ef4444",
-                secondary: "#fff",
-              },
-            },
-          }}
-        />
+      <body className={font.className}>
+        <Providers>
+          <SSEProvider>{children}</SSEProvider>
+          <Toaster />
+          <Sonner position="top-center" />
+        </Providers>
       </body>
     </html>
   );

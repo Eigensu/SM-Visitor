@@ -6,12 +6,16 @@ from typing import Optional, Dict, Any
 from utils.jwt_utils import decode_access_token
 
 
-async def get_current_user(authorization: Optional[str] = Header(None)) -> Dict[str, Any]:
+async def get_current_user(
+    authorization: Optional[str] = Header(None),
+    token: Optional[str] = None
+) -> Dict[str, Any]:
     """
     Dependency to get current authenticated user from JWT token
     
     Args:
         authorization: Authorization header with Bearer token
+        token: Query parameter token (fallback for SSE)
     
     Returns:
         User payload from JWT
@@ -19,24 +23,26 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> Dict[
     Raises:
         HTTPException: If token is missing or invalid
     """
-    if not authorization:
+    jwt_token = None
+    
+    if authorization:
+        # Extract token from "Bearer <token>"
+        parts = authorization.split()
+        if len(parts) == 2 and parts[0].lower() == "bearer":
+            jwt_token = parts[1]
+    
+    # Fallback to query param if no header
+    if not jwt_token and token:
+        jwt_token = token
+        
+    if not jwt_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authorization header missing",
+            detail="Authentication required",
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    # Extract token from "Bearer <token>"
-    parts = authorization.split()
-    if len(parts) != 2 or parts[0].lower() != "bearer":
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authorization header format",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    
-    token = parts[1]
-    payload = decode_access_token(token)
+    payload = decode_access_token(jwt_token)
     
     if not payload:
         raise HTTPException(
