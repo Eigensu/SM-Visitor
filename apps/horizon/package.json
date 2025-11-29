@@ -12,9 +12,9 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
+    "@sm-visitor/hooks": "workspace:*",
     "@sm-visitor/shared-types": "workspace:*",
     "@sm-visitor/ui": "workspace:*",
-    "@sm-visitor/hooks": "workspace:*",
     "axios": "^1.13.2",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
@@ -32,6 +32,7 @@
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "babel-plugin-react-compiler": "^1.0.0",
     "eslint": "^8.57.1",
     "eslint-config-next": "16.0.5",
     "postcss": "^8",

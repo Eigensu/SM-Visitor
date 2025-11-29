@@ -138,6 +138,6 @@ class DatabaseProxy:
     def events(self):
         return get_database().events
 
+db = DatabaseProxy()
 
 # Export db object for backward compatibility
-db = DatabaseProxy()
