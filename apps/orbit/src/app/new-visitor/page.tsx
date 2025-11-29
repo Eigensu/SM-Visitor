@@ -6,8 +6,8 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
+import { Button } from "@sm-visitor/ui";
+import { Input } from "@sm-visitor/ui";
 import { PhotoCapture } from "@/components/PhotoCapture";
 import { OwnerSelect } from "@/components/OwnerSelect";
 import { WaitingScreen } from "@/components/WaitingScreen";

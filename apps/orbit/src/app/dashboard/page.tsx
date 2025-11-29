@@ -6,9 +6,9 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useStore } from "@/lib/store";
-import { Card } from "@/components/ui/Card";
-import { Button } from "@/components/ui/Button";
-import { Spinner } from "@/components/ui/Spinner";
+import { Card } from "@sm-visitor/ui";
+import { Button } from "@sm-visitor/ui";
+import { Spinner } from "@sm-visitor/ui";
 import { QrCode, UserPlus, ClipboardList, LogOut } from "lucide-react";
 
 export default function DashboardPage() {

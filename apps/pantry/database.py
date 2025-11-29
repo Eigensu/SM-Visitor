@@ -29,7 +29,7 @@ async def connect_to_mongo():
         
         # Test connection
         await _client.admin.command('ping')
-        print(f"✅ Connected to MongoDB: {DATABASE_NAME}")
+        print(f"[+] Connected to MongoDB: {DATABASE_NAME}")
         
         # Create indexes
         await create_indexes()
@@ -47,7 +47,7 @@ async def close_mongo_connection():
     
     if _client:
         _client.close()
-        print("🔌 Closed MongoDB connection")
+        print("[-] Closed MongoDB connection")
 
 
 def get_database() -> AsyncIOMotorDatabase:
@@ -90,7 +90,7 @@ async def create_indexes():
     await db.temporary_qr.create_index("expires_at")
     await db.temporary_qr.create_index("used_at")
     
-    print("✅ Database indexes created")
+    print("[+] Database indexes created")
 
 
 # Collection getters for type safety
@@ -112,3 +112,32 @@ def get_visits_collection():
 def get_temporary_qr_collection():
     """Get temporary_qr collection"""
     return get_database().temporary_qr
+
+
+# Backward compatibility: db object that proxies to get_database()
+class DatabaseProxy:
+    """Proxy object that provides access to database collections"""
+    
+    @property
+    def users(self):
+        return get_database().users
+    
+    @property
+    def visitors(self):
+        return get_database().visitors
+    
+    @property
+    def visits(self):
+        return get_database().visits
+    
+    @property
+    def temporary_qr(self):
+        return get_database().temporary_qr
+    
+    @property
+    def events(self):
+        return get_database().events
+
+
+# Export db object for backward compatibility
+db = DatabaseProxy()

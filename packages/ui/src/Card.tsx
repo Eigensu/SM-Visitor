@@ -2,7 +2,12 @@
  * Reusable Card Component
  */
 import { ReactNode } from "react";
-import { cn } from "@/lib/utils";
+import { clsx, type ClassValue } from "clsx";
+
+// Inline cn utility to avoid external dependencies
+function cn(...inputs: ClassValue[]) {
+  return clsx(inputs);
+}
 
 interface CardProps {
   children: ReactNode;

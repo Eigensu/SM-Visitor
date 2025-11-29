@@ -4,8 +4,8 @@
  */
 "use client";
 
-import { Button } from "./ui/Button";
-import { Card, CardBody, CardFooter } from "./ui/Card";
+import { Button } from "@sm-visitor/ui";
+import { Card, CardBody, CardFooter } from "@sm-visitor/ui";
 
 interface VisitorData {
   visitor_id?: string;

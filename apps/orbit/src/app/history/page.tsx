@@ -6,11 +6,11 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
-import { StatusBadge } from "@/components/ui/StatusBadge";
-import { Spinner } from "@/components/ui/Spinner";
-import { Card } from "@/components/ui/Card";
+import { Button } from "@sm-visitor/ui";
+import { Input } from "@sm-visitor/ui";
+import { StatusBadge } from "@sm-visitor/ui";
+import { Spinner } from "@sm-visitor/ui";
+import { Card } from "@sm-visitor/ui";
 import { visitsAPI } from "@/lib/api";
 import { formatTime } from "@/lib/utils";
 import toast from "react-hot-toast";

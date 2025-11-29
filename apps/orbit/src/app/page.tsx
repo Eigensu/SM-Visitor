@@ -6,7 +6,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useStore } from "@/lib/store";
-import { Spinner } from "@/components/ui/Spinner";
+import { Spinner } from "@sm-visitor/ui";
 
 export default function Home() {
   const router = useRouter();

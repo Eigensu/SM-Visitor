@@ -5,7 +5,7 @@
 "use client";
 
 import { QRCodeSVG } from "qrcode.react";
-import { Button } from "./ui/Button";
+import { Button } from "@sm-visitor/ui";
 import { Download, Share2, Printer } from "lucide-react";
 import toast from "react-hot-toast";
 

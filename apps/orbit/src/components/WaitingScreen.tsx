@@ -5,9 +5,9 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { Card, CardBody } from "./ui/Card";
-import { Button } from "./ui/Button";
-import { Spinner } from "./ui/Spinner";
+import { Card, CardBody } from "@sm-visitor/ui";
+import { Button } from "@sm-visitor/ui";
+import { Spinner } from "@sm-visitor/ui";
 import { useStore } from "@/lib/store";
 
 interface WaitingScreenProps {

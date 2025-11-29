@@ -5,7 +5,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Button } from "./ui/Button";
+import { Button } from "@sm-visitor/ui";
 import { uploadsAPI } from "@/lib/api";
 import toast from "react-hot-toast";
 

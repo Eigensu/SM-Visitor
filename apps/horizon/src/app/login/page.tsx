@@ -5,8 +5,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
+import { Button } from "@sm-visitor/ui";
+import { Input } from "@sm-visitor/ui";
 import { authAPI } from "@/lib/api";
 import { useStore } from "@/lib/store";
 import toast from "react-hot-toast";
