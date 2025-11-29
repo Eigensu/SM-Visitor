@@ -31,6 +31,9 @@ importers:
 
   apps/horizon:
     dependencies:
+      "@sm-visitor/hooks":
+        specifier: workspace:*
+        version: link:../../packages/hooks
       "@sm-visitor/shared-types":
         specifier: workspace:*
         version: link:../../packages/shared-types
@@ -88,7 +91,7 @@ importers:
         version: 8.57.1
       eslint-config-next:
         specifier: 16.0.5
-        version: 16.0.5(@typescript-eslint/parser@8.48.0(eslint@8.57.1)(typescript@5.9.3))(eslint@8.57.1)(typescript@5.9.3)
+        version: 16.0.5(eslint@8.57.1)(typescript@5.9.3)
       postcss:
         specifier: ^8
         version: 8.5.6
@@ -101,6 +104,9 @@ importers:
 
   apps/orbit:
     dependencies:
+      "@sm-visitor/hooks":
+        specifier: workspace:*
+        version: link:../../packages/hooks
       "@sm-visitor/shared-types":
         specifier: workspace:*
         version: link:../../packages/shared-types
@@ -149,7 +155,7 @@ importers:
         version: 8.57.1
       eslint-config-next:
         specifier: ^16.0.5
-        version: 16.0.5(eslint@8.57.1)(typescript@5.9.3)
+        version: 16.0.5(@typescript-eslint/parser@8.48.0(eslint@8.57.1)(typescript@5.9.3))(eslint@8.57.1)(typescript@5.9.3)
       postcss:
         specifier: ^8.5.6
         version: 8.5.6
@@ -161,6 +167,22 @@ importers:
         version: 5.9.3
 
   apps/pantry: {}
+
+  packages/hooks:
+    dependencies:
+      react:
+        specifier: ^19.0.0
+        version: 19.2.0
+      react-hot-toast:
+        specifier: ^2.4.1
+        version: 2.6.0(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
+    devDependencies:
+      "@types/react":
+        specifier: ^19.2.7
+        version: 19.2.7
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
 
   packages/shared-types:
     devDependencies:
