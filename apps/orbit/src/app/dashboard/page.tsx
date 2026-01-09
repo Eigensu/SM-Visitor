@@ -3,24 +3,54 @@
  */
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useStore } from "@/lib/store";
+import { visitsAPI } from "@/lib/api";
 import { Button } from "@sm-visitor/ui";
 import { Spinner } from "@sm-visitor/ui";
 import { QrCode, UserPlus, ClipboardList, LogOut, Clock, CheckCircle2, Users } from "lucide-react";
 import { StatCard } from "@/components/StatCard";
 import { GlassCard } from "@/components/GlassCard";
+import toast from "react-hot-toast";
+
+interface Visit {
+  _id: string;
+  entry_time?: string;
+  exit_time?: string;
+  status: string;
+}
 
 export default function DashboardPage() {
   const router = useRouter();
   const { user, isAuthenticated, logout, pendingVisits } = useStore();
+  const [todayVisits, setTodayVisits] = useState<Visit[]>([]);
+  const [isLoadingStats, setIsLoadingStats] = useState(true);
 
   useEffect(() => {
     if (!isAuthenticated) {
       router.push("/login");
     }
   }, [isAuthenticated, router]);
+
+  // Fetch today's visits for statistics
+  useEffect(() => {
+    const fetchTodayVisits = async () => {
+      try {
+        const visits = await visitsAPI.getTodayVisits();
+        setTodayVisits(visits);
+      } catch (error: any) {
+        console.error("Failed to fetch today's visits:", error);
+        toast.error("Failed to load visit statistics");
+      } finally {
+        setIsLoadingStats(false);
+      }
+    };
+
+    if (isAuthenticated) {
+      fetchTodayVisits();
+    }
+  }, [isAuthenticated]);
 
   const handleLogout = () => {
     logout();
@@ -117,8 +147,20 @@ export default function DashboardPage() {
         {/* Quick Stats */}
         <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <StatCard title="Pending Approvals" value={pendingVisits.length} icon={Clock} />
-          <StatCard title="Today's Visits" value={0} icon={CheckCircle2} />
-          <StatCard title="Active Now" value={0} icon={Users} />
+          <StatCard
+            title="Today's Visits"
+            value={isLoadingStats ? "..." : todayVisits.length}
+            icon={CheckCircle2}
+          />
+          <StatCard
+            title="Active Now"
+            value={
+              isLoadingStats
+                ? "..."
+                : todayVisits.filter((v) => v.entry_time && !v.exit_time).length
+            }
+            icon={Users}
+          />
         </div>
       </main>
     </div>

@@ -4,36 +4,98 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@sm-visitor/ui";
 import { Input } from "@sm-visitor/ui";
-import { Label } from "@/components/ui/label";
 import { GlassCard } from "@/components/shared/GlassCard";
 import { Spinner } from "@/components/shared/Spinner";
-import { Home, Eye, EyeOff, ArrowRight } from "lucide-react";
+import { authAPI } from "@/lib/api";
+import { useStore } from "@/lib/store";
+import { Home, ArrowRight } from "lucide-react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 
 export default function Login() {
   const router = useRouter();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
+  const { login } = useStore();
+
+  const [mode, setMode] = useState<"login" | "signup">("login");
+  const [formData, setFormData] = useState({
+    phone: "",
+    password: "",
+    name: "",
+    flatId: "",
+  });
   const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const validate = () => {
+    const newErrors: Record<string, string> = {};
 
-    if (!email || !password) {
-      toast.error("Please fill in all fields");
-      return;
+    if (!formData.phone.trim()) {
+      newErrors.phone = "Phone number is required";
+    } else if (!/^\d{10}$/.test(formData.phone)) {
+      newErrors.phone = "Phone number must be 10 digits";
     }
 
+    if (!formData.password) {
+      newErrors.password = "Password is required";
+    } else if (formData.password.length < 6) {
+      newErrors.password = "Password must be at least 6 characters";
+    }
+
+    if (mode === "signup") {
+      if (!formData.name.trim()) {
+        newErrors.name = "Name is required";
+      }
+
+      if (!formData.flatId.trim()) {
+        newErrors.flatId = "Flat ID is required";
+      }
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!validate()) return;
+
     setLoading(true);
+    try {
+      let data;
 
-    // Simulate login
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+      if (mode === "signup") {
+        data = await authAPI.signup({
+          phone: formData.phone,
+          password: formData.password,
+          name: formData.name,
+          role: "owner",
+          flat_id: formData.flatId,
+        });
+        toast.success("Account created successfully!");
+      } else {
+        data = await authAPI.login(formData.phone, formData.password);
+        toast.success("Login successful!");
+      }
 
-    setLoading(false);
-    toast.success("Welcome back!");
-    router.push("/");
+      // Check if user is an owner
+      if (data.user.role !== "owner") {
+        toast.error("Access denied. This app is for residents only.");
+        return;
+      }
+
+      login(data.user, data.access_token);
+      router.push("/");
+    } catch (error: any) {
+      const detail = error.response?.data?.detail;
+      const errorMessage =
+        typeof detail === "string"
+          ? detail
+          : "Authentication failed. Please check your credentials.";
+      toast.error(errorMessage);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -61,55 +123,104 @@ export default function Login() {
             <Home className="h-8 w-8 text-primary-foreground" strokeWidth={1.5} />
           </motion.div>
           <h1 className="text-2xl font-bold text-foreground">Welcome to Horizon</h1>
-          <p className="mt-1 text-muted-foreground">Resident Portal Login</p>
+          <p className="mt-1 text-muted-foreground">Resident Portal</p>
         </div>
 
         <GlassCard className="space-y-6">
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="email">Email or Phone</Label>
-              <Input
-                id="email"
-                type="text"
-                placeholder="Enter your email or phone"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="bg-background/50"
-                autoComplete="email"
-              />
-            </div>
+          {/* Mode Toggle */}
+          <div className="flex rounded-lg bg-muted/50 p-1">
+            <button
+              type="button"
+              onClick={() => setMode("login")}
+              className={`flex-1 rounded-md py-2 text-sm font-medium transition-colors ${
+                mode === "login"
+                  ? "bg-card text-primary shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Login
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode("signup")}
+              className={`flex-1 rounded-md py-2 text-sm font-medium transition-colors ${
+                mode === "signup"
+                  ? "bg-card text-primary shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Sign Up
+            </button>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {mode === "signup" && (
+              <div className="space-y-2">
+                <label htmlFor="name" className="text-sm font-medium text-foreground">
+                  Name
+                </label>
+                <Input
+                  id="name"
+                  type="text"
+                  placeholder="Enter your full name"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="bg-background/50"
+                  autoFocus
+                />
+                {errors.name && <p className="text-sm text-destructive">{errors.name}</p>}
+              </div>
+            )}
 
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="password">Password</Label>
-                <Button type="button" variant="link" className="h-auto px-0 text-xs text-primary">
-                  Forgot password?
-                </Button>
-              </div>
-              <div className="relative">
+              <label htmlFor="phone" className="text-sm font-medium text-foreground">
+                Phone Number
+              </label>
+              <Input
+                id="phone"
+                type="tel"
+                placeholder="Enter 10-digit phone number"
+                value={formData.phone}
+                onChange={(e) => {
+                  const value = e.target.value.replace(/\D/g, "").slice(0, 10);
+                  setFormData({ ...formData, phone: value });
+                }}
+                className="bg-background/50"
+                autoFocus={mode === "login"}
+              />
+              {errors.phone && <p className="text-sm text-destructive">{errors.phone}</p>}
+            </div>
+
+            {mode === "signup" && (
+              <div className="space-y-2">
+                <label htmlFor="flatId" className="text-sm font-medium text-foreground">
+                  Flat ID
+                </label>
                 <Input
-                  id="password"
-                  type={showPassword ? "text" : "password"}
-                  placeholder="Enter your password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="bg-background/50 pr-10"
-                  autoComplete="current-password"
+                  id="flatId"
+                  type="text"
+                  placeholder="e.g., A-401, B-102"
+                  value={formData.flatId}
+                  onChange={(e) => setFormData({ ...formData, flatId: e.target.value })}
+                  className="bg-background/50"
                 />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
-                  onClick={() => setShowPassword(!showPassword)}
-                >
-                  {showPassword ? (
-                    <EyeOff className="h-4 w-4 text-muted-foreground" />
-                  ) : (
-                    <Eye className="h-4 w-4 text-muted-foreground" />
-                  )}
-                </Button>
+                {errors.flatId && <p className="text-sm text-destructive">{errors.flatId}</p>}
               </div>
+            )}
+
+            <div className="space-y-2">
+              <label htmlFor="password" className="text-sm font-medium text-foreground">
+                Password
+              </label>
+              <Input
+                id="password"
+                type="password"
+                placeholder="Enter password"
+                value={formData.password}
+                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                className="bg-background/50"
+              />
+              {errors.password && <p className="text-sm text-destructive">{errors.password}</p>}
             </div>
 
             <Button
@@ -124,58 +235,16 @@ export default function Login() {
                 />
               ) : (
                 <>
-                  Sign In
+                  {mode === "signup" ? "Create Account" : "Sign In"}
                   <ArrowRight className="ml-2 h-4 w-4" strokeWidth={1.5} />
                 </>
               )}
             </Button>
           </form>
-
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-border" />
-            </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-card px-2 text-muted-foreground">or continue with</span>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <Button variant="outline" className="h-11">
-              <svg className="mr-2 h-5 w-5" viewBox="0 0 24 24">
-                <path
-                  fill="currentColor"
-                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                />
-                <path
-                  fill="currentColor"
-                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                />
-                <path
-                  fill="currentColor"
-                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                />
-                <path
-                  fill="currentColor"
-                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                />
-              </svg>
-              Google
-            </Button>
-            <Button variant="outline" className="h-11">
-              <svg className="mr-2 h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09l.01-.01zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z" />
-              </svg>
-              Apple
-            </Button>
-          </div>
         </GlassCard>
 
         <p className="mt-6 text-center text-sm text-muted-foreground">
-          Don't have an account?{" "}
-          <Button variant="link" className="h-auto px-1 text-primary">
-            Contact your society admin
-          </Button>
+          SM-Visitor Management System v1.0.0
         </p>
       </motion.div>
     </div>

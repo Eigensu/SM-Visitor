@@ -95,13 +95,23 @@ def decode_token(token: str) -> dict:
         )
 
 
+
+def get_collection_by_role(db, role: str):
+    """Get the appropriate collection based on user role"""
+    if role == "owner":
+        return db.residents
+    elif role == "guard":
+        return db.guards
+    else:  # admin
+        return db.users
+
+
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db = Depends(get_database)
 ):
     """Dependency to get current authenticated user"""
     token = credentials.credentials
-    # print(f"DEBUG: Received token: {token}")
     try:
         payload = decode_token(token)
     except Exception as e:
@@ -115,8 +125,12 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid user ID format"
         )
-        
-    user = await db.users.find_one({"_id": user_id})
+    
+    # Try to find user in the appropriate collection based on role
+    role = payload.get("role")
+    collection = get_collection_by_role(db, role)
+    user = await collection.find_one({"_id": user_id})
+    
     if not user:
         print(f"DEBUG: User not found for ID: {payload.get('user_id')}")
         raise HTTPException(
@@ -125,7 +139,7 @@ async def get_current_user(
         )
     
     # Update last seen
-    await db.users.update_one(
+    await collection.update_one(
         {"_id": user["_id"]},
         {"$set": {"last_seen": datetime.utcnow()}}
     )
@@ -152,8 +166,11 @@ async def signup(request: SignupRequest, db = Depends(get_database)):
             detail="flat_id is required for owners"
         )
     
-    # Check if phone already exists
-    existing_user = await db.users.find_one({"phone": request.phone})
+    # Get the appropriate collection based on role
+    collection = get_collection_by_role(db, request.role)
+    
+    # Check if phone already exists in the appropriate collection
+    existing_user = await collection.find_one({"phone": request.phone})
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -172,7 +189,8 @@ async def signup(request: SignupRequest, db = Depends(get_database)):
         "metadata": {}
     }
     
-    result = await db.users.insert_one(user_doc)
+    # Insert into the appropriate collection
+    result = await collection.insert_one(user_doc)
     user_id = str(result.inserted_id)
     
     # Generate JWT token
@@ -205,8 +223,27 @@ async def login(request: LoginRequest, db = Depends(get_database)):
     
     Returns JWT token valid for 7 days
     """
-    # Find user by phone
-    user = await db.users.find_one({"phone": request.phone})
+    # Try to find user in all collections (we don't know the role yet)
+    user = None
+    collection = None
+    
+    # Try residents first (owners)
+    user = await db.residents.find_one({"phone": request.phone})
+    if user:
+        collection = db.residents
+    
+    # Try guards if not found
+    if not user:
+        user = await db.guards.find_one({"phone": request.phone})
+        if user:
+            collection = db.guards
+    
+    # Try users (admins) if still not found
+    if not user:
+        user = await db.users.find_one({"phone": request.phone})
+        if user:
+            collection = db.users
+    
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -225,7 +262,7 @@ async def login(request: LoginRequest, db = Depends(get_database)):
     access_token = create_access_token(user_id, user["role"])
     
     # Update last seen
-    await db.users.update_one(
+    await collection.update_one(
         {"_id": user["_id"]},
         {"$set": {"last_seen": datetime.utcnow()}}
     )

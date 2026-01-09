@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # MongoDB connection settings
-MONGODB_URL = os.getenv("MONGODB_URL", "mongodb://localhost:27017")
+MONGODB_URL = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
 DATABASE_NAME = os.getenv("DATABASE_NAME", "sm_visitor")
 
 # Global database client
@@ -65,10 +65,18 @@ async def create_indexes():
     """
     db = get_database()
     
-    # Users collection indexes
+    # Users collection indexes (for admins)
     await db.users.create_index("phone", unique=True)
     await db.users.create_index("role")
-    await db.users.create_index("flat_id")
+    
+    # Residents collection indexes (for owners from Horizon)
+    await db.residents.create_index("phone", unique=True)
+    await db.residents.create_index("flat_id")
+    await db.residents.create_index("created_at")
+    
+    # Guards collection indexes (for guards from Orbit)
+    await db.guards.create_index("phone", unique=True)
+    await db.guards.create_index("created_at")
     
     # Visitors collection indexes
     await db.visitors.create_index("phone")
@@ -121,6 +129,14 @@ class DatabaseProxy:
     @property
     def users(self):
         return get_database().users
+    
+    @property
+    def residents(self):
+        return get_database().residents
+    
+    @property
+    def guards(self):
+        return get_database().guards
     
     @property
     def visitors(self):

@@ -1,8 +1,13 @@
-import { ReactNode, useState } from "react";
+"use client";
+
+import { ReactNode, useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useStore } from "@/lib/store";
 import { AppSidebar } from "./AppSidebar";
 import { MobileNav } from "./MobileNav";
 import { Menu, X } from "lucide-react";
 import { Button } from "@sm-visitor/ui";
+import { Spinner } from "@/components/shared/Spinner";
 import { cn } from "@/lib/utils";
 
 interface AppLayoutProps {
@@ -10,8 +15,29 @@ interface AppLayoutProps {
 }
 
 export function AppLayout({ children }: AppLayoutProps) {
+  const router = useRouter();
+  const { user, isAuthenticated } = useStore();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [isChecking, setIsChecking] = useState(true);
+
+  useEffect(() => {
+    // Check authentication on mount
+    if (!isAuthenticated) {
+      router.push("/login");
+    } else {
+      setIsChecking(false);
+    }
+  }, [isAuthenticated, router]);
+
+  // Show loading spinner while checking auth
+  if (isChecking || !user) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <Spinner size="lg" />
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen w-full bg-background">

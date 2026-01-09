@@ -19,19 +19,38 @@ async def list_users(
     List users, optionally filtered by role.
     Requires authentication.
     """
-    query = {}
-    if role:
-        query["role"] = role
+    users = []
+    
+    if role == "owner":
+        # Query residents collection
+        cursor = db.residents.find({})
+        users = await cursor.to_list(length=100)
+    elif role == "guard":
+        # Query guards collection
+        cursor = db.guards.find({})
+        users = await cursor.to_list(length=100)
+    elif role == "admin":
+        # Query users collection
+        cursor = db.users.find({})
+        users = await cursor.to_list(length=100)
+    else:
+        # No role filter - get from all collections
+        residents_cursor = db.residents.find({})
+        guards_cursor = db.guards.find({})
+        admins_cursor = db.users.find({})
         
-    cursor = db.users.find(query)
-    users = await cursor.to_list(length=100)
+        residents = await residents_cursor.to_list(length=100)
+        guards = await guards_cursor.to_list(length=100)
+        admins = await admins_cursor.to_list(length=100)
+        
+        users = residents + guards + admins
     
     return [
         {
             "_id": str(user["_id"]),
             "name": user["name"],
             "phone": user["phone"],
-            "role": user["role"],
+            "role": user.get("role", "owner" if "flat_id" in user else "guard"),  # Infer role if missing
             "flat_id": user.get("flat_id"),
             "created_at": user["created_at"]
         }
