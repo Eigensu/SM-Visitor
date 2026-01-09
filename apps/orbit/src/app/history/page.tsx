@@ -10,7 +10,7 @@ import { Button } from "@sm-visitor/ui";
 import { Input } from "@sm-visitor/ui";
 import { StatusBadge } from "@sm-visitor/ui";
 import { Spinner } from "@sm-visitor/ui";
-import { Card } from "@sm-visitor/ui";
+import { GlassCard } from "@/components/GlassCard";
 import { visitsAPI } from "@/lib/api";
 import { formatTime } from "@/lib/utils";
 import toast from "react-hot-toast";
@@ -98,9 +98,9 @@ export default function HistoryPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="sticky top-0 z-10 border-b border-gray-200 bg-white shadow-sm">
+      <header className="sticky top-0 z-10 border-b border-border bg-card shadow-sm">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="flex h-16 items-center justify-between">
             <div className="flex items-center">
@@ -108,7 +108,7 @@ export default function HistoryPage() {
                 <ArrowLeft className="mr-2 h-4 w-4" />
                 Back
               </Button>
-              <h1 className="ml-4 text-xl font-bold text-gray-900">Today's Log</h1>
+              <h1 className="ml-4 text-xl font-bold text-foreground">Today's Log</h1>
             </div>
           </div>
         </div>
@@ -125,14 +125,14 @@ export default function HistoryPage() {
               placeholder="Search by visitor name..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full rounded-lg border border-gray-300 py-2.5 pl-10 pr-4 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full rounded-lg border border-border py-2.5 pl-10 pr-4 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-primary"
             />
           </div>
 
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="rounded-lg border border-gray-300 px-4 py-2.5 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="rounded-lg border border-border px-4 py-2.5 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-primary"
           >
             <option value="all">All Status</option>
             <option value="pending">Pending</option>
@@ -144,43 +144,43 @@ export default function HistoryPage() {
 
         {/* Stats */}
         <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-4">
-          <Card className="p-4">
+          <GlassCard className="p-4">
             <p className="text-sm text-gray-600">Total Visits</p>
             <p className="text-2xl font-bold text-gray-900">{visits.length}</p>
-          </Card>
-          <Card className="p-4">
+          </GlassCard>
+          <GlassCard className="p-4">
             <p className="text-sm text-gray-600">Pending</p>
             <p className="text-2xl font-bold text-yellow-600">
               {visits.filter((v) => v.status === "pending").length}
             </p>
-          </Card>
-          <Card className="p-4">
+          </GlassCard>
+          <GlassCard className="p-4">
             <p className="text-sm text-gray-600">Approved</p>
             <p className="text-2xl font-bold text-green-600">
               {visits.filter((v) => v.status === "approved" || v.status === "auto_approved").length}
             </p>
-          </Card>
-          <Card className="p-4">
+          </GlassCard>
+          <GlassCard className="p-4">
             <p className="text-sm text-gray-600">Active Now</p>
-            <p className="text-2xl font-bold text-blue-600">
+            <p className="text-2xl font-bold text-primary">
               {visits.filter((v) => v.entry_time && !v.exit_time).length}
             </p>
-          </Card>
+          </GlassCard>
         </div>
 
         {/* Visits List */}
         {filteredVisits.length === 0 ? (
-          <Card className="p-8 text-center">
+          <GlassCard className="p-8 text-center">
             <p className="text-gray-600">
               {searchQuery || statusFilter !== "all"
                 ? "No visits match your filters"
                 : "No visits recorded today"}
             </p>
-          </Card>
+          </GlassCard>
         ) : (
           <div className="space-y-4">
             {filteredVisits.map((visit) => (
-              <Card key={visit._id} className="p-4 hover:shadow-md">
+              <GlassCard key={visit._id} className="p-4 hover:shadow-lg">
                 <div className="flex items-center gap-4">
                   {/* Photo */}
                   <img
@@ -215,7 +215,7 @@ export default function HistoryPage() {
                     </Button>
                   )}
                 </div>
-              </Card>
+              </GlassCard>
             ))}
           </div>
         )}

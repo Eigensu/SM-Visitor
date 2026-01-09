@@ -6,10 +6,11 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useStore } from "@/lib/store";
-import { Card } from "@sm-visitor/ui";
 import { Button } from "@sm-visitor/ui";
 import { Spinner } from "@sm-visitor/ui";
-import { QrCode, UserPlus, ClipboardList, LogOut } from "lucide-react";
+import { QrCode, UserPlus, ClipboardList, LogOut, Clock, CheckCircle2, Users } from "lucide-react";
+import { StatCard } from "@/components/StatCard";
+import { GlassCard } from "@/components/GlassCard";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -39,34 +40,31 @@ export default function DashboardPage() {
       title: "Scan QR Code",
       description: "Scan visitor QR for quick entry",
       icon: QrCode,
-      color: "bg-blue-500",
       href: "/scan",
     },
     {
       title: "New Visitor",
       description: "Register a new visitor",
       icon: UserPlus,
-      color: "bg-green-500",
       href: "/new-visitor",
     },
     {
       title: "Today's Log",
       description: "View all visits today",
       icon: ClipboardList,
-      color: "bg-purple-500",
       href: "/history",
     },
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="sticky top-0 z-10 border-b border-gray-200 bg-white shadow-sm">
+      <header className="sticky top-0 z-10 border-b border-border bg-card shadow-sm">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="flex h-16 items-center justify-between">
             <div>
-              <h1 className="text-xl font-bold text-gray-900">Orbit Guard</h1>
-              <p className="text-sm text-gray-600">Welcome, {user.name}</p>
+              <h1 className="text-xl font-bold text-foreground">Orbit Guard</h1>
+              <p className="text-sm text-muted-foreground">Welcome, {user.name}</p>
             </div>
             <Button variant="ghost" size="sm" onClick={handleLogout}>
               <LogOut className="mr-2 h-4 w-4" />
@@ -104,103 +102,23 @@ export default function DashboardPage() {
         {/* Action Cards */}
         <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
           {actionCards.map((card) => (
-            <Card
-              key={card.title}
-              className="transform cursor-pointer transition-all hover:-translate-y-1 hover:shadow-lg"
-              onClick={() => router.push(card.href)}
-            >
+            <GlassCard key={card.title} hover onClick={() => router.push(card.href)}>
               <div className="p-8">
-                <div
-                  className={`${card.color} mb-4 flex h-16 w-16 items-center justify-center rounded-full`}
-                >
+                <div className="ocean-gradient mb-4 flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-2xl shadow-lg shadow-primary/20">
                   <card.icon className="h-8 w-8 text-white" />
                 </div>
-                <h3 className="mb-2 text-xl font-semibold text-gray-900">{card.title}</h3>
-                <p className="text-gray-600">{card.description}</p>
+                <h3 className="mb-2 text-xl font-semibold text-foreground">{card.title}</h3>
+                <p className="text-muted-foreground">{card.description}</p>
               </div>
-            </Card>
+            </GlassCard>
           ))}
         </div>
 
         {/* Quick Stats */}
-        <div className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-3">
-          <Card>
-            <div className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Pending Approvals</p>
-                  <p className="mt-2 text-3xl font-bold text-gray-900">{pendingVisits.length}</p>
-                </div>
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-yellow-100">
-                  <svg
-                    className="h-6 w-6 text-yellow-600"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                    />
-                  </svg>
-                </div>
-              </div>
-            </div>
-          </Card>
-
-          <Card>
-            <div className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Today's Visits</p>
-                  <p className="mt-2 text-3xl font-bold text-gray-900">0</p>
-                </div>
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-green-100">
-                  <svg
-                    className="h-6 w-6 text-green-600"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                    />
-                  </svg>
-                </div>
-              </div>
-            </div>
-          </Card>
-
-          <Card>
-            <div className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Active Now</p>
-                  <p className="mt-2 text-3xl font-bold text-gray-900">0</p>
-                </div>
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-100">
-                  <svg
-                    className="h-6 w-6 text-blue-600"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
-                    />
-                  </svg>
-                </div>
-              </div>
-            </div>
-          </Card>
+        <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <StatCard title="Pending Approvals" value={pendingVisits.length} icon={Clock} />
+          <StatCard title="Today's Visits" value={0} icon={CheckCircle2} />
+          <StatCard title="Active Now" value={0} icon={Users} />
         </div>
       </main>
     </div>

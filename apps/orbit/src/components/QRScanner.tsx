@@ -75,9 +75,9 @@ export function QRScanner({ onScanSuccess, onScanError }: QRScannerProps) {
 
   if (error) {
     return (
-      <div className="rounded-lg border-2 border-red-300 bg-red-50 p-8 text-center">
+      <div className="rounded-lg border-2 border-warning/30 bg-warning/10 p-8 text-center">
         <svg
-          className="mx-auto h-12 w-12 text-red-400"
+          className="mx-auto h-12 w-12 text-warning"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
@@ -89,12 +89,12 @@ export function QRScanner({ onScanSuccess, onScanError }: QRScannerProps) {
             d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
           />
         </svg>
-        <h3 className="mt-4 text-lg font-semibold text-red-900">Camera Access Error</h3>
-        <p className="mt-2 text-sm text-red-700">{error}</p>
-        <div className="mt-4 text-left text-sm text-red-600">
+        <h3 className="mt-4 text-lg font-semibold text-foreground">Camera Access Required</h3>
+        <p className="mt-2 text-sm text-muted-foreground">{error}</p>
+        <div className="mt-4 text-left text-sm text-muted-foreground">
           <p className="font-semibold">Please ensure:</p>
           <ul className="ml-4 mt-2 list-disc space-y-1">
-            <li>Camera permission is granted</li>
+            <li>Camera permission is granted in your browser</li>
             <li>No other app is using the camera</li>
             <li>Your device has a working camera</li>
           </ul>
@@ -107,7 +107,7 @@ export function QRScanner({ onScanSuccess, onScanError }: QRScannerProps) {
     <div className="relative">
       <div id="qr-reader" className="overflow-hidden rounded-lg" />
       <div className="mt-4 text-center">
-        <p className="text-sm text-gray-600">
+        <p className="text-sm text-muted-foreground">
           {isScanning ? "Position QR code within the frame" : "Initializing camera..."}
         </p>
       </div>

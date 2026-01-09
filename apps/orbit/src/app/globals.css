@@ -1,40 +1,308 @@
+@import "@fontsource/plus-jakarta-sans/400.css";
+@import "@fontsource/plus-jakarta-sans/500.css";
+@import "@fontsource/plus-jakarta-sans/600.css";
+@import "@fontsource/plus-jakarta-sans/700.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --foreground-rgb: 0, 0, 0;
-  --background-start-rgb: 214, 219, 220;
-  --background-end-rgb: 255, 255, 255;
-}
+/* SM-Visitor Shared Design System - Orbit (Guard App) */
 
-body {
-  color: rgb(var(--foreground-rgb));
-  background: linear-gradient(to bottom, transparent, rgb(var(--background-end-rgb)))
-    rgb(var(--background-start-rgb));
-}
+@layer base {
+  :root {
+    /* Ocean-inspired Primary - Soft Teal */
+    --primary: 174 62% 47%;
+    --primary-foreground: 0 0% 100%;
+    --primary-soft: 174 62% 92%;
+    --primary-glow: 174 62% 70%;
 
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
+    /* Secondary - Light Blue Accents */
+    --secondary: 200 70% 94%;
+    --secondary-foreground: 200 50% 25%;
+
+    /* Base - Clean Whites */
+    --background: 200 20% 98%;
+    --foreground: 220 25% 10%;
+
+    /* Card - Frosted Glass Effect Base */
+    --card: 0 0% 100%;
+    --card-foreground: 220 25% 10%;
+
+    /* Popover */
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 25% 10%;
+
+    /* Muted - Neutral Surfaces */
+    --muted: 200 15% 95%;
+    --muted-foreground: 220 10% 45%;
+
+    /* Accent - Ocean Light */
+    --accent: 174 50% 95%;
+    --accent-foreground: 174 62% 30%;
+
+    /* Destructive - Coral Red */
+    --destructive: 0 72% 55%;
+    --destructive-foreground: 0 0% 100%;
+
+    /* Success - Sea Green */
+    --success: 158 64% 45%;
+    --success-foreground: 0 0% 100%;
+
+    /* Warning - Golden Sand */
+    --warning: 38 92% 55%;
+    --warning-foreground: 38 92% 15%;
+
+    /* Pending - Soft Blue */
+    --pending: 210 80% 60%;
+    --pending-foreground: 0 0% 100%;
+
+    /* Border & Input */
+    --border: 200 20% 88%;
+    --input: 200 20% 92%;
+    --ring: 174 62% 47%;
+
+    /* Radius - Rounded Corners */
+    --radius: 1rem;
+
+    /* Shadows */
+    --shadow-sm: 0 1px 2px 0 hsl(220 25% 10% / 0.03);
+    --shadow-md: 0 4px 6px -1px hsl(220 25% 10% / 0.05), 0 2px 4px -2px hsl(220 25% 10% / 0.03);
+    --shadow-lg: 0 10px 15px -3px hsl(220 25% 10% / 0.05), 0 4px 6px -4px hsl(220 25% 10% / 0.03);
+    --shadow-glow: 0 0 20px hsl(174 62% 47% / 0.15);
+
+    /* Glass Effect */
+    --glass-bg: hsl(0 0% 100% / 0.7);
+    --glass-border: hsl(0 0% 100% / 0.5);
+  }
+
+  .dark {
+    --primary: 174 62% 55%;
+    --primary-foreground: 220 25% 10%;
+    --primary-soft: 174 40% 20%;
+    --primary-glow: 174 62% 40%;
+
+    --secondary: 200 30% 18%;
+    --secondary-foreground: 200 70% 90%;
+
+    --background: 220 25% 8%;
+    --foreground: 200 20% 95%;
+
+    --card: 220 25% 12%;
+    --card-foreground: 200 20% 95%;
+
+    --popover: 220 25% 12%;
+    --popover-foreground: 200 20% 95%;
+
+    --muted: 220 20% 15%;
+    --muted-foreground: 220 10% 55%;
+
+    --accent: 174 40% 15%;
+    --accent-foreground: 174 62% 70%;
+
+    --destructive: 0 62% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 158 50% 40%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 38 80% 50%;
+    --warning-foreground: 0 0% 100%;
+
+    --pending: 210 70% 50%;
+    --pending-foreground: 0 0% 100%;
+
+    --border: 220 20% 20%;
+    --input: 220 20% 18%;
+    --ring: 174 62% 55%;
+
+    --glass-bg: hsl(220 25% 12% / 0.7);
+    --glass-border: hsl(220 25% 20% / 0.5);
   }
 }
 
-/* Custom scrollbar */
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+}
+
+@layer components {
+  /* Glass Card Effect */
+  .glass-card {
+    @apply border border-border/50 bg-card/80 backdrop-blur-xl;
+    box-shadow: var(--shadow-md);
+  }
+
+  .glass-card-hover {
+    @apply glass-card transition-all duration-300 ease-out;
+  }
+
+  .glass-card-hover:hover {
+    @apply border-primary/20;
+    box-shadow: var(--shadow-lg), var(--shadow-glow);
+    transform: translateY(-2px);
+  }
+
+  /* Ocean Gradient */
+  .ocean-gradient {
+    background: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--primary-glow)) 100%);
+  }
+
+  .ocean-gradient-subtle {
+    background: linear-gradient(135deg, hsl(var(--primary-soft)) 0%, hsl(var(--secondary)) 100%);
+  }
+
+  /* Status Indicators */
+  .status-dot {
+    @apply h-2 w-2 animate-pulse rounded-full;
+  }
+
+  .status-online {
+    @apply bg-success;
+  }
+
+  .status-offline {
+    @apply bg-muted-foreground;
+  }
+
+  /* Smooth Scrollbar */
+  .smooth-scroll {
+    @apply scroll-smooth;
+  }
+
+  .smooth-scroll::-webkit-scrollbar {
+    @apply w-2;
+  }
+
+  .smooth-scroll::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+
+  .smooth-scroll::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-border;
+  }
+
+  .smooth-scroll::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground/50;
+  }
+}
+
+@layer utilities {
+  /* Animation utilities */
+  .animate-fade-up {
+    animation: fadeUp 0.5s ease-out forwards;
+  }
+
+  .animate-fade-in {
+    animation: fadeIn 0.3s ease-out forwards;
+  }
+
+  .animate-slide-in {
+    animation: slideIn 0.4s ease-out forwards;
+  }
+
+  .animate-scale-in {
+    animation: scaleIn 0.3s ease-out forwards;
+  }
+
+  .animate-glow-pulse {
+    animation: glowPulse 2s ease-in-out infinite;
+  }
+
+  @keyframes fadeUp {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes slideIn {
+    from {
+      opacity: 0;
+      transform: translateX(-20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  @keyframes scaleIn {
+    from {
+      opacity: 0;
+      transform: scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  @keyframes glowPulse {
+    0%,
+    100% {
+      box-shadow: 0 0 5px hsl(var(--primary) / 0.3);
+    }
+    50% {
+      box-shadow: 0 0 20px hsl(var(--primary) / 0.5);
+    }
+  }
+
+  /* Stagger animation delays */
+  .delay-100 {
+    animation-delay: 100ms;
+  }
+  .delay-200 {
+    animation-delay: 200ms;
+  }
+  .delay-300 {
+    animation-delay: 300ms;
+  }
+  .delay-400 {
+    animation-delay: 400ms;
+  }
+  .delay-500 {
+    animation-delay: 500ms;
+  }
+}
+
+/* Custom scrollbar for webkit browsers */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #f1f1f1;
+  background: hsl(var(--muted));
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #888;
+  background: hsl(var(--border));
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #555;
+  background: hsl(var(--muted-foreground) / 0.5);
 }

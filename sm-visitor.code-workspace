@@ -16,6 +16,10 @@
       "path": "apps/pantry",
       "name": "Pantry (Backend)",
     },
+    {
+      "path": "apps/visitor-portal",
+      "name": "Visitor Portal (Unified App)",
+    },
   ],
   "settings": {
     "files.exclude": {

@@ -107,7 +107,7 @@ export function PhotoCapture({ onPhotoUploaded }: PhotoCaptureProps) {
     <div className="space-y-4">
       {/* Idle State */}
       {cameraState === "idle" && (
-        <div className="rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 p-8 text-center">
+        <div className="rounded-lg border-2 border-dashed border-border bg-muted p-8 text-center">
           <svg
             className="mx-auto h-12 w-12 text-gray-400"
             fill="none"

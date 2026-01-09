@@ -110,8 +110,8 @@ export function WaitingScreen({
           </div>
 
           {/* Info Message */}
-          <div className="rounded-lg bg-blue-50 p-3">
-            <p className="text-sm text-blue-800">
+          <div className="rounded-lg bg-accent p-3">
+            <p className="text-sm text-accent-foreground">
               The owner has been notified. You'll be alerted once they approve or reject this visit.
             </p>
           </div>

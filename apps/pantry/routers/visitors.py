@@ -399,3 +399,99 @@ async def get_visitor_qr(
         "qr_image_url": qr_image_url,
         "qr_token": visitor["qr_token"]
     }
+
+
+# ===== GET ENDPOINTS FOR HORIZON VISITOR MANAGEMENT =====
+
+@router.get("/regular", response_model=List[VisitorResponse])
+async def get_regular_visitors(
+    current_user: dict = Depends(get_current_owner)
+):
+    """
+    Get all regular visitors for the current owner
+    Used by Horizon visitors page
+    """
+    visitors_collection = get_visitors_collection()
+    
+    visitors = await visitors_collection.find({
+        "created_by": str(current_user["_id"]),
+        "visitor_type": "regular",
+        "is_active": True
+    }).sort("created_at", -1).to_list(length=1000)
+    
+    return [
+        VisitorResponse(
+            _id=str(visitor["_id"]),
+            name=visitor["name"],
+            phone=visitor.get("phone"),
+            photo_url=visitor["photo_url"],
+            visitor_type=visitor["visitor_type"],
+            created_by=visitor["created_by"],
+            default_purpose=visitor.get("default_purpose"),
+            qr_token=visitor.get("qr_token"),
+            is_active=visitor["is_active"],
+            created_at=visitor["created_at"]
+        )
+        for visitor in visitors
+    ]
+
+
+@router.get("/regular/count")
+async def get_regular_count(
+    current_user: dict = Depends(get_current_owner)
+):
+    """
+    Get count of active regular visitors for the current owner
+    Used by Horizon dashboard stats
+    """
+    visitors_collection = get_visitors_collection()
+    
+    count = await visitors_collection.count_documents({
+        "created_by": str(current_user["_id"]),
+        "visitor_type": "regular",
+        "is_active": True
+    })
+    
+    return {"count": count}
+
+
+@router.get("/regular/{visitor_id}", response_model=VisitorResponse)
+async def get_visitor_by_id(
+    visitor_id: str,
+    current_user: dict = Depends(get_current_owner)
+):
+    """
+    Get a specific regular visitor by ID
+    Used by Horizon visitor details page
+    """
+    visitors_collection = get_visitors_collection()
+    
+    try:
+        visitor = await visitors_collection.find_one({
+            "_id": ObjectId(visitor_id),
+            "created_by": str(current_user["_id"])
+        })
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid visitor ID"
+        )
+    
+    if not visitor:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Visitor not found"
+        )
+    
+    return VisitorResponse(
+        _id=str(visitor["_id"]),
+        name=visitor["name"],
+        phone=visitor.get("phone"),
+        photo_url=visitor["photo_url"],
+        visitor_type=visitor["visitor_type"],
+        created_by=visitor["created_by"],
+        default_purpose=visitor.get("default_purpose"),
+        qr_token=visitor.get("qr_token"),
+        is_active=visitor["is_active"],
+        created_at=visitor["created_at"]
+    )

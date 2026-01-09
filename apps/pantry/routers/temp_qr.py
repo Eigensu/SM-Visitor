@@ -239,3 +239,39 @@ async def list_temporary_qrs(
         }
         for qr in temp_qrs
     ]
+
+
+# ===== GET ENDPOINTS FOR HORIZON QR MANAGEMENT =====
+
+@router.get("/active", response_model=List[TemporaryQRResponse])
+async def get_active_qr_codes(
+    current_user: dict = Depends(get_current_owner)
+):
+    """
+    Get all active (non-expired, unused) temporary QR codes for the current owner
+    Used by Horizon QR generator history
+    """
+    temp_qr_collection = get_temporary_qr_collection()
+    
+    # Get all QR codes that haven't expired and haven't been used
+    now = datetime.utcnow()
+    
+    qr_codes = await temp_qr_collection.find({
+        "owner_id": str(current_user["_id"]),
+        "expires_at": {"$gt": now},
+        "used_at": None
+    }).sort("created_at", -1).to_list(length=100)
+    
+    return [
+        TemporaryQRResponse(
+            _id=str(qr["_id"]),
+            owner_id=qr["owner_id"],
+            guest_name=qr.get("guest_name"),
+            token=qr["token"],
+            qr_image_url=f"/temp-qr/{qr['_id']}/qr-image",  # Placeholder
+            expires_at=qr["expires_at"],
+            one_time=qr.get("one_time", True),
+            created_at=qr["created_at"]
+        )
+        for qr in qr_codes
+    ]

@@ -7,6 +7,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@sm-visitor/ui";
 import { Input } from "@sm-visitor/ui";
+import { GlassCard } from "@/components/GlassCard";
 import { authAPI } from "@/lib/api";
 import { useStore } from "@/lib/store";
 import toast from "react-hot-toast";
@@ -87,12 +88,12 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-blue-50 to-cyan-100 p-4">
+    <div className="flex min-h-screen items-center justify-center bg-background p-4">
       <div className="w-full max-w-md">
-        <div className="rounded-2xl bg-white p-8 shadow-xl">
+        <GlassCard>
           {/* Header */}
           <div className="mb-8 text-center">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-blue-600">
+            <div className="ocean-gradient mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl shadow-lg shadow-primary/20">
               <svg
                 className="h-8 w-8 text-white"
                 fill="none"
@@ -118,8 +119,8 @@ export default function LoginPage() {
               onClick={() => setMode("login")}
               className={`flex-1 rounded-md py-2 text-sm font-medium transition-colors ${
                 mode === "login"
-                  ? "bg-white text-blue-600 shadow"
-                  : "text-gray-600 hover:text-gray-900"
+                  ? "bg-white text-primary shadow"
+                  : "text-muted-foreground hover:text-foreground"
               }`}
             >
               Login
@@ -129,8 +130,8 @@ export default function LoginPage() {
               onClick={() => setMode("signup")}
               className={`flex-1 rounded-md py-2 text-sm font-medium transition-colors ${
                 mode === "signup"
-                  ? "bg-white text-blue-600 shadow"
-                  : "text-gray-600 hover:text-gray-900"
+                  ? "bg-white text-primary shadow"
+                  : "text-muted-foreground hover:text-foreground"
               }`}
             >
               Sign Up
@@ -173,13 +174,17 @@ export default function LoginPage() {
               required
             />
 
-            <Button type="submit" className="w-full" size="lg" isLoading={isLoading}>
+            <Button
+              type="submit"
+              className="ocean-gradient h-11 w-full hover:opacity-90"
+              disabled={isLoading}
+            >
               {mode === "signup" ? "Create Account" : "Login"}
             </Button>
           </form>
-        </div>
+        </GlassCard>
 
-        <p className="mt-6 text-center text-sm text-gray-600">
+        <p className="mt-6 text-center text-sm text-muted-foreground">
           SM-Visitor Management System v1.0.0
         </p>
       </div>

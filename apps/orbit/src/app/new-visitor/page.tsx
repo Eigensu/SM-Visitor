@@ -11,6 +11,7 @@ import { Input } from "@sm-visitor/ui";
 import { PhotoCapture } from "@/components/PhotoCapture";
 import { OwnerSelect } from "@/components/OwnerSelect";
 import { WaitingScreen } from "@/components/WaitingScreen";
+import { GlassCard } from "@/components/GlassCard";
 import { visitsAPI } from "@/lib/api";
 import { useStore } from "@/lib/store";
 import toast from "react-hot-toast";
@@ -127,9 +128,9 @@ export default function NewVisitorPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="sticky top-0 z-10 border-b border-gray-200 bg-white shadow-sm">
+      <header className="sticky top-0 z-10 border-b border-border bg-card shadow-sm">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="flex h-16 items-center justify-between">
             <div className="flex items-center">
@@ -137,7 +138,7 @@ export default function NewVisitorPage() {
                 <ArrowLeft className="mr-2 h-4 w-4" />
                 Back
               </Button>
-              <h1 className="ml-4 text-xl font-bold text-gray-900">New Visitor</h1>
+              <h1 className="ml-4 text-xl font-bold text-foreground">New Visitor</h1>
             </div>
           </div>
         </div>
@@ -147,8 +148,8 @@ export default function NewVisitorPage() {
       <main className="mx-auto max-w-2xl px-4 py-8 sm:px-6 lg:px-8">
         {step === "form" && (
           <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="rounded-lg bg-white p-6 shadow-sm">
-              <h2 className="mb-4 text-lg font-semibold text-gray-900">Visitor Information</h2>
+            <GlassCard>
+              <h2 className="mb-4 text-lg font-semibold text-foreground">Visitor Information</h2>
 
               <div className="space-y-4">
                 <Input
@@ -191,19 +192,25 @@ export default function NewVisitorPage() {
                   error={errors.owner_id}
                 />
               </div>
-            </div>
+            </GlassCard>
 
-            <div className="rounded-lg bg-white p-6 shadow-sm">
-              <h2 className="mb-4 text-lg font-semibold text-gray-900">
-                Visitor Photo <span className="text-red-500">*</span>
+            <GlassCard>
+              <h2 className="mb-4 text-lg font-semibold text-foreground">
+                Visitor Photo <span className="text-destructive">*</span>
               </h2>
               <PhotoCapture
                 onPhotoUploaded={(photoUrl) => setFormData({ ...formData, photo_url: photoUrl })}
               />
-              {errors.photo_url && <p className="mt-2 text-sm text-red-600">{errors.photo_url}</p>}
-            </div>
+              {errors.photo_url && (
+                <p className="mt-2 text-sm text-destructive">{errors.photo_url}</p>
+              )}
+            </GlassCard>
 
-            <Button type="submit" className="w-full" size="lg" isLoading={isSubmitting}>
+            <Button
+              type="submit"
+              className="ocean-gradient h-11 w-full hover:opacity-90"
+              disabled={isSubmitting}
+            >
               Submit Visit Request
             </Button>
           </form>

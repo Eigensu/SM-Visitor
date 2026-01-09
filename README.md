@@ -9,7 +9,7 @@ This is a monorepo containing:
 - **Orbit** (`apps/orbit/`) - Guard/Staff interface (Next.js on port 3000)
 - **Horizon** (`apps/horizon/`) - Owner/Approver interface (Next.js on port 3001)
 - **Pantry** (`apps/pantry/`) - Backend API (FastAPI on port 8000)
-- **Shared Types** (`packages/shared-types/`) - TypeScript types shared across apps
+- **Shared Packages** (`packages/`) - Shared UI components, types, and utilities
 
 ## Quick Start
 

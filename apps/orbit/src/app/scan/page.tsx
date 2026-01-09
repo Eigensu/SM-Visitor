@@ -87,9 +87,9 @@ export default function ScanPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="sticky top-0 z-10 border-b border-gray-200 bg-white shadow-sm">
+      <header className="sticky top-0 z-10 border-b border-border bg-card shadow-sm">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="flex h-16 items-center justify-between">
             <div className="flex items-center">
@@ -97,7 +97,7 @@ export default function ScanPage() {
                 <ArrowLeft className="mr-2 h-4 w-4" />
                 Back
               </Button>
-              <h1 className="ml-4 text-xl font-bold text-gray-900">Scan QR Code</h1>
+              <h1 className="ml-4 text-xl font-bold text-foreground">Scan QR Code</h1>
             </div>
           </div>
         </div>
@@ -107,8 +107,8 @@ export default function ScanPage() {
       <main className="mx-auto max-w-2xl px-4 py-8 sm:px-6 lg:px-8">
         {scanState === "scanning" && (
           <div className="space-y-6">
-            <div className="rounded-lg bg-blue-50 p-4">
-              <p className="text-sm text-blue-800">
+            <div className="rounded-lg bg-accent p-4">
+              <p className="text-sm text-accent-foreground">
                 <strong>Instructions:</strong> Position the QR code within the camera frame. The
                 scan will happen automatically.
               </p>

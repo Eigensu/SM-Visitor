@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # MongoDB connection settings
-MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
+MONGODB_URL = os.getenv("MONGODB_URL", "mongodb://localhost:27017")
 DATABASE_NAME = os.getenv("DATABASE_NAME", "sm_visitor")
 
 # Global database client
@@ -24,7 +24,7 @@ async def connect_to_mongo():
     global _client, _database
     
     try:
-        _client = AsyncIOMotorClient(MONGODB_URI)
+        _client = AsyncIOMotorClient(MONGODB_URL)
         _database = _client[DATABASE_NAME]
         
         # Test connection

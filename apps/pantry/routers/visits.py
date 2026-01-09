@@ -623,3 +623,203 @@ async def checkout_visit(
         qr_token=updated_visit.get("qr_token"),
         created_at=updated_visit["created_at"]
     )
+
+
+# ===== GET ENDPOINTS FOR HORIZON DASHBOARD =====
+
+@router.get("/pending", response_model=List[VisitResponse])
+async def get_pending_visits(
+    current_user: dict = Depends(get_current_owner)
+):
+    """
+    Get all pending visits for the current owner
+    Used by Horizon approvals page
+    """
+    visits_collection = get_visits_collection()
+    
+    visits = await visits_collection.find({
+        "owner_id": str(current_user["_id"]),
+        "status": "pending"
+    }).sort("created_at", -1).to_list(length=100)
+    
+    return [
+        VisitResponse(
+            _id=str(visit["_id"]),
+            visitor_id=visit.get("visitor_id"),
+            name_snapshot=visit["name_snapshot"],
+            phone_snapshot=visit.get("phone_snapshot"),
+            photo_snapshot_url=visit["photo_snapshot_url"],
+            purpose=visit["purpose"],
+            owner_id=visit["owner_id"],
+            guard_id=visit["guard_id"],
+            entry_time=visit.get("entry_time"),
+            exit_time=visit.get("exit_time"),
+            status=visit["status"],
+            created_at=visit["created_at"]
+        )
+        for visit in visits
+    ]
+
+
+@router.get("/pending/count")
+async def get_pending_count(
+    current_user: dict = Depends(get_current_owner)
+):
+    """
+    Get count of pending visits for the current owner
+    Used by Horizon dashboard stats
+    """
+    visits_collection = get_visits_collection()
+    
+    count = await visits_collection.count_documents({
+        "owner_id": str(current_user["_id"]),
+        "status": "pending"
+    })
+    
+    return {"count": count}
+
+
+@router.get("/today/count")
+async def get_today_count(
+    current_user: dict = Depends(get_current_owner)
+):
+    """
+    Get count of today's visits for the current owner
+    Used by Horizon dashboard stats
+    """
+    visits_collection = get_visits_collection()
+    
+    # Get start of today (midnight)
+    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    count = await visits_collection.count_documents({
+        "owner_id": str(current_user["_id"]),
+        "created_at": {"$gte": today_start}
+    })
+    
+    return {"count": count}
+
+
+@router.get("/recent", response_model=List[VisitResponse])
+async def get_recent_visits(
+    limit: int = 10,
+    current_user: dict = Depends(get_current_owner)
+):
+    """
+    Get recent visits for the current owner
+    Used by Horizon dashboard recent activity
+    """
+    visits_collection = get_visits_collection()
+    
+    visits = await visits_collection.find({
+        "owner_id": str(current_user["_id"])
+    }).sort("created_at", -1).limit(limit).to_list(length=limit)
+    
+    return [
+        VisitResponse(
+            _id=str(visit["_id"]),
+            visitor_id=visit.get("visitor_id"),
+            name_snapshot=visit["name_snapshot"],
+            phone_snapshot=visit.get("phone_snapshot"),
+            photo_snapshot_url=visit["photo_snapshot_url"],
+            purpose=visit["purpose"],
+            owner_id=visit["owner_id"],
+            guard_id=visit["guard_id"],
+            entry_time=visit.get("entry_time"),
+            exit_time=visit.get("exit_time"),
+            status=visit["status"],
+            created_at=visit["created_at"]
+        )
+        for visit in visits
+    ]
+
+
+@router.get("/stats/weekly")
+async def get_weekly_stats(
+    current_user: dict = Depends(get_current_owner)
+):
+    """
+    Get weekly visitor statistics for the current owner
+    Used by Horizon dashboard weekly activity chart
+    Returns visitor counts for the last 7 days
+    """
+    visits_collection = get_visits_collection()
+    
+    # Get last 7 days
+    today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    week_ago = today - timedelta(days=6)
+    
+    # Aggregate by day
+    pipeline = [
+        {
+            "$match": {
+                "owner_id": str(current_user["_id"]),
+                "created_at": {"$gte": week_ago}
+            }
+        },
+        {
+            "$group": {
+                "_id": {
+                    "$dateToString": {
+                        "format": "%Y-%m-%d",
+                        "date": "$created_at"
+                    }
+                },
+                "count": {"$sum": 1}
+            }
+        },
+        {
+            "$sort": {"_id": 1}
+        }
+    ]
+    
+    results = await visits_collection.aggregate(pipeline).to_list(length=7)
+    
+    # Create a map of date -> count
+    counts_by_date = {result["_id"]: result["count"] for result in results}
+    
+    # Fill in missing days with 0
+    weekly_data = []
+    for i in range(7):
+        date = week_ago + timedelta(days=i)
+        date_str = date.strftime("%Y-%m-%d")
+        day_name = date.strftime("%a")  # Mon, Tue, etc.
+        
+        weekly_data.append({
+            "day": day_name,
+            "date": date_str,
+            "count": counts_by_date.get(date_str, 0)
+        })
+    
+    return {"weekly_stats": weekly_data}
+
+
+@router.get("/notifications")
+async def get_notifications(
+    current_user: dict = Depends(get_current_owner)
+):
+    """
+    Get unread notifications for the current owner
+    Used by Horizon notifications page
+    """
+    visits_collection = get_visits_collection()
+    
+    # Get recent pending visits as notifications
+    pending_visits = await visits_collection.find({
+        "owner_id": str(current_user["_id"]),
+        "status": "pending"
+    }).sort("created_at", -1).limit(10).to_list(length=10)
+    
+    notifications = [
+        {
+            "id": str(visit["_id"]),
+            "type": "new_visit",
+            "title": f"New visitor: {visit['name_snapshot']}",
+            "message": f"Purpose: {visit['purpose']}",
+            "timestamp": visit["created_at"],
+            "read": False
+        }
+        for visit in pending_visits
+    ]
+    
+    return {"notifications": notifications}

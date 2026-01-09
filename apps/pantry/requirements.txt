@@ -10,6 +10,7 @@ pymongo==4.9.1
 # Authentication
 PyJWT==2.10.1
 python-dotenv==1.2.1
+passlib[bcrypt]==1.7.4
 
 # CORS and middleware
 starlette==0.50.0
