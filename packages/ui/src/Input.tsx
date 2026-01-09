@@ -35,6 +35,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             className
           )}
           {...props}
+          suppressHydrationWarning
         />
         {error && <p className="mt-1 text-sm text-destructive">{error}</p>}
         {helperText && !error && <p className="mt-1 text-sm text-muted-foreground">{helperText}</p>}

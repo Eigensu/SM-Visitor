@@ -223,7 +223,7 @@ async def login(request: LoginRequest, db = Depends(get_database)):
     
     Returns JWT token valid for 7 days
     """
-    # Try to find user in all collections (we don't know the role yet)
+    # Try to find user in all collections
     user = None
     collection = None
     

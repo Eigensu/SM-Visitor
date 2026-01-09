@@ -51,6 +51,7 @@ export function Button({
       className={cn(baseStyles, variants[variant], sizes[size], className)}
       disabled={disabled || isLoading}
       {...props}
+      suppressHydrationWarning
     >
       {isLoading ? (
         <>

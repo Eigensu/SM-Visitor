@@ -1,5 +1,5 @@
 /**
- * Login Page - Username/Password Authentication for Guards
+ * Login Page - Phone/Password Authentication for Guards
  */
 "use client";
 
@@ -10,6 +10,8 @@ import { Input } from "@sm-visitor/ui";
 import { GlassCard } from "@/components/GlassCard";
 import { authAPI } from "@/lib/api";
 import { useStore } from "@/lib/store";
+import { ShieldCheck, ArrowRight } from "lucide-react";
+import { motion } from "framer-motion";
 import toast from "react-hot-toast";
 
 export default function LoginPage() {
@@ -81,7 +83,9 @@ export default function LoginPage() {
     } catch (error: any) {
       const detail = error.response?.data?.detail;
       const errorMessage =
-        typeof detail === "string" ? detail : "Login failed. Please check your credentials.";
+        typeof detail === "string"
+          ? detail
+          : "Authentication failed. Please check your credentials.";
       toast.error(errorMessage);
     } finally {
       setIsLoading(false);
@@ -89,38 +93,42 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-4">
-      <div className="w-full max-w-md">
-        <GlassCard>
-          {/* Header */}
-          <div className="mb-8 text-center">
-            <div className="ocean-gradient mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl shadow-lg shadow-primary/20">
-              <svg
-                className="h-8 w-8 text-white"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"
-                />
-              </svg>
-            </div>
-            <h1 className="text-2xl font-bold text-gray-900">Orbit Guard</h1>
-            <p className="mt-2 text-gray-600">Visitor Management System</p>
-          </div>
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background p-4">
+      {/* Background Effects */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute -left-1/2 -top-1/2 h-full w-full rounded-full bg-primary/5 blur-3xl" />
+        <div className="absolute -bottom-1/2 -right-1/2 h-full w-full rounded-full bg-primary/5 blur-3xl" />
+      </div>
 
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, ease: "easeOut" }}
+        className="relative z-10 w-full max-w-md"
+      >
+        {/* Logo */}
+        <div className="mb-8 text-center">
+          <motion.div
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
+            className="ocean-gradient mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl shadow-lg shadow-primary/20"
+          >
+            <ShieldCheck className="h-8 w-8 text-primary-foreground" strokeWidth={1.5} />
+          </motion.div>
+          <h1 className="text-2xl font-bold text-foreground">Orbit Guard</h1>
+          <p className="mt-1 text-muted-foreground">Visitor Management System</p>
+        </div>
+
+        <GlassCard className="space-y-6">
           {/* Mode Toggle */}
-          <div className="mb-6 flex rounded-lg bg-gray-100 p-1">
+          <div className="flex rounded-lg bg-muted/50 p-1">
             <button
               type="button"
               onClick={() => setMode("login")}
               className={`flex-1 rounded-md py-2 text-sm font-medium transition-colors ${
                 mode === "login"
-                  ? "bg-white text-primary shadow"
+                  ? "bg-card text-primary shadow-sm"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
@@ -131,7 +139,7 @@ export default function LoginPage() {
               onClick={() => setMode("signup")}
               className={`flex-1 rounded-md py-2 text-sm font-medium transition-colors ${
                 mode === "signup"
-                  ? "bg-white text-primary shadow"
+                  ? "bg-card text-primary shadow-sm"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
@@ -139,51 +147,72 @@ export default function LoginPage() {
             </button>
           </div>
 
-          {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
             {mode === "signup" && (
-              <Input
-                label="Name"
-                type="text"
-                placeholder="Enter your full name"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                error={errors.name}
-                required
-                autoFocus
-              />
+              <div className="space-y-2">
+                <label htmlFor="name" className="text-sm font-medium text-foreground">
+                  Name
+                </label>
+                <Input
+                  id="name"
+                  type="text"
+                  placeholder="Enter your full name"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="bg-background/50"
+                  autoFocus
+                />
+                {errors.name && <p className="text-sm text-destructive">{errors.name}</p>}
+              </div>
             )}
 
-            <Input
-              label="Phone Number"
-              type="tel"
-              placeholder="Enter 10-digit phone number"
-              value={formData.phone}
-              onChange={(e) => {
-                const value = e.target.value.replace(/\D/g, "").slice(0, 10);
-                setFormData({ ...formData, phone: value });
-              }}
-              error={errors.phone}
-              required
-              autoFocus={mode === "login"}
-            />
+            <div className="space-y-2">
+              <label htmlFor="phone" className="text-sm font-medium text-foreground">
+                Phone Number
+              </label>
+              <Input
+                id="phone"
+                type="tel"
+                placeholder="Enter 10-digit phone number"
+                value={formData.phone}
+                onChange={(e) => {
+                  const value = e.target.value.replace(/\D/g, "").slice(0, 10);
+                  setFormData({ ...formData, phone: value });
+                }}
+                className="bg-background/50"
+                autoFocus={mode === "login"}
+              />
+              {errors.phone && <p className="text-sm text-destructive">{errors.phone}</p>}
+            </div>
 
-            <Input
-              label="Password"
-              type="password"
-              placeholder="Enter password"
-              value={formData.password}
-              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-              error={errors.password}
-              required
-            />
+            <div className="space-y-2">
+              <label htmlFor="password" className="text-sm font-medium text-foreground">
+                Password
+              </label>
+              <Input
+                id="password"
+                type="password"
+                placeholder="Enter password"
+                value={formData.password}
+                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                className="bg-background/50"
+              />
+              {errors.password && <p className="text-sm text-destructive">{errors.password}</p>}
+            </div>
 
             <Button
               type="submit"
               className="ocean-gradient h-11 w-full hover:opacity-90"
               disabled={isLoading}
             >
-              {mode === "signup" ? "Create Account" : "Login"}
+              {isLoading ? (
+                <span>Loading...</span>
+              ) : (
+                <>
+                  {mode === "signup" ? "Create Account" : "Sign In"}
+                  <ArrowRight className="ml-2 h-4 w-4" strokeWidth={1.5} />
+                </>
+              )}
             </Button>
           </form>
         </GlassCard>
@@ -191,7 +220,7 @@ export default function LoginPage() {
         <p className="mt-6 text-center text-sm text-muted-foreground">
           SM-Visitor Management System v1.0.0
         </p>
-      </div>
+      </motion.div>
     </div>
   );
 }
