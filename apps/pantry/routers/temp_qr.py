@@ -3,7 +3,7 @@ Temporary QR Router - Generate and validate one-time guest passes
 """
 from fastapi import APIRouter, HTTPException, status, Depends
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime, timedelta
 from bson import ObjectId
 

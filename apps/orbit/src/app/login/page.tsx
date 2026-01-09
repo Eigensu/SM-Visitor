@@ -18,7 +18,7 @@ export default function LoginPage() {
 
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [formData, setFormData] = useState({
-    username: "",
+    phone: "",
     password: "",
     name: "",
   });
@@ -28,10 +28,10 @@ export default function LoginPage() {
   const validate = () => {
     const newErrors: Record<string, string> = {};
 
-    if (!formData.username.trim()) {
-      newErrors.username = "Username is required";
-    } else if (formData.username.length < 3) {
-      newErrors.username = "Username must be at least 3 characters";
+    if (!formData.phone.trim()) {
+      newErrors.phone = "Phone number is required";
+    } else if (!/^\d{10}$/.test(formData.phone)) {
+      newErrors.phone = "Phone number must be 10 digits";
     }
 
     if (!formData.password) {
@@ -59,14 +59,14 @@ export default function LoginPage() {
 
       if (mode === "signup") {
         data = await authAPI.signup({
-          username: formData.username,
+          phone: formData.phone,
           password: formData.password,
           name: formData.name,
           role: "guard",
         });
         toast.success("Account created successfully!");
       } else {
-        data = await authAPI.login(formData.username, formData.password);
+        data = await authAPI.login(formData.phone, formData.password);
         toast.success("Login successful!");
       }
 
@@ -76,12 +76,13 @@ export default function LoginPage() {
         return;
       }
 
-      login(data.user, data.token);
+      login(data.user, data.access_token);
       router.push("/dashboard");
     } catch (error: any) {
-      toast.error(
-        error.response?.data?.detail || `${mode === "signup" ? "Signup" : "Login"} failed`
-      );
+      const detail = error.response?.data?.detail;
+      const errorMessage =
+        typeof detail === "string" ? detail : "Login failed. Please check your credentials.";
+      toast.error(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -154,12 +155,15 @@ export default function LoginPage() {
             )}
 
             <Input
-              label="Username"
-              type="text"
-              placeholder="Enter username"
-              value={formData.username}
-              onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-              error={errors.username}
+              label="Phone Number"
+              type="tel"
+              placeholder="Enter 10-digit phone number"
+              value={formData.phone}
+              onChange={(e) => {
+                const value = e.target.value.replace(/\D/g, "").slice(0, 10);
+                setFormData({ ...formData, phone: value });
+              }}
+              error={errors.phone}
               required
               autoFocus={mode === "login"}
             />

@@ -13,6 +13,7 @@ from passlib.context import CryptContext
 import os
 
 from database import get_database
+from bson import ObjectId
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 security = HTTPBearer()
@@ -100,10 +101,24 @@ async def get_current_user(
 ):
     """Dependency to get current authenticated user"""
     token = credentials.credentials
-    payload = decode_token(token)
+    # print(f"DEBUG: Received token: {token}")
+    try:
+        payload = decode_token(token)
+    except Exception as e:
+        print(f"DEBUG: Token decode failed: {e}")
+        raise e
     
-    user = await db.users.find_one({"_id": payload["user_id"]})
+    try:
+        user_id = ObjectId(payload["user_id"])
+    except:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid user ID format"
+        )
+        
+    user = await db.users.find_one({"_id": user_id})
     if not user:
+        print(f"DEBUG: User not found for ID: {payload.get('user_id')}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found"

@@ -88,7 +88,9 @@ export function PhotoCapture({ onPhotoUploaded }: PhotoCaptureProps) {
       onPhotoUploaded(response.photo_url);
     } catch (error: any) {
       console.error("Photo upload error:", error);
-      toast.error(error.response?.data?.detail || "Failed to upload photo");
+      const detail = error.response?.data?.detail;
+      const errorMessage = typeof detail === "string" ? detail : "Failed to upload photo";
+      toast.error(errorMessage);
     } finally {
       setIsUploading(false);
     }

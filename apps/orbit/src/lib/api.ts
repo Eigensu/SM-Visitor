@@ -45,7 +45,7 @@ apiClient.interceptors.response.use(
 // Auth API
 export const authAPI = {
   signup: async (data: {
-    username: string;
+    phone: string;
     password: string;
     name: string;
     role: string;
@@ -55,8 +55,8 @@ export const authAPI = {
     return response.data;
   },
 
-  login: async (username: string, password: string) => {
-    const response = await apiClient.post("/auth/login", { username, password });
+  login: async (phone: string, password: string) => {
+    const response = await apiClient.post("/auth/login", { phone, password });
     return response.data;
   },
 
@@ -114,7 +114,7 @@ export const uploadsAPI = {
 // Users API
 export const usersAPI = {
   getOwners: async () => {
-    const response = await apiClient.get("/users?role=owner");
+    const response = await apiClient.get("/users/?role=owner");
     return response.data;
   },
 };
@@ -122,7 +122,7 @@ export const usersAPI = {
 // SSE Connection
 export const createSSEConnection = (onEvent: (event: MessageEvent) => void) => {
   const token = localStorage.getItem("auth_token");
-  if (!token) return null;
+  if (!token || token === "undefined") return null;
 
   const eventSource = new EventSource(`${API_URL}/events/stream?token=${token}`, {
     withCredentials: false,

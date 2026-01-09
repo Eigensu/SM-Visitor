@@ -8,5 +8,8 @@
     "build": "echo \"Pantry API has no build step\"",
     "lint": "echo \"No Python lint configured\"",
     "type-check": "echo \"No Python type-check configured\""
+  },
+  "dependencies": {
+    "qrcode": "^1.5.4"
   }
 }
