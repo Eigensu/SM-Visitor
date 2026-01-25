@@ -11,15 +11,20 @@ interface StatCardProps {
     positive: boolean;
   };
   className?: string;
+  isLoading?: boolean;
 }
 
-export function StatCard({ title, value, icon: Icon, trend, className }: StatCardProps) {
+export function StatCard({ title, value, icon: Icon, trend, className, isLoading }: StatCardProps) {
   return (
     <GlassCard hover className={cn("group", className)}>
       <div className="flex items-start justify-between">
         <div className="space-y-2">
           <p className="text-sm font-medium text-muted-foreground">{title}</p>
-          <p className="text-3xl font-semibold tracking-tight text-foreground">{value}</p>
+          {isLoading ? (
+            <div className="h-9 w-16 animate-pulse rounded-md bg-muted/50" />
+          ) : (
+            <p className="text-3xl font-semibold tracking-tight text-foreground">{value}</p>
+          )}
           {trend && (
             <p
               className={cn(

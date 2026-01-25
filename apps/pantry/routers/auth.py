@@ -48,7 +48,7 @@ class AuthResponse(BaseModel):
 
 
 class UserResponse(BaseModel):
-    _id: str
+    id: str
     name: str
     phone: str
     role: str
@@ -198,7 +198,7 @@ async def signup(request: SignupRequest, db = Depends(get_database)):
     
     # Prepare response
     user_response = {
-        "_id": user_id,
+        "id": user_id,
         "name": request.name,
         "phone": request.phone,
         "role": request.role,
@@ -269,7 +269,7 @@ async def login(request: LoginRequest, db = Depends(get_database)):
     
     # Prepare response
     user_response = {
-        "_id": user_id,
+        "id": user_id,
         "name": user["name"],
         "phone": user["phone"],
         "role": user["role"],
@@ -292,7 +292,7 @@ async def get_me(current_user = Depends(get_current_user)):
     Requires: Bearer token in Authorization header
     """
     return {
-        "_id": str(current_user["_id"]),
+        "id": str(current_user["_id"]),
         "name": current_user["name"],
         "phone": current_user["phone"],
         "role": current_user["role"],

@@ -4,7 +4,7 @@
  */
 import axios, { AxiosInstance, AxiosError } from "axios";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 // Create axios instance
 const apiClient: AxiosInstance = axios.create({
@@ -81,7 +81,26 @@ export const visitsAPI = {
     phone?: string;
     photo_url?: string;
   }) => {
-    const response = await apiClient.post("/visits/start", data);
+    // Construct payload based on whether it's a QR scan or new visitor
+    const payload = data.qr_token
+      ? {
+          qr_request: {
+            qr_token: data.qr_token,
+            owner_id: data.owner_id,
+            purpose: data.purpose,
+          },
+        }
+      : {
+          new_request: {
+            name: data.name,
+            phone: data.phone,
+            photo_url: data.photo_url,
+            owner_id: data.owner_id,
+            purpose: data.purpose,
+          },
+        };
+
+    const response = await apiClient.post("/visits/start", payload);
     return response.data;
   },
 
@@ -92,6 +111,11 @@ export const visitsAPI = {
 
   checkout: async (visitId: string) => {
     const response = await apiClient.patch(`/visits/${visitId}/checkout`);
+    return response.data;
+  },
+
+  cancelVisit: async (visitId: string) => {
+    const response = await apiClient.delete(`/visits/${visitId}`);
     return response.data;
   },
 };

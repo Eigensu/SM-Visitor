@@ -3,7 +3,7 @@
  */
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useStore } from "@/lib/store";
 import { Spinner } from "@sm-visitor/ui";
@@ -11,16 +11,28 @@ import { Spinner } from "@sm-visitor/ui";
 export default function Home() {
   const router = useRouter();
   const { isAuthenticated } = useStore();
+  const [isMounted, setIsMounted] = useState(false);
+
+  // Wait for client-side mount (SSEProvider hydration)
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   useEffect(() => {
-    // Check if user is authenticated
-    const token = localStorage.getItem("auth_token");
-    if (token) {
-      router.push("/dashboard");
-    } else {
-      router.push("/login");
-    }
-  }, [router, isAuthenticated]);
+    // Don't redirect until after hydration has a chance to run
+    if (!isMounted) return;
+
+    // Small delay to allow SSEProvider hydration to complete
+    const timer = setTimeout(() => {
+      if (isAuthenticated) {
+        router.push("/dashboard");
+      } else {
+        router.push("/login");
+      }
+    }, 100);
+
+    return () => clearTimeout(timer);
+  }, [isMounted, isAuthenticated, router]);
 
   return (
     <div className="flex min-h-screen items-center justify-center">

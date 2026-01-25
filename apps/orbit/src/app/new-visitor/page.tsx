@@ -21,7 +21,7 @@ type FormStep = "form" | "waiting" | "success" | "rejected";
 
 export default function NewVisitorPage() {
   const router = useRouter();
-  const { updateVisitStatus } = useStore();
+  const { pendingVisits, updateVisitStatus } = useStore();
 
   const [step, setStep] = useState<FormStep>("form");
   const [formData, setFormData] = useState({
@@ -35,18 +35,44 @@ export default function NewVisitorPage() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Listen for visit status changes via store
+  // Listen for visit status changes via store or polling
   useEffect(() => {
     if (visit && step === "waiting") {
-      // This will be updated by SSE
-      const checkStatus = setInterval(() => {
-        // In real implementation, the SSE will update the store
-        // and we can check the visit status here
-      }, 1000);
+      // 1. Check store updates (SSE)
+      const storeVisit = pendingVisits.find((v) => v.id === visit.id);
+      if (storeVisit) {
+        if (storeVisit.status === "approved") {
+          handleApproved();
+          return;
+        } else if (storeVisit.status === "rejected") {
+          handleRejected();
+          return;
+        }
+      }
+
+      // 2. Poll API as backup (every 3 seconds)
+      const checkStatus = setInterval(async () => {
+        try {
+          const updatedVisit = await visitsAPI.getVisit(visit.id);
+
+          // Update store to keep in sync
+          if (updatedVisit.status !== visit.status) {
+            updateVisitStatus(updatedVisit.id, updatedVisit.status);
+          }
+
+          if (updatedVisit.status === "approved") {
+            handleApproved();
+          } else if (updatedVisit.status === "rejected") {
+            handleRejected();
+          }
+        } catch (error) {
+          console.error("Polling error:", error);
+        }
+      }, 3000);
 
       return () => clearInterval(checkStatus);
     }
-  }, [visit, step]);
+  }, [visit, step, pendingVisits]);
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
@@ -123,7 +149,16 @@ export default function NewVisitorPage() {
     router.push("/dashboard");
   };
 
-  const handleCancel = () => {
+  const handleCancel = async () => {
+    if (visit && step === "waiting") {
+      try {
+        await visitsAPI.cancelVisit(visit.id);
+        toast.success("Visit request cancelled");
+      } catch (error) {
+        console.error("Failed to cancel visit:", error);
+        toast.error("Failed to cancel request");
+      }
+    }
     router.push("/dashboard");
   };
 

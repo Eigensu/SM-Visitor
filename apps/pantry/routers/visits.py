@@ -7,7 +7,7 @@ from typing import Optional, List
 from datetime import datetime, timedelta
 from bson import ObjectId
 
-from database import get_visits_collection, get_visitors_collection, get_temporary_qr_collection
+from database import get_visits_collection, get_visitors_collection, get_temporary_qr_collection, get_database
 from middleware.auth import get_current_guard, get_current_owner, get_current_user
 from utils.jwt_utils import decode_qr_token
 from utils.qr_utils import parse_qr_data
@@ -44,7 +44,7 @@ class StartVisitNewRequest(BaseModel):
 
 
 class VisitResponse(BaseModel):
-    _id: str
+    id: str
     visitor_id: Optional[str]
     name_snapshot: str
     phone_snapshot: Optional[str]
@@ -330,7 +330,7 @@ async def start_visit(
     created_visit = await visits.find_one({"_id": result.inserted_id})
     
     return VisitResponse(
-        _id=str(created_visit["_id"]),
+        id=str(created_visit["_id"]),
         visitor_id=created_visit.get("visitor_id"),
         name_snapshot=created_visit["name_snapshot"],
         phone_snapshot=created_visit.get("phone_snapshot"),
@@ -349,7 +349,8 @@ async def start_visit(
 @router.patch("/{visit_id}/approve", response_model=VisitResponse)
 async def approve_visit(
     visit_id: str,
-    current_user: dict = Depends(get_current_owner)
+    current_user: dict = Depends(get_current_owner),
+    db = Depends(get_database)
 ):
     """
     Approve a pending visit
@@ -372,17 +373,43 @@ async def approve_visit(
             detail="Visit not found"
         )
     
-    # Check ownership
-    if visit["owner_id"] != current_user["user_id"]:
+    # Check ownership (match user_id OR flat_id)
+    is_owner = visit["owner_id"] == current_user["user_id"]
+    
+    # If not direct match, check flat_id
+    if not is_owner:
+        resident = await db.residents.find_one({"_id": ObjectId(current_user["user_id"])})
+        if resident and resident.get("flat_id") == visit["owner_id"]:
+            is_owner = True
+            
+    if not is_owner:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied"
         )
     
     if visit["status"] != "pending":
+        # Check if it's already approved to avoid error
+        if visit["status"] == "approved":
+            return VisitResponse(
+                id=str(visit["_id"]),
+                visitor_id=visit.get("visitor_id"),
+                name_snapshot=visit["name_snapshot"],
+                phone_snapshot=visit.get("phone_snapshot"),
+                photo_snapshot_url=visit["photo_snapshot_url"],
+                purpose=visit["purpose"],
+                owner_id=visit["owner_id"],
+                guard_id=visit["guard_id"],
+                entry_time=visit.get("entry_time"),
+                exit_time=visit.get("exit_time"),
+                status=visit["status"],
+                qr_token=visit.get("qr_token"),
+                created_at=visit["created_at"]
+            )
+            
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Visit is not pending"
+            detail=f"Visit is {visit['status']}, cannot approve"
         )
     
     # Update visit
@@ -412,7 +439,7 @@ async def approve_visit(
     updated_visit = await visits.find_one({"_id": ObjectId(visit_id)})
     
     return VisitResponse(
-        _id=str(updated_visit["_id"]),
+        id=str(updated_visit["_id"]),
         visitor_id=updated_visit.get("visitor_id"),
         name_snapshot=updated_visit["name_snapshot"],
         phone_snapshot=updated_visit.get("phone_snapshot"),
@@ -431,7 +458,8 @@ async def approve_visit(
 @router.patch("/{visit_id}/reject", response_model=VisitResponse)
 async def reject_visit(
     visit_id: str,
-    current_user: dict = Depends(get_current_owner)
+    current_user: dict = Depends(get_current_owner),
+    db = Depends(get_database)
 ):
     """
     Reject a pending visit
@@ -454,8 +482,16 @@ async def reject_visit(
             detail="Visit not found"
         )
     
-    # Check ownership
-    if visit["owner_id"] != current_user["user_id"]:
+    # Check ownership (match user_id OR flat_id)
+    is_owner = visit["owner_id"] == current_user["user_id"]
+    
+    # If not direct match, check flat_id
+    if not is_owner:
+        resident = await db.residents.find_one({"_id": ObjectId(current_user["user_id"])})
+        if resident and resident.get("flat_id") == visit["owner_id"]:
+            is_owner = True
+            
+    if not is_owner:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied"
@@ -464,7 +500,7 @@ async def reject_visit(
     if visit["status"] != "pending":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Visit is not pending"
+            detail=f"Visit is {visit['status']}, cannot reject"
         )
     
     # Update visit
@@ -493,7 +529,7 @@ async def reject_visit(
     updated_visit = await visits.find_one({"_id": ObjectId(visit_id)})
     
     return VisitResponse(
-        _id=str(updated_visit["_id"]),
+        id=str(updated_visit["_id"]),
         visitor_id=updated_visit.get("visitor_id"),
         name_snapshot=updated_visit["name_snapshot"],
         phone_snapshot=updated_visit.get("phone_snapshot"),
@@ -544,7 +580,7 @@ async def get_todays_visits(
     
     return [
         VisitResponse(
-            _id=str(v["_id"]),
+            id=str(v["_id"]),
             visitor_id=v.get("visitor_id"),
             name_snapshot=v["name_snapshot"],
             phone_snapshot=v.get("phone_snapshot"),
@@ -609,7 +645,7 @@ async def checkout_visit(
     updated_visit = await visits.find_one({"_id": ObjectId(visit_id)})
     
     return VisitResponse(
-        _id=str(updated_visit["_id"]),
+        id=str(updated_visit["_id"]),
         visitor_id=updated_visit.get("visitor_id"),
         name_snapshot=updated_visit["name_snapshot"],
         phone_snapshot=updated_visit.get("phone_snapshot"),
@@ -625,54 +661,165 @@ async def checkout_visit(
     )
 
 
+@router.delete("/{visit_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_visit(
+    visit_id: str,
+    current_user: dict = Depends(get_current_guard)
+):
+    """
+    Delete/Cancel a pending visit request
+    
+    Only the guard who created it can delete it, and only if it's still pending
+    """
+    visits = get_visits_collection()
+    
+    try:
+        visit = await visits.find_one({"_id": ObjectId(visit_id)})
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid visit ID"
+        )
+    
+    if not visit:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Visit not found"
+        )
+    
+    # Check ownership (guard who created it)
+    if visit["guard_id"] != current_user["user_id"] and current_user["role"] != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Only the creator can cancel this request."
+        )
+    
+    if visit["status"] != "pending":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot cancel a visit that is not pending"
+        )
+    
+    # Delete visit
+    await visits.delete_one({"_id": ObjectId(visit_id)})
+    
+    # Notify owner that request was cancelled (optional, but good UX)
+    # We can use a new event type or just let the pending list update
+    await sse_manager.send_event(
+        visit["owner_id"],
+        "visit_cancelled",
+        {
+            "visit_id": visit_id,
+            "visitor_name": visit["name_snapshot"]
+        }
+    )
+    
+    return None
+
+
 # ===== GET ENDPOINTS FOR HORIZON DASHBOARD =====
 
 @router.get("/pending", response_model=List[VisitResponse])
 async def get_pending_visits(
-    current_user: dict = Depends(get_current_owner)
+    current_user: dict = Depends(get_current_owner),
+    db = Depends(get_database)
 ):
     """
     Get all pending visits for the current owner
     Used by Horizon approvals page
     """
-    visits_collection = get_visits_collection()
-    
-    visits = await visits_collection.find({
-        "owner_id": str(current_user["_id"]),
-        "status": "pending"
-    }).sort("created_at", -1).to_list(length=100)
-    
-    return [
-        VisitResponse(
-            _id=str(visit["_id"]),
-            visitor_id=visit.get("visitor_id"),
-            name_snapshot=visit["name_snapshot"],
-            phone_snapshot=visit.get("phone_snapshot"),
-            photo_snapshot_url=visit["photo_snapshot_url"],
-            purpose=visit["purpose"],
-            owner_id=visit["owner_id"],
-            guard_id=visit["guard_id"],
-            entry_time=visit.get("entry_time"),
-            exit_time=visit.get("exit_time"),
-            status=visit["status"],
-            created_at=visit["created_at"]
-        )
+    try:
+        visits_collection = get_visits_collection()
+        
+        # Log current user for debugging
+        print(f"[DEBUG] Current user: {current_user}")
+        
+        # Look up owner's flat_id from database (JWT doesn't have it)
+        user_id = current_user.get("user_id")
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="user_id missing from JWT"
+            )
+        
+        print(f"[DEBUG] Looking up resident with _id: {user_id}")
+        resident = await db.residents.find_one({"_id": ObjectId(user_id)})
+        print(f"[DEBUG] Resident found: {resident}")
+        
+        if not resident:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Owner not found with user_id: {user_id}"
+            )
+        
+        flat_id = resident.get("flat_id")
+        if not flat_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Owner {resident.get('name')} missing flat_id"
+            )
+        
+        print(f"[DEBUG] Querying visits for flat_id: {flat_id}")
+        visits = await visits_collection.find({
+            "owner_id": flat_id,  # Match by flat_id (e.g. "A-207")
+            "status": "pending"
+        }).sort("created_at", -1).to_list(length=100)
+        
+        print(f"[DEBUG] Found {len(visits)} pending visits")
+        
+        return [
+            VisitResponse(
+                id=str(visit["_id"]),
+                visitor_id=visit.get("visitor_id"),
+                name_snapshot=visit["name_snapshot"],
+                phone_snapshot=visit.get("phone_snapshot"),
+                photo_snapshot_url=visit["photo_snapshot_url"],
+                purpose=visit["purpose"],
+                owner_id=visit["owner_id"],
+                guard_id=visit["guard_id"],
+                entry_time=visit.get("entry_time"),
+                exit_time=visit.get("exit_time"),
+                status=visit["status"],
+                qr_token=visit.get("qr_token"),  # None for pending visits
+                created_at=visit["created_at"]
+            )
         for visit in visits
     ]
+    except Exception as e:
+        print(f"[ERROR] Failed to get pending visits: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch pending visits: {str(e)}"
+        )
+
+
+async def get_owner_flat_id(user_id: str, db) -> str:
+    """Helper to get flat_id for an owner"""
+    resident = await db.residents.find_one({"_id": ObjectId(user_id)})
+    if not resident or not resident.get("flat_id"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Owner not found or missing flat_id"
+        )
+    return resident["flat_id"]
 
 
 @router.get("/pending/count")
 async def get_pending_count(
-    current_user: dict = Depends(get_current_owner)
+    current_user: dict = Depends(get_current_owner),
+    db = Depends(get_database)
 ):
     """
     Get count of pending visits for the current owner
     Used by Horizon dashboard stats
     """
     visits_collection = get_visits_collection()
+    flat_id = await get_owner_flat_id(current_user["user_id"], db)
     
     count = await visits_collection.count_documents({
-        "owner_id": str(current_user["_id"]),
+        "owner_id": flat_id,
         "status": "pending"
     })
     
@@ -681,19 +828,21 @@ async def get_pending_count(
 
 @router.get("/today/count")
 async def get_today_count(
-    current_user: dict = Depends(get_current_owner)
+    current_user: dict = Depends(get_current_owner),
+    db = Depends(get_database)
 ):
     """
     Get count of today's visits for the current owner
     Used by Horizon dashboard stats
     """
     visits_collection = get_visits_collection()
+    flat_id = await get_owner_flat_id(current_user["user_id"], db)
     
     # Get start of today (midnight)
     today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     
     count = await visits_collection.count_documents({
-        "owner_id": str(current_user["_id"]),
+        "owner_id": flat_id,
         "created_at": {"$gte": today_start}
     })
     
@@ -703,21 +852,23 @@ async def get_today_count(
 @router.get("/recent", response_model=List[VisitResponse])
 async def get_recent_visits(
     limit: int = 10,
-    current_user: dict = Depends(get_current_owner)
+    current_user: dict = Depends(get_current_owner),
+    db = Depends(get_database)
 ):
     """
     Get recent visits for the current owner
     Used by Horizon dashboard recent activity
     """
     visits_collection = get_visits_collection()
+    flat_id = await get_owner_flat_id(current_user["user_id"], db)
     
     visits = await visits_collection.find({
-        "owner_id": str(current_user["_id"])
+        "owner_id": flat_id
     }).sort("created_at", -1).limit(limit).to_list(length=limit)
     
     return [
         VisitResponse(
-            _id=str(visit["_id"]),
+            id=str(visit["_id"]),
             visitor_id=visit.get("visitor_id"),
             name_snapshot=visit["name_snapshot"],
             phone_snapshot=visit.get("phone_snapshot"),
@@ -728,15 +879,68 @@ async def get_recent_visits(
             entry_time=visit.get("entry_time"),
             exit_time=visit.get("exit_time"),
             status=visit["status"],
+            qr_token=visit.get("qr_token"),
             created_at=visit["created_at"]
         )
         for visit in visits
     ]
 
 
+@router.get("/stats/summary")
+async def get_dashboard_stats(
+    current_user: dict = Depends(get_current_owner),
+    db = Depends(get_database)
+):
+    """
+    Get summary statistics for the dashboard
+    Returns counts for Today, Pending, Approved Today, and Active QR
+    """
+    visits_collection = get_visits_collection()
+    temp_qr_collection = get_temporary_qr_collection()
+    flat_id = await get_owner_flat_id(current_user["user_id"], db)
+    
+    # Time ranges
+    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    now = datetime.utcnow()
+    
+    # 1. Today's Visitors (Created today)
+    today_count = await visits_collection.count_documents({
+        "owner_id": flat_id,
+        "created_at": {"$gte": today_start}
+    })
+    
+    # 2. Pending Approvals
+    pending_count = await visits_collection.count_documents({
+        "owner_id": flat_id,
+        "status": "pending"
+    })
+    
+    # 3. Approved Today (Status approved/auto_approved and created today)
+    approved_count = await visits_collection.count_documents({
+        "owner_id": flat_id,
+        "status": {"$in": ["approved", "auto_approved"]},
+        "created_at": {"$gte": today_start}
+    })
+    
+    # 4. Active QR Codes (Temporary QRs that are valid and not used)
+    active_qr_count = await temp_qr_collection.count_documents({
+        "owner_id": flat_id,
+        "expires_at": {"$gt": now},
+        "used_at": None
+    })
+    
+    return {
+        "today_count": today_count,
+        "pending_count": pending_count,
+        "approved_count": approved_count,
+        "active_qr_count": active_qr_count
+    }
+
+
 @router.get("/stats/weekly")
 async def get_weekly_stats(
-    current_user: dict = Depends(get_current_owner)
+    current_user: dict = Depends(get_current_owner),
+    db = Depends(get_database)
 ):
     """
     Get weekly visitor statistics for the current owner
@@ -744,6 +948,7 @@ async def get_weekly_stats(
     Returns visitor counts for the last 7 days
     """
     visits_collection = get_visits_collection()
+    flat_id = await get_owner_flat_id(current_user["user_id"], db)
     
     # Get last 7 days
     today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
@@ -753,7 +958,7 @@ async def get_weekly_stats(
     pipeline = [
         {
             "$match": {
-                "owner_id": str(current_user["_id"]),
+                "owner_id": str(current_user["user_id"]),
                 "created_at": {"$gte": week_ago}
             }
         },
@@ -806,7 +1011,7 @@ async def get_notifications(
     
     # Get recent pending visits as notifications
     pending_visits = await visits_collection.find({
-        "owner_id": str(current_user["_id"]),
+        "owner_id": str(current_user["user_id"]),
         "status": "pending"
     }).sort("created_at", -1).limit(10).to_list(length=10)
     

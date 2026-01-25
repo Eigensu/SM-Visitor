@@ -5,7 +5,7 @@
 import { create } from "zustand";
 
 interface User {
-  _id: string;
+  id: string;
   name: string;
   phone: string;
   role: string;
@@ -14,7 +14,7 @@ interface User {
 }
 
 interface Visit {
-  _id: string;
+  id: string;
   visitor_id?: string;
   name_snapshot: string;
   phone_snapshot?: string;
@@ -163,14 +163,14 @@ export const useStore = create<AppState>((set) => ({
 
   removePendingVisit: (visitId) =>
     set((state) => ({
-      pendingVisits: state.pendingVisits.filter((v) => v._id !== visitId),
+      pendingVisits: state.pendingVisits.filter((v) => v.id !== visitId),
       pendingCount: Math.max(0, state.pendingCount - 1),
     })),
 
   updateVisitStatus: (visitId, status) =>
     set((state) => ({
-      pendingVisits: state.pendingVisits.map((v) => (v._id === visitId ? { ...v, status } : v)),
-      recentActivity: state.recentActivity.map((v) => (v._id === visitId ? { ...v, status } : v)),
+      pendingVisits: state.pendingVisits.map((v) => (v.id === visitId ? { ...v, status } : v)),
+      recentActivity: state.recentActivity.map((v) => (v.id === visitId ? { ...v, status } : v)),
     })),
 
   // Regular visitor actions

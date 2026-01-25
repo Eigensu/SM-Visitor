@@ -22,11 +22,13 @@ export function PhotoCapture({ onPhotoUploaded }: PhotoCaptureProps) {
   const [isUploading, setIsUploading] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const startCamera = async () => {
     try {
+      // Try with ideal constraints first
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user" },
+        video: { facingMode: "environment" }, // Prefer back camera for scanning/photos
       });
       streamRef.current = stream;
 
@@ -38,7 +40,30 @@ export function PhotoCapture({ onPhotoUploaded }: PhotoCaptureProps) {
       setCameraState("camera");
     } catch (error) {
       console.error("Camera access error:", error);
-      toast.error("Failed to access camera. Please check permissions.");
+      // Fallback to user facing camera if environment fails
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+        });
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play();
+        }
+        setCameraState("camera");
+      } catch (retryError) {
+        console.error("Retry camera error:", retryError);
+        toast.error("Could not access camera. Please use the upload option.");
+      }
+    }
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setPhotoFile(file);
+      setPhotoPreview(URL.createObjectURL(file));
+      setCameraState("preview");
     }
   };
 
@@ -75,7 +100,7 @@ export function PhotoCapture({ onPhotoUploaded }: PhotoCaptureProps) {
   const retakePhoto = () => {
     setPhotoFile(null);
     setPhotoPreview(null);
-    startCamera();
+    setCameraState("idle");
   };
 
   const uploadPhoto = async () => {
@@ -107,6 +132,15 @@ export function PhotoCapture({ onPhotoUploaded }: PhotoCaptureProps) {
 
   return (
     <div className="space-y-4">
+      <input
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        ref={fileInputRef}
+        onChange={handleFileUpload}
+      />
+
       {/* Idle State */}
       {cameraState === "idle" && (
         <div className="rounded-lg border-2 border-dashed border-border bg-muted p-8 text-center">
@@ -130,9 +164,18 @@ export function PhotoCapture({ onPhotoUploaded }: PhotoCaptureProps) {
             />
           </svg>
           <p className="mt-4 text-sm text-gray-600">No photo captured</p>
-          <Button onClick={startCamera} className="mt-4">
-            Capture Photo
-          </Button>
+          <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:justify-center">
+            <Button onClick={startCamera} className="flex-1">
+              Open Camera
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => fileInputRef.current?.click()}
+              className="flex-1"
+            >
+              Upload / Native Cam
+            </Button>
+          </div>
         </div>
       )}
 
@@ -168,14 +211,17 @@ export function PhotoCapture({ onPhotoUploaded }: PhotoCaptureProps) {
           </div>
           <div className="flex gap-3">
             <Button
-              variant="secondary"
               onClick={retakePhoto}
               disabled={isUploading}
-              className="flex-1"
+              className="ocean-gradient h-11 flex-1 hover:opacity-90"
             >
               Retake
             </Button>
-            <Button onClick={uploadPhoto} isLoading={isUploading} className="flex-1">
+            <Button
+              onClick={uploadPhoto}
+              isLoading={isUploading}
+              className="ocean-gradient h-11 flex-1 hover:opacity-90"
+            >
               Confirm & Upload
             </Button>
           </div>

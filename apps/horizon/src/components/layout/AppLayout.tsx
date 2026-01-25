@@ -23,10 +23,25 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   useEffect(() => {
     // Check authentication on mount
-    if (!isAuthenticated) {
+    const token = localStorage.getItem("auth_token");
+
+    // If we have a token in storage but not in store yet, wait (hydration happens in Providers)
+    // If no token in storage, redirect immediately
+    if (!token && !isAuthenticated) {
       router.push("/login");
-    } else {
+    } else if (isAuthenticated) {
       setIsChecking(false);
+    } else if (token) {
+      // We have a token, wait for hydration
+      // Set a timeout to avoid infinite loading if hydration fails
+      const timer = setTimeout(() => {
+        if (!useStore.getState().isAuthenticated) {
+          router.push("/login");
+        } else {
+          setIsChecking(false);
+        }
+      }, 1000);
+      return () => clearTimeout(timer);
     }
   }, [isAuthenticated, router]);
 

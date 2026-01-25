@@ -7,11 +7,16 @@ interface StatCardProps {
   value: string | number;
   icon: LucideIcon;
   className?: string;
+  onClick?: () => void;
 }
 
-export function StatCard({ title, value, icon: Icon, className }: StatCardProps) {
+export function StatCard({ title, value, icon: Icon, className, onClick }: StatCardProps) {
   return (
-    <GlassCard hover className={cn("group", className)}>
+    <GlassCard
+      hover
+      className={cn("group", className, onClick && "cursor-pointer")}
+      onClick={onClick}
+    >
       <div className="flex items-start justify-between">
         <div className="space-y-2">
           <p className="text-sm font-medium text-muted-foreground">{title}</p>

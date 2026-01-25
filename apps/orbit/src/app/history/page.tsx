@@ -17,7 +17,7 @@ import toast from "react-hot-toast";
 import { ArrowLeft, Search } from "lucide-react";
 
 interface Visit {
-  _id: string;
+  id: string;
   visitor_id?: string;
   name_snapshot: string;
   phone_snapshot?: string;
@@ -39,6 +39,15 @@ export default function HistoryPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [isLoading, setIsLoading] = useState(true);
   const [selectedVisit, setSelectedVisit] = useState<Visit | null>(null);
+
+  // Initialize filter from URL params
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const statusParam = params.get("status");
+    if (statusParam) {
+      setStatusFilter(statusParam);
+    }
+  }, []);
 
   useEffect(() => {
     fetchVisits();
@@ -72,7 +81,11 @@ export default function HistoryPage() {
 
     // Status filter
     if (statusFilter !== "all") {
-      filtered = filtered.filter((v) => v.status === statusFilter);
+      if (statusFilter === "active") {
+        filtered = filtered.filter((v) => v.entry_time && !v.exit_time);
+      } else {
+        filtered = filtered.filter((v) => v.status === statusFilter);
+      }
     }
 
     setFilteredVisits(filtered);
@@ -86,6 +99,19 @@ export default function HistoryPage() {
     } catch (error: any) {
       console.error("Checkout error:", error);
       toast.error(error.response?.data?.detail || "Failed to checkout visitor");
+    }
+  };
+
+  const handleCancel = async (visitId: string) => {
+    if (!confirm("Are you sure you want to cancel this request?")) return;
+
+    try {
+      await visitsAPI.cancelVisit(visitId);
+      toast.success("Request cancelled successfully");
+      fetchVisits(); // Refresh list
+    } catch (error: any) {
+      console.error("Cancel error:", error);
+      toast.error(error.response?.data?.detail || "Failed to cancel request");
     }
   };
 
@@ -138,6 +164,7 @@ export default function HistoryPage() {
             <option value="pending">Pending</option>
             <option value="approved">Approved</option>
             <option value="auto_approved">Auto Approved</option>
+            <option value="active">Active Now</option>
             <option value="rejected">Rejected</option>
           </select>
         </div>
@@ -180,7 +207,7 @@ export default function HistoryPage() {
         ) : (
           <div className="space-y-4">
             {filteredVisits.map((visit) => (
-              <GlassCard key={visit._id} className="p-4 hover:shadow-lg">
+              <GlassCard key={visit.id} className="p-4 hover:shadow-lg">
                 <div className="flex items-center gap-4">
                   {/* Photo */}
                   <img
@@ -209,11 +236,22 @@ export default function HistoryPage() {
                   </div>
 
                   {/* Actions */}
-                  {visit.entry_time && !visit.exit_time && (
-                    <Button onClick={() => handleCheckout(visit._id)} size="sm">
-                      Check Out
-                    </Button>
-                  )}
+                  <div className="flex flex-col gap-2">
+                    {visit.entry_time && !visit.exit_time && (
+                      <Button onClick={() => handleCheckout(visit.id)} size="sm">
+                        Check Out
+                      </Button>
+                    )}
+                    {visit.status === "pending" && (
+                      <Button
+                        onClick={() => handleCancel(visit.id)}
+                        size="sm"
+                        variant="destructive"
+                      >
+                        Cancel
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </GlassCard>
             ))}

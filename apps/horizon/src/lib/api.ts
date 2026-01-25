@@ -4,7 +4,7 @@
  */
 import axios, { AxiosInstance, AxiosError } from "axios";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 // Create axios instance
 const apiClient: AxiosInstance = axios.create({
@@ -30,6 +30,7 @@ apiClient.interceptors.request.use(
 apiClient.interceptors.response.use(
   (response) => response,
   (error: AxiosError) => {
+    console.error("API Error Interceptor:", error.message, error.response?.status);
     if (error.response?.status === 401) {
       localStorage.removeItem("auth_token");
       localStorage.removeItem("user");
@@ -102,8 +103,23 @@ export const visitsAPI = {
     return response.data;
   },
 
+  getHistory: async (limit: number = 100) => {
+    const response = await apiClient.get(`/visits/recent?limit=${limit}`);
+    return response.data;
+  },
+
   getNotifications: async () => {
     const response = await apiClient.get("/visits/notifications");
+    return response.data;
+  },
+
+  getDashboardStats: async () => {
+    const response = await apiClient.get("/visits/stats/summary");
+    return response.data;
+  },
+
+  getWeeklyStats: async () => {
+    const response = await apiClient.get("/visits/stats/weekly");
     return response.data;
   },
 };

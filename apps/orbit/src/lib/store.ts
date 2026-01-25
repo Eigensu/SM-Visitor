@@ -4,7 +4,7 @@
 import { create } from "zustand";
 
 interface User {
-  _id: string;
+  id: string;
   name: string;
   phone: string;
   role: string;
@@ -12,7 +12,7 @@ interface User {
 }
 
 interface Visit {
-  _id: string;
+  id: string;
   visitor_id?: string;
   name_snapshot: string;
   phone_snapshot?: string;
@@ -98,8 +98,8 @@ export const useStore = create<AppState>((set) => ({
 
   updateVisitStatus: (visitId, status) =>
     set((state) => ({
-      pendingVisits: state.pendingVisits.map((v) => (v._id === visitId ? { ...v, status } : v)),
-      todayVisits: state.todayVisits.map((v) => (v._id === visitId ? { ...v, status } : v)),
+      pendingVisits: state.pendingVisits.map((v) => (v.id === visitId ? { ...v, status } : v)),
+      todayVisits: state.todayVisits.map((v) => (v.id === visitId ? { ...v, status } : v)),
     })),
 
   setLoading: (loading) => set({ isLoading: loading }),

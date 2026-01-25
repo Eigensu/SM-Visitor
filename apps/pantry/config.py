@@ -4,12 +4,6 @@ Configuration settings for the Pantry API
 import os
 from dotenv import load_dotenv
 
-"""
-Configuration settings for the Pantry API
-"""
-import os
-from dotenv import load_dotenv
-
 load_dotenv()
 
 # Database
@@ -38,7 +32,7 @@ S3_SECRET_KEY = os.getenv("S3_SECRET_KEY", "")
 # CORS
 ALLOWED_ORIGINS = os.getenv(
     "ALLOWED_ORIGINS",
-    "http://localhost:3000,http://localhost:3001"
+    "http://localhost:3000,http://localhost:3001,http://127.0.0.1:3000,http://127.0.0.1:3001"
 ).split(",")
 
 # App URLs

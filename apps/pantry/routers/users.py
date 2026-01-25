@@ -47,7 +47,7 @@ async def list_users(
     
     return [
         {
-            "_id": str(user["_id"]),
+            "id": str(user["_id"]),
             "name": user["name"],
             "phone": user["phone"],
             "role": user.get("role", "owner" if "flat_id" in user else "guard"),  # Infer role if missing

@@ -11,7 +11,8 @@ interface VisitorCardProps {
     name: string;
     phone: string;
     purpose: string;
-    flatNumber: string;
+    purpose: string;
+    flatNumber?: string;
     status: StatusType;
     timestamp: string;
     photo?: string;
@@ -59,10 +60,12 @@ export function VisitorCard({
             <Phone className="h-3.5 w-3.5" strokeWidth={1.5} />
             <span>{visitor.phone}</span>
           </div>
-          <div className="flex items-center gap-1.5">
-            <MapPin className="h-3.5 w-3.5" strokeWidth={1.5} />
-            <span>Flat {visitor.flatNumber}</span>
-          </div>
+          {visitor.flatNumber && (
+            <div className="flex items-center gap-1.5">
+              <MapPin className="h-3.5 w-3.5" strokeWidth={1.5} />
+              <span>Flat {visitor.flatNumber}</span>
+            </div>
+          )}
           <div className="flex items-center gap-1.5">
             <Clock className="h-3.5 w-3.5" strokeWidth={1.5} />
             <span>{visitor.timestamp}</span>

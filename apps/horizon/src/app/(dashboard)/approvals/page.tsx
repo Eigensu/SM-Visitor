@@ -1,84 +1,84 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { PageContainer } from "@/components/shared/PageContainer";
 import { VisitorCard } from "@/components/shared/VisitorCard";
 import { SSEIndicator } from "@/components/shared/SSEIndicator";
 import { GlassCard } from "@/components/shared/GlassCard";
-import { Button } from "@sm-visitor/ui";
+import { Button, Spinner } from "@sm-visitor/ui";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CheckCircle2, Clock, XCircle, Filter } from "lucide-react";
 import { toast } from "sonner";
 import { AnimatePresence } from "framer-motion";
-
-const initialVisitors = [
-  {
-    id: "1",
-    name: "Rahul Sharma",
-    phone: "+91 98765 43210",
-    purpose: "Delivery - Amazon",
-    flatNumber: "A-401",
-    status: "pending" as const,
-    timestamp: "Just now",
-  },
-  {
-    id: "2",
-    name: "Meera Singh",
-    phone: "+91 87654 32109",
-    purpose: "Guest - Family Visit",
-    flatNumber: "A-401",
-    status: "pending" as const,
-    timestamp: "5 min ago",
-  },
-  {
-    id: "3",
-    name: "Vikram Joshi",
-    phone: "+91 76543 21098",
-    purpose: "Electrician",
-    flatNumber: "A-401",
-    status: "pending" as const,
-    timestamp: "12 min ago",
-  },
-  {
-    id: "4",
-    name: "Priya Patel",
-    phone: "+91 65432 10987",
-    purpose: "Guest - Friend",
-    flatNumber: "A-401",
-    status: "approved" as const,
-    timestamp: "30 min ago",
-  },
-  {
-    id: "5",
-    name: "Unknown Caller",
-    phone: "+91 54321 09876",
-    purpose: "Not specified",
-    flatNumber: "A-401",
-    status: "rejected" as const,
-    timestamp: "1 hour ago",
-  },
-];
+import { visitsAPI } from "@/lib/api";
+import { useStore } from "@/lib/store";
 
 export default function Approvals() {
-  const [visitors, setVisitors] = useState(initialVisitors);
+  const [visitors, setVisitors] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState("pending");
+  const [isLoading, setIsLoading] = useState(true);
+  const { pendingVisits, removePendingVisit } = useStore();
 
-  const handleApprove = (id: string) => {
-    setVisitors((prev) =>
-      prev.map((v) => (v.id === id ? { ...v, status: "approved" as const } : v))
-    );
-    toast.success("Visitor approved! Gate notified.", {
-      description: "The security gate has been informed.",
-    });
+  // Fetch pending visits on mount
+  useEffect(() => {
+    const fetchPending = async () => {
+      try {
+        setIsLoading(true);
+        const pending = await visitsAPI.getPending();
+        setVisitors(pending);
+      } catch (error) {
+        console.error("Failed to fetch pending visits:", error);
+        toast.error("Failed to load visitor requests");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchPending();
+  }, []);
+
+  // Sync with SSE updates from store
+  useEffect(() => {
+    if (pendingVisits.length > 0) {
+      setVisitors((prev) => {
+        const newVisits = pendingVisits.filter((pv) => !prev.find((v) => v.id === pv.id));
+        return [...newVisits, ...prev];
+      });
+    }
+  }, [pendingVisits]);
+
+  const handleApprove = async (id: string) => {
+    try {
+      await visitsAPI.approve(id);
+
+      // Remove from local state
+      setVisitors((prev) => prev.filter((v) => v.id !== id));
+      removePendingVisit(id);
+
+      toast.success("Visitor approved! Gate notified.", {
+        description: "The security gate has been informed.",
+      });
+    } catch (error: any) {
+      console.error("Failed to approve visitor:", error);
+      toast.error(error.response?.data?.detail || "Failed to approve visitor");
+    }
   };
 
-  const handleReject = (id: string) => {
-    setVisitors((prev) =>
-      prev.map((v) => (v.id === id ? { ...v, status: "rejected" as const } : v))
-    );
-    toast.error("Visitor rejected", {
-      description: "The visitor has been denied entry.",
-    });
+  const handleReject = async (id: string) => {
+    try {
+      await visitsAPI.reject(id);
+
+      // Remove from local state
+      setVisitors((prev) => prev.filter((v) => v.id !== id));
+      removePendingVisit(id);
+
+      toast.error("Visitor rejected", {
+        description: "The visitor has been denied entry.",
+      });
+    } catch (error: any) {
+      console.error("Failed to reject visitor:", error);
+      toast.error(error.response?.data?.detail || "Failed to reject visitor");
+    }
   };
 
   const filteredVisitors = visitors.filter((v) => {
@@ -96,76 +96,102 @@ export default function Approvals() {
       description="Manage visitor entry requests in real-time"
       action={<SSEIndicator connected={true} />}
     >
-      {/* Stats Row */}
-      <div className="mb-6 grid grid-cols-3 gap-4">
-        <GlassCard className="py-4 text-center">
-          <div className="mb-1 flex items-center justify-center gap-2 text-pending">
-            <Clock className="h-4 w-4" strokeWidth={1.5} />
-            <span className="text-2xl font-semibold">{pendingCount}</span>
-          </div>
-          <p className="text-xs text-muted-foreground">Pending</p>
-        </GlassCard>
-        <GlassCard className="py-4 text-center">
-          <div className="mb-1 flex items-center justify-center gap-2 text-success">
-            <CheckCircle2 className="h-4 w-4" strokeWidth={1.5} />
-            <span className="text-2xl font-semibold">{approvedCount}</span>
-          </div>
-          <p className="text-xs text-muted-foreground">Approved</p>
-        </GlassCard>
-        <GlassCard className="py-4 text-center">
-          <div className="mb-1 flex items-center justify-center gap-2 text-destructive">
-            <XCircle className="h-4 w-4" strokeWidth={1.5} />
-            <span className="text-2xl font-semibold">{rejectedCount}</span>
-          </div>
-          <p className="text-xs text-muted-foreground">Rejected</p>
-        </GlassCard>
-      </div>
-
-      {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <div className="mb-4 flex items-center justify-between gap-4">
-          <TabsList className="bg-muted/50 p-1">
-            <TabsTrigger value="pending" className="data-[state=active]:bg-card">
-              Pending
-            </TabsTrigger>
-            <TabsTrigger value="approved" className="data-[state=active]:bg-card">
-              Approved
-            </TabsTrigger>
-            <TabsTrigger value="rejected" className="data-[state=active]:bg-card">
-              Rejected
-            </TabsTrigger>
-            <TabsTrigger value="all" className="data-[state=active]:bg-card">
-              All
-            </TabsTrigger>
-          </TabsList>
-          <Button variant="outline" size="sm" className="hidden sm:flex">
-            <Filter className="mr-2 h-4 w-4" strokeWidth={1.5} />
-            Filter
-          </Button>
+      {isLoading ? (
+        <div className="flex items-center justify-center py-12">
+          <Spinner size="lg" />
         </div>
-
-        <TabsContent value={activeTab} className="mt-0">
-          <div className="space-y-3">
-            <AnimatePresence mode="popLayout">
-              {filteredVisitors.length > 0 ? (
-                filteredVisitors.map((visitor) => (
-                  <VisitorCard
-                    key={visitor.id}
-                    visitor={visitor}
-                    showActions={visitor.status === "pending"}
-                    onApprove={() => handleApprove(visitor.id)}
-                    onReject={() => handleReject(visitor.id)}
-                  />
-                ))
-              ) : (
-                <GlassCard className="py-12 text-center">
-                  <p className="text-muted-foreground">No {activeTab} visitors</p>
-                </GlassCard>
-              )}
-            </AnimatePresence>
+      ) : (
+        <>
+          {/* Stats Row */}
+          <div className="mb-6 grid grid-cols-3 gap-4">
+            <GlassCard className="py-4 text-center">
+              <div className="mb-1 flex items-center justify-center gap-2 text-pending">
+                <Clock className="h-4 w-4" strokeWidth={1.5} />
+                <span className="text-2xl font-semibold">{pendingCount}</span>
+              </div>
+              <p className="text-xs text-muted-foreground">Pending</p>
+            </GlassCard>
+            <GlassCard className="py-4 text-center">
+              <div className="mb-1 flex items-center justify-center gap-2 text-success">
+                <CheckCircle2 className="h-4 w-4" strokeWidth={1.5} />
+                <span className="text-2xl font-semibold">{approvedCount}</span>
+              </div>
+              <p className="text-xs text-muted-foreground">Approved</p>
+            </GlassCard>
+            <GlassCard className="py-4 text-center">
+              <div className="mb-1 flex items-center justify-center gap-2 text-destructive">
+                <XCircle className="h-4 w-4" strokeWidth={1.5} />
+                <span className="text-2xl font-semibold">{rejectedCount}</span>
+              </div>
+              <p className="text-xs text-muted-foreground">Rejected</p>
+            </GlassCard>
           </div>
-        </TabsContent>
-      </Tabs>
+
+          {/* Tabs */}
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <div className="mb-4 flex items-center justify-between gap-4">
+              <TabsList className="bg-muted/50 p-1">
+                <TabsTrigger value="pending" className="data-[state=active]:bg-card">
+                  Pending
+                </TabsTrigger>
+                <TabsTrigger value="approved" className="data-[state=active]:bg-card">
+                  Approved
+                </TabsTrigger>
+                <TabsTrigger value="rejected" className="data-[state=active]:bg-card">
+                  Rejected
+                </TabsTrigger>
+                <TabsTrigger value="all" className="data-[state=active]:bg-card">
+                  All
+                </TabsTrigger>
+              </TabsList>
+              <Button variant="outline" size="sm" className="hidden sm:flex">
+                <Filter className="mr-2 h-4 w-4" strokeWidth={1.5} />
+                Filter
+              </Button>
+            </div>
+
+            <TabsContent value={activeTab} className="mt-0">
+              <div className="space-y-3">
+                <AnimatePresence mode="popLayout">
+                  {filteredVisitors.length > 0 ? (
+                    filteredVisitors.map((visitor) => (
+                      <VisitorCard
+                        key={visitor.id}
+                        visitor={{
+                          id: visitor.id,
+                          name: visitor.name_snapshot,
+                          phone: visitor.phone_snapshot || "N/A",
+                          purpose: visitor.purpose,
+                          // flatNumber omitted as it's redundant for the owner
+                          status: visitor.status,
+                          timestamp: new Date(
+                            visitor.created_at.endsWith("Z")
+                              ? visitor.created_at
+                              : visitor.created_at + "Z"
+                          ).toLocaleDateString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                            day: "numeric",
+                            month: "short",
+                          }),
+                          photo: visitor.photo_snapshot_url,
+                        }}
+                        showActions={visitor.status === "pending"}
+                        onApprove={() => handleApprove(visitor.id)}
+                        onReject={() => handleReject(visitor.id)}
+                      />
+                    ))
+                  ) : (
+                    <GlassCard className="py-12 text-center">
+                      <p className="text-muted-foreground">No {activeTab} visitors</p>
+                    </GlassCard>
+                  )}
+                </AnimatePresence>
+              </div>
+            </TabsContent>
+          </Tabs>
+        </>
+      )}
     </PageContainer>
   );
 }

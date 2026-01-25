@@ -15,7 +15,7 @@ import { GlassCard } from "@/components/GlassCard";
 import toast from "react-hot-toast";
 
 interface Visit {
-  _id: string;
+  id: string;
   entry_time?: string;
   exit_time?: string;
   status: string;
@@ -107,27 +107,44 @@ export default function DashboardPage() {
       {/* Main Content */}
       <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         {/* Pending Approvals Badge */}
-        {pendingVisits.length > 0 && (
-          <div className="mb-6 rounded-lg border border-yellow-200 bg-yellow-50 p-4">
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <svg className="h-5 w-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
-                  <path
-                    fillRule="evenodd"
-                    d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
-                    clipRule="evenodd"
-                  />
-                </svg>
-              </div>
-              <div className="ml-3">
-                <p className="text-sm font-medium text-yellow-800">
-                  {pendingVisits.length} visitor{pendingVisits.length !== 1 ? "s" : ""} waiting for
-                  approval
-                </p>
-              </div>
+        {/* Pending Approvals Badge - Always visible but different style if empty */}
+        <div
+          onClick={() => router.push("/history?status=pending")}
+          className={`mb-6 cursor-pointer rounded-lg border p-4 transition-colors ${
+            pendingVisits.length > 0
+              ? "border-yellow-200 bg-yellow-50 hover:bg-yellow-100"
+              : "border-gray-200 bg-gray-50 hover:bg-gray-100"
+          }`}
+        >
+          <div className="flex items-center">
+            <div className="flex-shrink-0">
+              <svg
+                className={`h-5 w-5 ${pendingVisits.length > 0 ? "text-yellow-400" : "text-gray-400"}`}
+                fill="currentColor"
+                viewBox="0 0 20 20"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                  clipRule="evenodd"
+                />
+              </svg>
+            </div>
+            <div className="ml-3">
+              <p
+                className={`text-sm font-medium ${pendingVisits.length > 0 ? "text-yellow-800" : "text-gray-600"}`}
+              >
+                {pendingVisits.length} visitor{pendingVisits.length !== 1 ? "s" : ""} waiting for
+                approval
+              </p>
+              <p
+                className={`text-xs mt-1 ${pendingVisits.length > 0 ? "text-yellow-600" : "text-gray-500"}`}
+              >
+                Click to review and manage
+              </p>
             </div>
           </div>
-        )}
+        </div>
 
         {/* Action Cards */}
         <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
@@ -146,11 +163,19 @@ export default function DashboardPage() {
 
         {/* Quick Stats */}
         <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <StatCard title="Pending Approvals" value={pendingVisits.length} icon={Clock} />
+          <StatCard
+            title="Pending Approvals"
+            value={
+              isLoadingStats ? "..." : todayVisits.filter((v) => v.status === "pending").length
+            }
+            icon={Clock}
+            onClick={() => router.push("/history?status=pending")}
+          />
           <StatCard
             title="Today's Visits"
             value={isLoadingStats ? "..." : todayVisits.length}
             icon={CheckCircle2}
+            onClick={() => router.push("/history")}
           />
           <StatCard
             title="Active Now"
@@ -160,6 +185,7 @@ export default function DashboardPage() {
                 : todayVisits.filter((v) => v.entry_time && !v.exit_time).length
             }
             icon={Users}
+            onClick={() => router.push("/history?status=active")} // Note: History page needs to handle 'active' status or we filter manually
           />
         </div>
       </main>
