@@ -13,6 +13,8 @@ import { Input } from "@sm-visitor/ui";
 import { Card } from "@sm-visitor/ui";
 import { Modal } from "@sm-visitor/ui";
 import { QRDisplay } from "@/components/QRDisplay";
+import { DaySelector } from "@/components/shared/DaySelector";
+import { Switch } from "@/components/ui/switch";
 import { useDropzone } from "react-dropzone";
 import toast from "react-hot-toast";
 import { ArrowLeft, Upload } from "lucide-react";
@@ -26,6 +28,13 @@ export default function NewVisitorPage() {
     phone: "",
     default_purpose: "",
     photo_id: "",
+    category: "other",
+    schedule_enabled: false,
+    schedule_days: [] as number[],
+    schedule_start_time: "08:00",
+    schedule_end_time: "18:00",
+    auto_approval_enabled: true,
+    auto_approval_rule: "always",
   });
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
@@ -155,6 +164,98 @@ export default function NewVisitorPage() {
                 error={errors.default_purpose}
                 required
               />
+
+              {/* Category Selection */}
+              <div>
+                <label className="mb-2 block text-sm font-medium text-gray-700">
+                  Category <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={formData.category}
+                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                  className="w-full rounded-lg border border-gray-300 px-4 py-2 focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-200"
+                  required
+                >
+                  <option value="maid">🧹 Maid</option>
+                  <option value="cook">👨‍🍳 Cook</option>
+                  <option value="driver">🚗 Driver</option>
+                  <option value="delivery">📦 Delivery</option>
+                  <option value="other">📋 Other</option>
+                </select>
+              </div>
+
+              {/* Schedule Configuration */}
+              <div className="space-y-4 rounded-lg border border-gray-200 p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="text-sm font-medium text-gray-700">
+                      Schedule-based Access
+                    </label>
+                    <p className="text-xs text-gray-500">
+                      Restrict entry to specific days and times
+                    </p>
+                  </div>
+                  <Switch
+                    checked={formData.schedule_enabled}
+                    onCheckedChange={(checked) =>
+                      setFormData({ ...formData, schedule_enabled: checked })
+                    }
+                  />
+                </div>
+
+                {formData.schedule_enabled && (
+                  <div className="space-y-4 pt-4">
+                    <DaySelector
+                      selectedDays={formData.schedule_days}
+                      onChange={(days) => setFormData({ ...formData, schedule_days: days })}
+                    />
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <Input
+                        label="Start Time"
+                        type="time"
+                        value={formData.schedule_start_time}
+                        onChange={(e) =>
+                          setFormData({ ...formData, schedule_start_time: e.target.value })
+                        }
+                      />
+                      <Input
+                        label="End Time"
+                        type="time"
+                        value={formData.schedule_end_time}
+                        onChange={(e) =>
+                          setFormData({ ...formData, schedule_end_time: e.target.value })
+                        }
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Auto-approval Rule */}
+              <div>
+                <label className="mb-2 block text-sm font-medium text-gray-700">
+                  Auto-approval Rule <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={formData.auto_approval_rule}
+                  onChange={(e) => setFormData({ ...formData, auto_approval_rule: e.target.value })}
+                  className="w-full rounded-lg border border-gray-300 px-4 py-2 focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-200"
+                  required
+                >
+                  <option value="always">✅ Always auto-approve</option>
+                  <option value="within_schedule">📅 Auto-approve if within schedule</option>
+                  <option value="notify_only">🔔 Notify but don't block</option>
+                </select>
+                <p className="mt-1 text-xs text-gray-500">
+                  {formData.auto_approval_rule === "always" &&
+                    "Visitor will be automatically approved at any time"}
+                  {formData.auto_approval_rule === "within_schedule" &&
+                    "Visitor will be auto-approved only during scheduled times"}
+                  {formData.auto_approval_rule === "notify_only" &&
+                    "Visitor will always be allowed, but you'll be notified"}
+                </p>
+              </div>
 
               {/* Photo Upload */}
               <div>

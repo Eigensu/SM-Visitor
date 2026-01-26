@@ -110,16 +110,40 @@ async def scan_qr_code(
                 error="Visitor has been deactivated"
             )
         
+        # Import schedule validation function from visitors router
+        from routers.visitors import is_within_schedule
+        
+        # Check schedule
+        schedule = visitor.get("schedule", {})
+        within_schedule = is_within_schedule(schedule)
+        
+        # Determine auto-approval based on rules
+        auto_approval_config = visitor.get("auto_approval", {})
+        auto_approval_rule = auto_approval_config.get("rule", "always")
+        
+        if auto_approval_rule == "always":
+            auto_approve = True
+        elif auto_approval_rule == "within_schedule":
+            auto_approve = within_schedule
+        elif auto_approval_rule == "notify_only":
+            auto_approve = True  # Always approve but will notify owner
+        else:
+            auto_approve = True  # Default to auto-approve
+        
         return QRScanResponse(
             valid=True,
-            auto_approve=True,
+            auto_approve=auto_approve,
             visitor_data={
                 "visitor_id": str(visitor["_id"]),
                 "name": visitor["name"],
                 "phone": visitor.get("phone"),
                 "photo_url": visitor["photo_url"],
                 "purpose": visitor.get("default_purpose", "Visit"),
-                "visitor_type": "regular"
+                "visitor_type": "regular",
+                "category": visitor.get("category", "other"),
+                "category_label": visitor.get("category_label", "Other"),
+                "within_schedule": within_schedule,
+                "auto_approval_rule": auto_approval_rule
             }
         )
     
@@ -719,6 +743,84 @@ async def delete_visit(
 
 # ===== GET ENDPOINTS FOR HORIZON DASHBOARD =====
 
+@router.get("/notifications", response_model=List[dict])
+async def get_notifications(
+    current_user: dict = Depends(get_current_owner),
+    db = Depends(get_database)
+):
+    """
+    Get notifications for the current owner based on recent activity
+    """
+    try:
+        visits_collection = get_visits_collection()
+        
+        # Get owner's flat_id
+        user_id = current_user.get("user_id")
+        resident = await db.residents.find_one({"_id": ObjectId(user_id)})
+        if not resident:
+            return []
+            
+        flat_id = resident.get("flat_id")
+        if not flat_id:
+            return []
+            
+        # Fetch recent visits (last 50)
+        cursor = visits_collection.find({
+            "owner_id": flat_id,
+            "status": {"$in": ["approved", "rejected", "auto_approved"]}
+        }).sort("updated_at", -1).limit(50)
+        
+        visits = await cursor.to_list(length=50)
+        
+        notifications = []
+        for visit in visits:
+            # Determine type and message based on status
+            notif_type = "general"
+            title = "Visit Update"
+            message = f"Update for {visit['name_snapshot']}"
+            
+            if visit["status"] == "approved":
+                notif_type = "approval"
+                title = "Visitor Approved"
+                message = f"{visit['name_snapshot']} has been approved for entry."
+            elif visit["status"] == "rejected":
+                notif_type = "rejection"
+                title = "Visitor Rejected"
+                message = f"Entry denied for {visit['name_snapshot']}."
+            elif visit["status"] == "auto_approved":
+                notif_type = "qr"
+                title = "QR Code Used"
+                message = f"{visit['name_snapshot']} entered using QR code."
+                
+            # Calculate relative time
+            updated_at = visit.get("updated_at", visit["created_at"])
+            diff = datetime.utcnow() - updated_at
+            
+            if diff.days > 0:
+                timestamp = f"{diff.days}d ago"
+            elif diff.seconds >= 3600:
+                timestamp = f"{diff.seconds // 3600}h ago"
+            elif diff.seconds >= 60:
+                timestamp = f"{diff.seconds // 60}m ago"
+            else:
+                timestamp = "Just now"
+                
+            notifications.append({
+                "id": str(visit["_id"]),
+                "type": notif_type,
+                "title": title,
+                "message": message,
+                "timestamp": timestamp,
+                "read": True # For now, mark all as read since we don't track read status
+            })
+            
+        return notifications
+        
+    except Exception as e:
+        print(f"[ERROR] Failed to get notifications: {str(e)}")
+        return []
+
+
 @router.get("/pending", response_model=List[VisitResponse])
 async def get_pending_visits(
     current_user: dict = Depends(get_current_owner),
@@ -795,6 +897,7 @@ async def get_pending_visits(
         )
 
 
+
 async def get_owner_flat_id(user_id: str, db) -> str:
     """Helper to get flat_id for an owner"""
     resident = await db.residents.find_one({"_id": ObjectId(user_id)})
@@ -804,6 +907,20 @@ async def get_owner_flat_id(user_id: str, db) -> str:
             detail="Owner not found or missing flat_id"
         )
     return resident["flat_id"]
+
+
+async def enrich_visit_with_guard_info(visit: dict, db) -> dict:
+    """Add guard name to visit data for timeline view"""
+    if visit.get("guard_id"):
+        try:
+            guard = await db.users.find_one({"_id": ObjectId(visit["guard_id"])})
+            visit["guard_name"] = guard.get("name", "Unknown Guard") if guard else "Unknown Guard"
+        except Exception:
+            visit["guard_name"] = "Unknown Guard"
+    else:
+        visit["guard_name"] = "Unknown Guard"
+    return visit
+
 
 
 @router.get("/pending/count")
@@ -999,32 +1116,59 @@ async def get_weekly_stats(
     return {"weekly_stats": weekly_data}
 
 
-@router.get("/notifications")
-async def get_notifications(
-    current_user: dict = Depends(get_current_owner)
+@router.get("/{visit_id}")
+async def get_visit_details(
+    visit_id: str,
+    current_user: dict = Depends(get_current_owner),
+    db = Depends(get_database)
 ):
     """
-    Get unread notifications for the current owner
-    Used by Horizon notifications page
+    Get detailed information for a single visit including guard name
+    Used by Horizon visitor timeline view
     """
     visits_collection = get_visits_collection()
+    flat_id = await get_owner_flat_id(current_user["user_id"], db)
     
-    # Get recent pending visits as notifications
-    pending_visits = await visits_collection.find({
-        "owner_id": str(current_user["user_id"]),
-        "status": "pending"
-    }).sort("created_at", -1).limit(10).to_list(length=10)
+    try:
+        visit = await visits_collection.find_one({"_id": ObjectId(visit_id)})
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid visit ID"
+        )
     
-    notifications = [
-        {
-            "id": str(visit["_id"]),
-            "type": "new_visit",
-            "title": f"New visitor: {visit['name_snapshot']}",
-            "message": f"Purpose: {visit['purpose']}",
-            "timestamp": visit["created_at"],
-            "read": False
-        }
-        for visit in pending_visits
-    ]
+    if not visit:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Visit not found"
+        )
     
-    return {"notifications": notifications}
+    # Verify ownership
+    if visit["owner_id"] != flat_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied"
+        )
+    
+    # Enrich with guard name
+    visit = await enrich_visit_with_guard_info(visit, db)
+    
+    return {
+        "id": str(visit["_id"]),
+        "visitor_id": visit.get("visitor_id"),
+        "name_snapshot": visit["name_snapshot"],
+        "phone_snapshot": visit.get("phone_snapshot"),
+        "photo_snapshot_url": visit["photo_snapshot_url"],
+        "purpose": visit["purpose"],
+        "owner_id": visit["owner_id"],
+        "guard_id": visit["guard_id"],
+        "guard_name": visit.get("guard_name", "Unknown Guard"),
+        "entry_time": visit.get("entry_time").isoformat() if visit.get("entry_time") else None,
+        "exit_time": visit.get("exit_time").isoformat() if visit.get("exit_time") else None,
+        "status": visit["status"],
+        "qr_token": visit.get("qr_token"),
+        "created_at": visit["created_at"].isoformat(),
+        "updated_at": visit.get("updated_at").isoformat() if visit.get("updated_at") else visit["created_at"].isoformat()
+    }
+
+

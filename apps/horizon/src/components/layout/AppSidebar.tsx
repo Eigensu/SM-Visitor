@@ -7,6 +7,7 @@ import {
   Settings,
   LogOut,
   Home,
+  UserCheck,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -17,6 +18,7 @@ const navItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
   { icon: CheckCircle2, label: "Approvals", path: "/approvals" },
   { icon: Users, label: "Visitors", path: "/visitors" },
+  { icon: UserCheck, label: "Regular Visitors", path: "/regular-visitors" },
   { icon: QrCode, label: "QR Generator", path: "/qr-generator" },
   { icon: Bell, label: "Notifications", path: "/notifications" },
 ];

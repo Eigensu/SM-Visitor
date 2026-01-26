@@ -19,11 +19,85 @@ from models import VisitorModel
 router = APIRouter(prefix="/visitors", tags=["Visitors"])
 
 
+# Helper Functions
+def get_category_label(category: str) -> str:
+    """Get display label for visitor category"""
+    labels = {
+        "maid": "Maid",
+        "cook": "Cook",
+        "driver": "Driver",
+        "delivery": "Delivery",
+        "other": "Other"
+    }
+    return labels.get(category, "Other")
+
+
+def get_auto_approval_label(rule: str) -> str:
+    """Get display label for auto-approval rule"""
+    labels = {
+        "always": "Always auto-approve",
+        "within_schedule": "Auto-approve if within schedule",
+        "notify_only": "Notify but don't block"
+    }
+    return labels.get(rule, "Always auto-approve")
+
+
+def is_within_schedule(schedule: dict) -> bool:
+    """Check if current time is within visitor's schedule"""
+    if not schedule.get("enabled"):
+        return True  # No schedule = always allowed
+    
+    try:
+        import pytz
+        from datetime import datetime
+        
+        # Get current day and time in IST
+        ist = pytz.timezone("Asia/Kolkata")
+        now = datetime.now(ist)
+        current_day = now.isoweekday()  # 1=Monday, 7=Sunday
+        current_time = now.strftime("%H:%M")
+        
+        # Check day of week
+        days_of_week = schedule.get("days_of_week", [])
+        if days_of_week and current_day not in days_of_week:
+            return False
+        
+        # Check time windows
+        time_windows = schedule.get("time_windows", [])
+        if not time_windows:
+            return True  # No time restriction
+        
+        for window in time_windows:
+            start_time = window.get("start_time", "00:00")
+            end_time = window.get("end_time", "23:59")
+            if start_time <= current_time <= end_time:
+                return True
+        
+        return False
+    except Exception as e:
+        print(f"[ERROR] Schedule validation failed: {str(e)}")
+        return True  # Default to allowing if validation fails
+
+
+
 # Request/Response Models
 class CreateRegularVisitorRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     phone: Optional[str] = Field(None, min_length=10, max_length=15)
     default_purpose: Optional[str] = Field(None, max_length=200)
+    
+    # Category
+    category: str = Field(default="other", regex="^(maid|cook|driver|delivery|other)$")
+    
+    # Schedule fields
+    schedule_enabled: bool = False
+    schedule_days: Optional[List[int]] = Field(None, description="Days of week (1=Mon, 7=Sun)")
+    schedule_start_time: Optional[str] = Field(None, regex="^([0-1][0-9]|2[0-3]):[0-5][0-9]$")
+    schedule_end_time: Optional[str] = Field(None, regex="^([0-1][0-9]|2[0-3]):[0-5][0-9]$")
+    
+    # Auto-approval fields
+    auto_approval_enabled: bool = True
+    auto_approval_rule: str = Field(default="always", regex="^(always|within_schedule|notify_only)$")
 
 
 class UpdateVisitorRequest(BaseModel):
@@ -91,6 +165,29 @@ async def create_regular_visitor(
         "visitor_type": "regular",
         "created_by": current_user["user_id"],
         "default_purpose": request.default_purpose,
+        
+        # Category
+        "category": request.category,
+        "category_label": get_category_label(request.category),
+        
+        # Schedule
+        "schedule": {
+            "enabled": request.schedule_enabled,
+            "days_of_week": request.schedule_days or [],
+            "time_windows": [{
+                "start_time": request.schedule_start_time,
+                "end_time": request.schedule_end_time
+            }] if request.schedule_enabled and request.schedule_start_time and request.schedule_end_time else [],
+            "timezone": "Asia/Kolkata"
+        },
+        
+        # Auto-approval
+        "auto_approval": {
+            "enabled": request.auto_approval_enabled,
+            "rule": request.auto_approval_rule,
+            "rule_label": get_auto_approval_label(request.auto_approval_rule)
+        },
+        
         "is_active": True,
         "created_at": datetime.utcnow(),
     }

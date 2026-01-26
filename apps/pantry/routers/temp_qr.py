@@ -23,7 +23,7 @@ class GenerateTemporaryQRRequest(BaseModel):
 
 
 class TemporaryQRResponse(BaseModel):
-    _id: str
+    id: str
     owner_id: str
     guest_name: Optional[str]
     token: str
@@ -100,7 +100,7 @@ async def generate_temporary_qr(
     })
     
     return TemporaryQRResponse(
-        _id=temp_qr_id,
+        id=temp_qr_id,
         owner_id=current_user["user_id"],
         guest_name=request.guest_name,
         token=qr_token,
@@ -230,7 +230,7 @@ async def list_temporary_qrs(
     
     return [
         {
-            "_id": str(qr["_id"]),
+            "id": str(qr["_id"]),
             "guest_name": qr.get("guest_name"),
             "expires_at": qr["expires_at"],
             "used_at": qr.get("used_at"),
@@ -257,14 +257,14 @@ async def get_active_qr_codes(
     now = datetime.utcnow()
     
     qr_codes = await temp_qr_collection.find({
-        "owner_id": str(current_user["_id"]),
+        "owner_id": str(current_user["user_id"]),
         "expires_at": {"$gt": now},
         "used_at": None
     }).sort("created_at", -1).to_list(length=100)
     
     return [
         TemporaryQRResponse(
-            _id=str(qr["_id"]),
+            id=str(qr["_id"]),
             owner_id=qr["owner_id"],
             guest_name=qr.get("guest_name"),
             token=qr["token"],

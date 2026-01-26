@@ -6,7 +6,7 @@ import { PageContainer } from "@/components/shared/PageContainer";
 import { StatCard } from "@/components/shared/StatCard";
 import { VisitorCard } from "@/components/shared/VisitorCard";
 import { GlassCard } from "@/components/shared/GlassCard";
-import { Users, CheckCircle2, Clock, QrCode, TrendingUp, Calendar } from "lucide-react";
+import { Users, CheckCircle2, Clock, QrCode, Calendar } from "lucide-react";
 import { Button, Spinner } from "@sm-visitor/ui";
 import { useStore } from "@/lib/store";
 import { visitsAPI } from "@/lib/api";
@@ -25,7 +25,6 @@ export default function Dashboard() {
     activeQrCount: 0,
   });
   const [recentVisitors, setRecentVisitors] = useState<any[]>([]);
-  const [weeklyStats, setWeeklyStats] = useState<any[]>([]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -33,15 +32,13 @@ export default function Dashboard() {
         setIsLoading(true);
 
         // Fetch all dashboard data in parallel
-        const [dashboardStats, recent, weekly] = await Promise.all([
+        const [dashboardStats, recent] = await Promise.all([
           visitsAPI.getDashboardStats(),
           visitsAPI.getRecentActivity(5),
-          visitsAPI.getWeeklyStats(),
         ]);
 
         setStats(dashboardStats);
         setRecentVisitors(recent);
-        setWeeklyStats(weekly.weekly_stats || []);
       } catch (error) {
         console.error("Failed to fetch dashboard data:", error);
         toast.error("Failed to load dashboard data");
@@ -54,9 +51,6 @@ export default function Dashboard() {
       fetchData();
     }
   }, [user]);
-
-  // Calculate max value for chart scaling
-  const maxWeeklyCount = Math.max(...weeklyStats.map((d) => d.count), 10);
 
   const statCards = [
     {
@@ -148,14 +142,12 @@ export default function Dashboard() {
                       await visitsAPI.approve(visitor.id || visitor._id);
                       toast.success("Visit approved");
                       // Refresh data
-                      const [dashboardStats, recent, weekly] = await Promise.all([
+                      const [dashboardStats, recent] = await Promise.all([
                         visitsAPI.getDashboardStats(),
                         visitsAPI.getRecentActivity(5),
-                        visitsAPI.getWeeklyStats(),
                       ]);
                       setStats(dashboardStats);
                       setRecentVisitors(recent);
-                      setWeeklyStats(weekly.weekly_stats || []);
                     } catch (error) {
                       console.error("Failed to approve:", error);
                       toast.error("Failed to approve visit");
@@ -167,14 +159,12 @@ export default function Dashboard() {
                       await visitsAPI.reject(visitor.id || visitor._id);
                       toast.success("Visit rejected");
                       // Refresh data
-                      const [dashboardStats, recent, weekly] = await Promise.all([
+                      const [dashboardStats, recent] = await Promise.all([
                         visitsAPI.getDashboardStats(),
                         visitsAPI.getRecentActivity(5),
-                        visitsAPI.getWeeklyStats(),
                       ]);
                       setStats(dashboardStats);
                       setRecentVisitors(recent);
-                      setWeeklyStats(weekly.weekly_stats || []);
                     } catch (error) {
                       console.error("Failed to reject:", error);
                       toast.error("Failed to reject visit");
@@ -227,38 +217,6 @@ export default function Dashboard() {
                 <Calendar className="h-5 w-5 text-primary" strokeWidth={1.5} />
                 <span className="text-xs">Schedule</span>
               </Button>
-            </div>
-          </GlassCard>
-
-          {/* Weekly Activity */}
-          <GlassCard className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="font-semibold text-foreground">This Week</h3>
-              <TrendingUp className="h-4 w-4 text-success" strokeWidth={1.5} />
-            </div>
-            <div className="space-y-3">
-              {isLoading ? (
-                <div className="flex h-40 items-center justify-center">
-                  <Spinner />
-                </div>
-              ) : weeklyStats.length > 0 ? (
-                weeklyStats.map((item) => (
-                  <div key={item.day} className="flex items-center gap-3">
-                    <span className="w-8 text-xs text-muted-foreground">{item.day}</span>
-                    <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
-                      <div
-                        className="ocean-gradient h-full rounded-full transition-all duration-500"
-                        style={{ width: `${(item.count / maxWeeklyCount) * 100}%` }}
-                      />
-                    </div>
-                    <span className="w-6 text-right text-xs text-muted-foreground">
-                      {item.count}
-                    </span>
-                  </div>
-                ))
-              ) : (
-                <div className="text-center text-sm text-muted-foreground">No activity data</div>
-              )}
             </div>
           </GlassCard>
         </div>

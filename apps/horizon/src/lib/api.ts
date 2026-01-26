@@ -115,18 +115,29 @@ export const visitsAPI = {
 
   getDashboardStats: async () => {
     const response = await apiClient.get("/visits/stats/summary");
-    return response.data;
+    const data = response.data;
+    return {
+      todayCount: data.today_count,
+      pendingCount: data.pending_count,
+      approvedCount: data.approved_count,
+      activeQrCount: data.active_qr_count,
+    };
   },
 
   getWeeklyStats: async () => {
     const response = await apiClient.get("/visits/stats/weekly");
     return response.data;
   },
+
+  getVisitDetails: async (visitId: string) => {
+    const response = await apiClient.get(`/visits/${visitId}`);
+    return response.data;
+  },
 };
 
 // Regular Visitors API
 export const visitorsAPI = {
-  getRegular: async () => {
+  getRegularVisitors: async () => {
     const response = await apiClient.get("/visitors/regular");
     return response.data;
   },
@@ -141,12 +152,19 @@ export const visitorsAPI = {
     phone: string;
     photo_id: string;
     default_purpose: string;
+    category?: string;
+    schedule_enabled?: boolean;
+    schedule_days?: number[];
+    schedule_start_time?: string;
+    schedule_end_time?: string;
+    auto_approval_enabled?: boolean;
+    auto_approval_rule?: string;
   }) => {
     const response = await apiClient.post("/visitors/regular", data);
     return response.data;
   },
 
-  deleteRegular: async (visitorId: string) => {
+  deleteRegularVisitor: async (visitorId: string) => {
     const response = await apiClient.delete(`/visitors/regular/${visitorId}`);
     return response.data;
   },
@@ -156,6 +174,11 @@ export const visitorsAPI = {
 export const tempQRAPI = {
   generate: async (data: { guest_name?: string; validity_hours: number }) => {
     const response = await apiClient.post("/temp-qr/generate", data);
+    return response.data;
+  },
+
+  getActive: async () => {
+    const response = await apiClient.get("/temp-qr/active");
     return response.data;
   },
 };

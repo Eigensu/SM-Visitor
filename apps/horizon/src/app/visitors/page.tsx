@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { PageContainer } from "@/components/shared/PageContainer";
 import { GlassCard } from "@/components/shared/GlassCard";
 import { StatusBadge, StatusType } from "@/components/shared/StatusBadge";
+import { VisitorTimeline } from "@/components/shared/VisitorTimeline";
 import { Button } from "@sm-visitor/ui";
 import { Input } from "@sm-visitor/ui";
 import { Spinner } from "@sm-visitor/ui";
@@ -15,13 +16,24 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Search, Plus, User, MoreHorizontal, Calendar, Download, Check, X } from "lucide-react";
+import {
+  Search,
+  Plus,
+  User,
+  MoreHorizontal,
+  Calendar,
+  Download,
+  Check,
+  X,
+  Clock as ClockIcon,
+} from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { visitsAPI } from "@/lib/api";
 import toast from "react-hot-toast";
 
@@ -39,6 +51,9 @@ export default function Visitors() {
   const [searchQuery, setSearchQuery] = useState("");
   const [visits, setVisits] = useState<Visit[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [timelineVisitId, setTimelineVisitId] = useState<string | null>(null);
+  const [timelineData, setTimelineData] = useState<any>(null);
+  const [isLoadingTimeline, setIsLoadingTimeline] = useState(false);
 
   const fetchVisits = async () => {
     try {
@@ -98,6 +113,26 @@ export default function Visitors() {
       console.error("Failed to reject visit:", error);
       toast.error("Failed to reject visit");
     }
+  };
+
+  const handleViewTimeline = async (visitId: string) => {
+    try {
+      setTimelineVisitId(visitId);
+      setIsLoadingTimeline(true);
+      const data = await visitsAPI.getVisitDetails(visitId);
+      setTimelineData(data);
+    } catch (error) {
+      console.error("Failed to fetch timeline:", error);
+      toast.error("Failed to load timeline");
+      setTimelineVisitId(null);
+    } finally {
+      setIsLoadingTimeline(false);
+    }
+  };
+
+  const closeTimeline = () => {
+    setTimelineVisitId(null);
+    setTimelineData(null);
   };
 
   const filteredVisitors = visits.filter(
@@ -218,6 +253,10 @@ export default function Visitors() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => handleViewTimeline(visitor.id)}>
+                            <ClockIcon className="mr-2 h-4 w-4" />
+                            View Timeline
+                          </DropdownMenuItem>
                           <DropdownMenuItem>View Details</DropdownMenuItem>
                           {visitor.status !== "pending" && (
                             <DropdownMenuItem>Block Visitor</DropdownMenuItem>
@@ -290,6 +329,22 @@ export default function Visitors() {
           )}
         </>
       )}
+
+      {/* Timeline Modal */}
+      <Dialog open={timelineVisitId !== null} onOpenChange={(open) => !open && closeTimeline()}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Visitor Timeline</DialogTitle>
+          </DialogHeader>
+          {isLoadingTimeline ? (
+            <div className="flex h-60 items-center justify-center">
+              <Spinner size="lg" />
+            </div>
+          ) : timelineData ? (
+            <VisitorTimeline visit={timelineData} />
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </PageContainer>
   );
 }

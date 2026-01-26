@@ -3,53 +3,33 @@
 import { PageContainer } from "@/components/shared/PageContainer";
 import { NotificationItem } from "@/components/shared/NotificationItem";
 import { GlassCard } from "@/components/shared/GlassCard";
-import { Button } from "@sm-visitor/ui";
+import { Button, Spinner } from "@sm-visitor/ui";
 import { CheckCheck } from "lucide-react";
-
-const notifications = [
-  {
-    id: "1",
-    type: "approval" as const,
-    title: "Visitor Approved",
-    message: "Rahul Sharma has been approved for entry at the main gate.",
-    timestamp: "2 min ago",
-    read: false,
-  },
-  {
-    id: "2",
-    type: "security" as const,
-    title: "Security Alert",
-    message: "Main gate maintenance scheduled for tomorrow 10 AM - 12 PM.",
-    timestamp: "1 hour ago",
-    read: false,
-  },
-  {
-    id: "3",
-    type: "qr" as const,
-    title: "QR Code Used",
-    message: "Your temporary QR code was used for entry by Delivery Agent.",
-    timestamp: "3 hours ago",
-    read: true,
-  },
-  {
-    id: "4",
-    type: "rejection" as const,
-    title: "Visitor Rejected",
-    message: "Entry denied for Unknown Caller at the main gate.",
-    timestamp: "Yesterday",
-    read: true,
-  },
-  {
-    id: "5",
-    type: "general" as const,
-    title: "Community Meeting",
-    message: "Annual general meeting scheduled for this Sunday at the clubhouse.",
-    timestamp: "2 days ago",
-    read: true,
-  },
-];
+import { useState, useEffect } from "react";
+import { visitsAPI } from "@/lib/api";
+import toast from "react-hot-toast";
 
 export default function Notifications() {
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const fetchNotifications = async () => {
+    try {
+      setIsLoading(true);
+      const data = await visitsAPI.getNotifications();
+      setNotifications(data);
+    } catch (error) {
+      console.error("Failed to fetch notifications:", error);
+      toast.error("Failed to load notifications");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchNotifications();
+  }, []);
+
   return (
     <PageContainer
       title="Notifications"
@@ -62,7 +42,11 @@ export default function Notifications() {
       }
     >
       <div className="mx-auto max-w-2xl space-y-4">
-        {notifications.length > 0 ? (
+        {isLoading ? (
+          <div className="flex justify-center py-12">
+            <Spinner size="lg" />
+          </div>
+        ) : notifications.length > 0 ? (
           notifications.map((notification, index) => (
             <div key={notification.id} className={`animate-fade-up delay-${index * 100}`}>
               <GlassCard className="overflow-hidden p-0 transition-colors hover:bg-muted/30">
