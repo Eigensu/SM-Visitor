@@ -30,12 +30,23 @@ apiClient.interceptors.request.use(
 apiClient.interceptors.response.use(
   (response) => response,
   (error: AxiosError) => {
+    console.log("API interceptor caught error:", error.response?.status, error.config?.url);
+
     if (error.response?.status === 401) {
-      // Unauthorized - clear token and redirect to login
-      localStorage.removeItem("auth_token");
-      localStorage.removeItem("user");
-      if (typeof window !== "undefined") {
-        window.location.href = "/login";
+      // Don't redirect if this is a login attempt - let the login page handle the error
+      const isLoginAttempt = error.config?.url?.includes("/auth/login");
+      console.log("Is login attempt:", isLoginAttempt);
+
+      if (!isLoginAttempt) {
+        console.log("Redirecting to login due to 401");
+        // Unauthorized - clear token and redirect to login
+        localStorage.removeItem("auth_token");
+        localStorage.removeItem("user");
+        if (typeof window !== "undefined") {
+          window.location.href = "/login";
+        }
+      } else {
+        console.log("Skipping redirect for login attempt");
       }
     }
     return Promise.reject(error);
@@ -146,20 +157,34 @@ export const usersAPI = {
 // SSE Connection
 export const createSSEConnection = (onEvent: (event: MessageEvent) => void) => {
   const token = localStorage.getItem("auth_token");
-  if (!token || token === "undefined") return null;
+  if (!token || token === "undefined") {
+    console.log("No auth token available for SSE connection");
+    return null;
+  }
 
-  const eventSource = new EventSource(`${API_URL}/events/stream?token=${token}`, {
-    withCredentials: false,
-  });
+  console.log("Creating SSE connection...");
 
-  eventSource.onmessage = onEvent;
+  try {
+    const eventSource = new EventSource(`${API_URL}/events/stream?token=${token}`, {
+      withCredentials: false,
+    });
 
-  eventSource.onerror = (error) => {
-    console.error("SSE Error:", error);
-    eventSource.close();
-  };
+    eventSource.onopen = () => {
+      console.log("SSE connection established");
+    };
 
-  return eventSource;
+    eventSource.onmessage = onEvent;
+
+    eventSource.onerror = (error) => {
+      console.error("SSE connection error:", error);
+      // Don't close here - let the useSSE hook handle reconnection
+    };
+
+    return eventSource;
+  } catch (error) {
+    console.error("Failed to create SSE connection:", error);
+    return null;
+  }
 };
 
 export default apiClient;

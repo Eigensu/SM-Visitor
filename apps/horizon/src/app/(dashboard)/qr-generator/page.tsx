@@ -9,6 +9,8 @@ import { useState, useEffect } from "react";
 import { tempQRAPI } from "@/lib/api";
 import toast from "react-hot-toast";
 
+import { downloadQRCode, downloadQRFromSVG } from "@/lib/download-utils";
+
 export default function QRGenerator() {
   const [activeQR, setActiveQR] = useState<any>(null);
   const [history, setHistory] = useState<any[]>([]);
@@ -60,9 +62,35 @@ export default function QRGenerator() {
   };
 
   const handleDownload = (qrData: any) => {
-    // In a real app, we would generate an image from the QR component
-    // For now, we'll just show a toast
-    toast.success("QR Code downloaded");
+    console.log("Download QR Data:", qrData); // Debug log
+    const filename = qrData.guest_name || "Guest";
+
+    // Use the base64 image from the backend if available
+    if (qrData.qr_image_url) {
+      console.log("Using backend qr_image_url"); // Debug log
+      downloadQRCode(
+        qrData.qr_image_url,
+        filename,
+        () => toast.success("QR Code downloaded"),
+        (error) => toast.error(error)
+      );
+      return;
+    }
+
+    // Fallback: Generate from QR component
+    console.log("Fallback to SVG conversion"); // Debug log
+    const qrElement = document.querySelector('[data-testid="qr-code"]') as SVGElement;
+    if (!qrElement) {
+      toast.error("QR code not found");
+      return;
+    }
+
+    downloadQRFromSVG(
+      qrElement,
+      filename,
+      () => toast.success("QR Code downloaded"),
+      (error) => toast.error(error)
+    );
   };
 
   const handleShare = async (qrData: any) => {

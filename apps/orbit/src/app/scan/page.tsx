@@ -4,7 +4,7 @@
  */
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { QRScanner } from "@/components/QRScanner";
 import { VisitorPreview } from "@/components/VisitorPreview";
@@ -14,13 +14,14 @@ import { visitsAPI } from "@/lib/api";
 import toast from "react-hot-toast";
 import { ArrowLeft } from "lucide-react";
 
-type ScanState = "scanning" | "preview" | "submitting";
+type ScanState = "scanning" | "preview" | "submitting" | "error";
 
 export default function ScanPage() {
   const router = useRouter();
   const [scanState, setScanState] = useState<ScanState>("scanning");
   const [visitorData, setVisitorData] = useState<any>(null);
   const [qrToken, setQRToken] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const handleScanSuccess = async (decodedText: string) => {
     try {
@@ -33,10 +34,31 @@ export default function ScanPage() {
         return;
       }
 
+      // Prevent duplicate scans of the same QR token (not the full text)
+      if (qrToken === token) {
+        console.log("Duplicate QR token ignored");
+        return;
+      }
+
       // Validate QR with backend
       const response = await visitsAPI.scanQR(token);
 
       if (!response.valid) {
+        // Handle specific error cases
+        if (
+          response.error?.includes("already used") ||
+          response.error?.includes("already scanned")
+        ) {
+          setErrorMessage("This QR code has already been used");
+          setScanState("error");
+
+          toast.error("QR code already used. Check today's visits or scan a new code.", {
+            duration: 4000,
+          });
+
+          return;
+        }
+
         toast.error(response.error || "Invalid or expired QR code");
         return;
       }
@@ -45,8 +67,11 @@ export default function ScanPage() {
       setVisitorData(response.visitor_data);
       setQRToken(token);
       setScanState("preview");
+
+      toast.success("QR code validated successfully!");
     } catch (error: any) {
       console.error("QR scan error:", error);
+
       if (error.message?.includes("JSON")) {
         toast.error("Invalid QR code format");
       } else {
@@ -79,7 +104,18 @@ export default function ScanPage() {
   const handleCancel = () => {
     setVisitorData(null);
     setQRToken(null);
+    setErrorMessage(null);
     setScanState("scanning");
+  };
+
+  const handleTryAgain = () => {
+    setErrorMessage(null);
+    setQRToken(null);
+    setScanState("scanning");
+  };
+
+  const handleViewTodaysVisits = () => {
+    router.push("/dashboard");
   };
 
   const handleBack = () => {
@@ -114,7 +150,48 @@ export default function ScanPage() {
               </p>
             </div>
 
-            <QRScanner onScanSuccess={handleScanSuccess} />
+            <QRScanner onScanSuccess={handleScanSuccess} isActive={scanState === "scanning"} />
+
+            {/* Manual input fallback */}
+            <div className="border-t border-border pt-6">
+              <details className="group">
+                <summary className="cursor-pointer text-sm font-medium text-muted-foreground hover:text-foreground">
+                  Having trouble scanning? Try manual input
+                </summary>
+                <div className="mt-4 space-y-4">
+                  <div>
+                    <label
+                      htmlFor="manual-qr"
+                      className="block text-sm font-medium text-foreground mb-2"
+                    >
+                      Enter QR Code Data
+                    </label>
+                    <textarea
+                      id="manual-qr"
+                      placeholder='Paste QR code content here (e.g., {"token":"abc123"})'
+                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      rows={3}
+                      onChange={(e) => {
+                        const value = e.target.value.trim();
+                        if (value) {
+                          try {
+                            // Validate JSON format
+                            JSON.parse(value);
+                            // If valid, process it
+                            handleScanSuccess(value);
+                          } catch {
+                            // Invalid JSON, ignore for now
+                          }
+                        }
+                      }}
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    If the QR code won't scan, you can manually copy and paste its content here.
+                  </p>
+                </div>
+              </details>
+            </div>
           </div>
         )}
 
@@ -137,6 +214,44 @@ export default function ScanPage() {
           <div className="flex flex-col items-center justify-center py-12">
             <Spinner size="lg" />
             <p className="mt-4 text-lg font-medium text-gray-700">Recording entry...</p>
+          </div>
+        )}
+
+        {scanState === "error" && (
+          <div className="space-y-6">
+            <div className="rounded-lg bg-red-50 border border-red-200 p-6 text-center">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
+                <svg
+                  className="h-6 w-6 text-red-600"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                  />
+                </svg>
+              </div>
+              <h3 className="mt-4 text-lg font-semibold text-red-800">QR Code Already Used</h3>
+              <p className="mt-2 text-sm text-red-700">
+                {errorMessage || "This QR code has already been scanned and used for entry."}
+              </p>
+            </div>
+
+            <div className="flex flex-col space-y-3 sm:flex-row sm:space-y-0 sm:space-x-3">
+              <Button
+                onClick={handleViewTodaysVisits}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
+              >
+                View Today's Visits
+              </Button>
+              <Button onClick={handleTryAgain} variant="outline" className="flex-1">
+                Scan New QR Code
+              </Button>
+            </div>
           </div>
         )}
       </main>

@@ -4,37 +4,20 @@
  */
 "use client";
 
-import { useEffect } from "react";
 import { useSSE } from "@sm-visitor/hooks";
 import { useStore } from "@/lib/store";
 import { createSSEConnection } from "@/lib/api";
 import toast from "react-hot-toast";
 
 export function SSEProvider({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, updateVisitStatus, login } = useStore();
+  const { isAuthenticated, isAuthLoading, updateVisitStatus } = useStore();
 
-  // Hydrate auth state from localStorage on mount
-  useEffect(() => {
-    const token = localStorage.getItem("auth_token");
-    const userStr = localStorage.getItem("user");
-
-    if (token && userStr) {
-      try {
-        const user = JSON.parse(userStr);
-        // Only hydrate if not already authenticated
-        if (!isAuthenticated) {
-          login(user, token);
-        }
-      } catch (error) {
-        console.error("Failed to parse stored user data:", error);
-        localStorage.removeItem("auth_token");
-        localStorage.removeItem("user");
-      }
-    }
-  }, [login, isAuthenticated]);
+  // Check if SSE is enabled (can be disabled via env var for development)
+  const sseEnabled = process.env.NEXT_PUBLIC_SSE_ENABLED !== "false";
 
   useSSE({
-    isAuthenticated,
+    // Only connect when auth is fully loaded, user is authenticated, and SSE is enabled
+    isAuthenticated: isAuthenticated && !isAuthLoading && sseEnabled,
     createConnection: createSSEConnection,
     onEvent: (data) => {
       switch (data.type) {

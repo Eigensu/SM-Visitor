@@ -31,7 +31,9 @@ apiClient.interceptors.response.use(
   (response) => response,
   (error: AxiosError) => {
     console.error("API Error Interceptor:", error.message, error.response?.status);
-    if (error.response?.status === 401) {
+
+    // Only redirect to login for 401 errors that are NOT from the login endpoint
+    if (error.response?.status === 401 && !error.config?.url?.includes("/auth/login")) {
       localStorage.removeItem("auth_token");
       localStorage.removeItem("user");
       if (typeof window !== "undefined") {

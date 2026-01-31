@@ -48,7 +48,7 @@ class VisitResponse(BaseModel):
     visitor_id: Optional[str]
     name_snapshot: str
     phone_snapshot: Optional[str]
-    photo_snapshot_url: str
+    photo_snapshot_url: Optional[str]  # Made optional to handle temp QR codes
     purpose: str
     owner_id: str
     guard_id: str
