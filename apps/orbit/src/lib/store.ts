@@ -31,6 +31,7 @@ interface AppState {
   user: User | null;
   token: string | null;
   isAuthenticated: boolean;
+  isAuthLoading: boolean; // New loading state for auth initialization
 
   // Visits
   pendingVisits: Visit[];
@@ -45,6 +46,7 @@ interface AppState {
   setToken: (token: string | null) => void;
   login: (user: User, token: string) => void;
   logout: () => void;
+  setAuthLoading: (loading: boolean) => void;
   setPendingVisits: (visits: Visit[]) => void;
   setTodayVisits: (visits: Visit[]) => void;
   addPendingVisit: (visit: Visit) => void;
@@ -53,11 +55,12 @@ interface AppState {
   setError: (error: string | null) => void;
 }
 
-export const useStore = create<AppState>((set) => ({
+export const useStore = create<AppState>((set, get) => ({
   // Initial state
   user: null,
   token: null,
   isAuthenticated: false,
+  isAuthLoading: true, // Start with loading true
   pendingVisits: [],
   todayVisits: [],
   isLoading: false,
@@ -78,14 +81,16 @@ export const useStore = create<AppState>((set) => ({
   login: (user, token) => {
     localStorage.setItem("auth_token", token);
     localStorage.setItem("user", JSON.stringify(user));
-    set({ user, token, isAuthenticated: true });
+    set({ user, token, isAuthenticated: true, isAuthLoading: false });
   },
 
   logout: () => {
     localStorage.removeItem("auth_token");
     localStorage.removeItem("user");
-    set({ user: null, token: null, isAuthenticated: false });
+    set({ user: null, token: null, isAuthenticated: false, isAuthLoading: false });
   },
+
+  setAuthLoading: (loading) => set({ isAuthLoading: loading }),
 
   setPendingVisits: (visits) => set({ pendingVisits: visits }),
 
@@ -106,3 +111,44 @@ export const useStore = create<AppState>((set) => ({
 
   setError: (error) => set({ error }),
 }));
+
+// Initialize auth state from localStorage on app load
+if (typeof window !== "undefined") {
+  const initializeAuth = () => {
+    try {
+      const token = localStorage.getItem("auth_token");
+      const userStr = localStorage.getItem("user");
+
+      if (token && userStr && token !== "undefined" && userStr !== "undefined") {
+        const user = JSON.parse(userStr);
+        console.log("Restoring auth state:", { user, token: token.substring(0, 20) + "..." });
+
+        useStore.setState({
+          user,
+          token,
+          isAuthenticated: true,
+          isAuthLoading: false,
+        });
+      } else {
+        console.log("No valid auth state found in localStorage");
+        // Clean up any invalid tokens
+        localStorage.removeItem("auth_token");
+        localStorage.removeItem("user");
+        useStore.setState({
+          isAuthLoading: false,
+        });
+      }
+    } catch (error) {
+      console.error("Failed to restore auth state:", error);
+      // Clean up corrupted data
+      localStorage.removeItem("auth_token");
+      localStorage.removeItem("user");
+      useStore.setState({
+        isAuthLoading: false,
+      });
+    }
+  };
+
+  // Initialize immediately
+  initializeAuth();
+}

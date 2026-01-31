@@ -11,7 +11,6 @@ interface VisitorCardProps {
     name: string;
     phone: string;
     purpose: string;
-    purpose: string;
     flatNumber?: string;
     status: StatusType;
     timestamp: string;

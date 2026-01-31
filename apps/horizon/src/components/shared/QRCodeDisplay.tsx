@@ -39,6 +39,7 @@ export function QRCodeDisplay({
           bgColor="transparent"
           fgColor="currentColor"
           className="text-foreground"
+          data-testid="qr-code"
         />
       </div>
 

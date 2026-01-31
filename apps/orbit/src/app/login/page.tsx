@@ -3,10 +3,11 @@
  */
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@sm-visitor/ui";
 import { Input } from "@sm-visitor/ui";
+import { Spinner } from "@sm-visitor/ui";
 import { GlassCard } from "@/components/GlassCard";
 import { authAPI } from "@/lib/api";
 import { useStore } from "@/lib/store";
@@ -16,7 +17,7 @@ import toast from "react-hot-toast";
 
 export default function LoginPage() {
   const router = useRouter();
-  const { login } = useStore();
+  const { login, isAuthenticated, isAuthLoading } = useStore();
 
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [formData, setFormData] = useState({
@@ -26,6 +27,31 @@ export default function LoginPage() {
   });
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (!isAuthLoading && isAuthenticated) {
+      console.log("Already authenticated, redirecting to dashboard");
+      router.push("/dashboard");
+    }
+  }, [isAuthenticated, isAuthLoading, router]);
+
+  // Show loading while checking auth state
+  if (isAuthLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="text-center">
+          <Spinner size="lg" />
+          <p className="mt-4 text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Don't render login form if already authenticated
+  if (isAuthenticated) {
+    return null;
+  }
 
   const validate = () => {
     const newErrors: Record<string, string> = {};
@@ -56,6 +82,8 @@ export default function LoginPage() {
     if (!validate()) return;
 
     setIsLoading(true);
+    console.log("Starting login attempt...");
+
     try {
       let data;
 
@@ -68,7 +96,9 @@ export default function LoginPage() {
         });
         toast.success("Account created successfully!");
       } else {
+        console.log("Attempting login with phone:", formData.phone);
         data = await authAPI.login(formData.phone, formData.password);
+        console.log("Login successful:", data);
         toast.success("Login successful!");
       }
 
@@ -81,13 +111,33 @@ export default function LoginPage() {
       login(data.user, data.access_token);
       router.push("/dashboard");
     } catch (error: any) {
-      const detail = error.response?.data?.detail;
-      const errorMessage =
-        typeof detail === "string"
-          ? detail
-          : "Authentication failed. Please check your credentials.";
+      console.error("Login error caught:", error);
+      console.error("Error response:", error.response);
+      console.error("Error status:", error.response?.status);
+      console.error("Error data:", error.response?.data);
+
+      let errorMessage = "Authentication failed. Please check your credentials.";
+
+      if (error.response?.status === 401) {
+        const detail = error.response?.data?.detail;
+        console.log("401 error detail:", detail);
+        if (typeof detail === "string") {
+          errorMessage = detail;
+        } else {
+          errorMessage = "Invalid phone number or password. Please try again.";
+        }
+      } else if (error.response?.status === 422) {
+        errorMessage = "Invalid input. Please check your phone number and password.";
+      } else if (error.response?.status >= 500) {
+        errorMessage = "Server error. Please try again later.";
+      } else if (!error.response) {
+        errorMessage = "Network error. Please check your connection.";
+      }
+
+      console.log("Showing toast with message:", errorMessage);
       toast.error(errorMessage);
     } finally {
+      console.log("Setting loading to false");
       setIsLoading(false);
     }
   };
