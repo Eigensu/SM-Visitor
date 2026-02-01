@@ -120,6 +120,11 @@ export const visitsAPI = {
     return response.data;
   },
 
+  getVisit: async (visitId: string) => {
+    const response = await apiClient.get(`/visits/${visitId}`);
+    return response.data;
+  },
+
   checkout: async (visitId: string) => {
     const response = await apiClient.patch(`/visits/${visitId}/checkout`);
     return response.data;
