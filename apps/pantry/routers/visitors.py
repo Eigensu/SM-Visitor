@@ -87,17 +87,17 @@ class CreateRegularVisitorRequest(BaseModel):
     default_purpose: Optional[str] = Field(None, max_length=200)
     
     # Category
-    category: str = Field(default="other", regex="^(maid|cook|driver|delivery|other)$")
+    category: str = Field(default="other", pattern="^(maid|cook|driver|delivery|other)$")
     
     # Schedule fields
     schedule_enabled: bool = False
     schedule_days: Optional[List[int]] = Field(None, description="Days of week (1=Mon, 7=Sun)")
-    schedule_start_time: Optional[str] = Field(None, regex="^([0-1][0-9]|2[0-3]):[0-5][0-9]$")
-    schedule_end_time: Optional[str] = Field(None, regex="^([0-1][0-9]|2[0-3]):[0-5][0-9]$")
+    schedule_start_time: Optional[str] = Field(None, pattern="^([0-1][0-9]|2[0-3]):[0-5][0-9]$")
+    schedule_end_time: Optional[str] = Field(None, pattern="^([0-1][0-9]|2[0-3]):[0-5][0-9]$")
     
     # Auto-approval fields
     auto_approval_enabled: bool = True
-    auto_approval_rule: str = Field(default="always", regex="^(always|within_schedule|notify_only)$")
+    auto_approval_rule: str = Field(default="always", pattern="^(always|within_schedule|notify_only)$")
 
 
 class UpdateVisitorRequest(BaseModel):

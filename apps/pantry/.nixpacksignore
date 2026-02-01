@@ -1,0 +1,10 @@
+# Ignore workspace and Node.js files to prevent pnpm/node detection
+**/pnpm-workspace.yaml
+**/turbo.json
+**/package.json
+**/pnpm-lock.yaml
+**/package-lock.json
+**/yarn.lock
+**/node_modules
+**/.pnpm-store
+**/.turbo

@@ -1,0 +1,7 @@
+# Prevent Nixpacks from detecting Node.js/pnpm
+node_modules/
+*.lock
+pnpm-lock.yaml
+package-lock.json
+yarn.lock
+.pnpm-store/

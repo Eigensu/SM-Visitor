@@ -194,7 +194,7 @@ export default function DashboardPage() {
           ) : (
             <div className="space-y-3">
               {recentActivity.map((visit) => (
-                <Card key={visit._id} className="bg-white">
+                <Card key={visit.id} className="bg-white">
                   <div className="p-4">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-4">

@@ -262,16 +262,26 @@ async def get_active_qr_codes(
         "used_at": None
     }).sort("created_at", -1).to_list(length=100)
     
-    return [
-        TemporaryQRResponse(
+    result = []
+    for qr in qr_codes:
+        # Regenerate QR image with all details
+        qr_image_url = generate_qr_image_with_details({
+            "visitor_id": str(qr["_id"]),
+            "name": qr.get("guest_name") or "Guest",
+            "visitor_type": "temporary",
+            "token": qr["token"],
+            "created_at": qr["created_at"].isoformat()
+        })
+        
+        result.append(TemporaryQRResponse(
             id=str(qr["_id"]),
             owner_id=qr["owner_id"],
             guest_name=qr.get("guest_name"),
             token=qr["token"],
-            qr_image_url=f"/temp-qr/{qr['_id']}/qr-image",  # Placeholder
+            qr_image_url=qr_image_url,  # Now using actual base64 data URL
             expires_at=qr["expires_at"],
             one_time=qr.get("one_time", True),
             created_at=qr["created_at"]
-        )
-        for qr in qr_codes
-    ]
+        ))
+    
+    return result

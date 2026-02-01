@@ -23,15 +23,18 @@ interface Visit {
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { user, isAuthenticated, logout, pendingVisits } = useStore();
+  const { user, isAuthenticated, isAuthLoading, logout, pendingVisits } = useStore();
   const [todayVisits, setTodayVisits] = useState<Visit[]>([]);
   const [isLoadingStats, setIsLoadingStats] = useState(true);
 
+  // All hooks must be at the top level - no conditional hooks!
   useEffect(() => {
-    if (!isAuthenticated) {
+    // Wait for auth loading to complete before redirecting
+    if (!isAuthLoading && !isAuthenticated) {
+      console.log("Not authenticated, redirecting to login");
       router.push("/login");
     }
-  }, [isAuthenticated, router]);
+  }, [isAuthenticated, isAuthLoading, router]);
 
   // Fetch today's visits for statistics
   useEffect(() => {
@@ -47,15 +50,32 @@ export default function DashboardPage() {
       }
     };
 
-    if (isAuthenticated) {
+    if (isAuthenticated && !isAuthLoading) {
       fetchTodayVisits();
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, isAuthLoading]);
 
   const handleLogout = () => {
     logout();
     router.push("/login");
   };
+
+  // Show loading spinner while auth is being restored
+  if (isAuthLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="text-center">
+          <Spinner size="lg" />
+          <p className="mt-4 text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Don't render anything if not authenticated (will redirect)
+  if (!isAuthenticated) {
+    return null;
+  }
 
   if (!user) {
     return (

@@ -243,11 +243,7 @@ export default function HistoryPage() {
                       </Button>
                     )}
                     {visit.status === "pending" && (
-                      <Button
-                        onClick={() => handleCancel(visit.id)}
-                        size="sm"
-                        variant="destructive"
-                      >
+                      <Button onClick={() => handleCancel(visit.id)} size="sm" variant="danger">
                         Cancel
                       </Button>
                     )}

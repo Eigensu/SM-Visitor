@@ -1,0 +1,10 @@
+# Railway Service Configuration for Pantry Backend
+# Using Railpack (Railway's new build system)
+
+[build]
+builder = "RAILPACK"
+
+[deploy]
+startCommand = "uvicorn main:app --host 0.0.0.0 --port $PORT"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10

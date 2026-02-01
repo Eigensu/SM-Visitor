@@ -1,0 +1,14 @@
+node_modules
+.venv
+__pycache__
+*.pyc
+.env
+.turbo
+uploads
+tests
+scripts
+*.py
+!main.py
+!config.py
+!database.py
+!models.py

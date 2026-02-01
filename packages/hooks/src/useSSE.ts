@@ -66,13 +66,15 @@ export function useSSE(config: SSEConfig) {
       });
 
       if (eventSourceRef.current) {
-        eventSourceRef.current.onerror = () => {
-          console.error("SSE connection error");
-          reconnect();
+        eventSourceRef.current.onopen = () => {
+          console.log("SSE connected successfully");
+          reconnectAttempts.current = 0; // Reset on successful connection
         };
 
-        // Reset reconnect attempts on successful connection
-        reconnectAttempts.current = 0;
+        eventSourceRef.current.onerror = (error) => {
+          console.warn("SSE connection lost, will attempt to reconnect...");
+          reconnect();
+        };
       }
     } catch (error) {
       console.error("Failed to create SSE connection:", error);
@@ -81,16 +83,21 @@ export function useSSE(config: SSEConfig) {
 
   const reconnect = () => {
     if (reconnectAttempts.current >= maxReconnectAttempts) {
-      console.error("Max reconnection attempts reached");
-      toast.error("Lost connection to server. Please refresh the page.");
+      console.warn("Max SSE reconnection attempts reached. Real-time notifications disabled.");
+      toast.error("Lost connection to server. Real-time notifications disabled.", {
+        duration: 6000,
+      });
       return;
     }
 
     const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), maxReconnectDelay);
     reconnectAttempts.current++;
 
+    console.log(
+      `Reconnecting SSE in ${delay}ms (attempt ${reconnectAttempts.current}/${maxReconnectAttempts})...`
+    );
+
     reconnectTimeoutRef.current = setTimeout(() => {
-      console.log(`Reconnecting SSE (attempt ${reconnectAttempts.current})...`);
       connect();
     }, delay);
   };
