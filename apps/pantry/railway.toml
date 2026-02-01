@@ -3,6 +3,8 @@
 
 [build]
 builder = "RAILPACK"
+# Nuclear option: explicitly override auto-detected build command
+command = "true"
 
 [deploy]
 startCommand = "uvicorn main:app --host 0.0.0.0 --port $PORT"
