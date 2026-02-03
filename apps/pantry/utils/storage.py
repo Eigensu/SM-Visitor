@@ -77,27 +77,42 @@ class PhotoStorage:
             print(f"Error retrieving photo: {e}")
             return None
     
-    def save_new_visitor_photo_buffer(self, photo_data: bytes, filename: str) -> str:
+    async def save_new_visitor_photo_buffer(self, photo_data: bytes, filename: str) -> str:
         """
-        Save new visitor photo to local buffer (temporary storage)
+        Save new visitor photo to Cloudinary (cloud storage)
         
         Args:
             photo_data: Photo binary data
             filename: Original filename
         
         Returns:
-            Local file path
+            Cloudinary secure URL
         """
-        # Generate unique filename
-        ext = os.path.splitext(filename)[1]
-        unique_filename = f"{uuid.uuid4()}{ext}"
-        filepath = os.path.join(self.local_buffer_path, unique_filename)
-        
-        # Save to local buffer
-        with open(filepath, 'wb') as f:
-            f.write(photo_data)
-        
-        return filepath
+        try:
+            from utils.cloudinary_storage import cloudinary_storage
+            
+            # Upload to Cloudinary
+            success, url_or_error = cloudinary_storage.upload_photo(photo_data, filename)
+            
+            if not success:
+                raise Exception(url_or_error)
+            
+            return url_or_error
+            
+        except Exception as e:
+            # Fallback to local buffer if Cloudinary fails
+            print(f"Cloudinary upload failed, falling back to local buffer: {e}")
+            
+            # Generate unique filename
+            ext = os.path.splitext(filename)[1]
+            unique_filename = f"{uuid.uuid4()}{ext}"
+            filepath = os.path.join(self.local_buffer_path, unique_filename)
+            
+            # Save to local buffer
+            with open(filepath, 'wb') as f:
+                f.write(photo_data)
+            
+            return filepath
     
     def get_new_visitor_photo_buffer(self, filepath: str) -> Optional[bytes]:
         """

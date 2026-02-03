@@ -13,6 +13,7 @@ import { Spinner } from "@sm-visitor/ui";
 import { GlassCard } from "@/components/GlassCard";
 import { visitsAPI } from "@/lib/api";
 import { formatTime } from "@/lib/utils";
+import { useStore } from "@/lib/store";
 import toast from "react-hot-toast";
 import { ArrowLeft, Search } from "lucide-react";
 
@@ -33,7 +34,7 @@ interface Visit {
 
 export default function HistoryPage() {
   const router = useRouter();
-  const [visits, setVisits] = useState<Visit[]>([]);
+  const { todayVisits, setTodayVisits } = useStore();
   const [filteredVisits, setFilteredVisits] = useState<Visit[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -53,14 +54,15 @@ export default function HistoryPage() {
     fetchVisits();
   }, []);
 
+  // Sync filtered visits when store updates or filters change
   useEffect(() => {
     filterVisits();
-  }, [visits, searchQuery, statusFilter]);
+  }, [todayVisits, searchQuery, statusFilter]);
 
   const fetchVisits = async () => {
     try {
       const response = await visitsAPI.getTodayVisits();
-      setVisits(response);
+      setTodayVisits(response);
     } catch (error: any) {
       console.error("Failed to fetch visits:", error);
       toast.error("Failed to load visits");
@@ -70,7 +72,7 @@ export default function HistoryPage() {
   };
 
   const filterVisits = () => {
-    let filtered = [...visits];
+    let filtered = [...todayVisits];
 
     // Search filter
     if (searchQuery) {
@@ -173,24 +175,27 @@ export default function HistoryPage() {
         <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-4">
           <GlassCard className="p-4">
             <p className="text-sm text-gray-600">Total Visits</p>
-            <p className="text-2xl font-bold text-gray-900">{visits.length}</p>
+            <p className="text-2xl font-bold text-gray-900">{todayVisits.length}</p>
           </GlassCard>
           <GlassCard className="p-4">
             <p className="text-sm text-gray-600">Pending</p>
             <p className="text-2xl font-bold text-yellow-600">
-              {visits.filter((v) => v.status === "pending").length}
+              {todayVisits.filter((v) => v.status === "pending").length}
             </p>
           </GlassCard>
           <GlassCard className="p-4">
             <p className="text-sm text-gray-600">Approved</p>
             <p className="text-2xl font-bold text-green-600">
-              {visits.filter((v) => v.status === "approved" || v.status === "auto_approved").length}
+              {
+                todayVisits.filter((v) => v.status === "approved" || v.status === "auto_approved")
+                  .length
+              }
             </p>
           </GlassCard>
           <GlassCard className="p-4">
             <p className="text-sm text-gray-600">Active Now</p>
             <p className="text-2xl font-bold text-primary">
-              {visits.filter((v) => v.entry_time && !v.exit_time).length}
+              {todayVisits.filter((v) => v.entry_time && !v.exit_time).length}
             </p>
           </GlassCard>
         </div>

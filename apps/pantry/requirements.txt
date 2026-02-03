@@ -23,6 +23,9 @@ pydantic_core==2.41.5
 qrcode[pil]==8.0
 Pillow==11.1.0
 
+# Cloud Storage
+cloudinary==1.41.0
+
 # Utilities
 python-dateutil==2.9.0
 

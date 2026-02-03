@@ -61,11 +61,11 @@ async def upload_new_visitor_photo(
     current_user: dict = Depends(get_current_guard)
 ):
     """
-    Upload photo for new visitor (saved to local buffer temporarily)
+    Upload photo for new visitor (saved to Cloudinary cloud storage)
     
     - **photo**: Image file (JPEG/PNG, max 5MB)
     
-    Returns local file path for temporary storage
+    Returns Cloudinary secure URL for cloud storage
     """
     # Read photo data
     photo_data = await photo.read()
@@ -78,16 +78,20 @@ async def upload_new_visitor_photo(
             detail=error_msg
         )
     
-    # Save to local buffer
-    filepath = photo_storage.save_new_visitor_photo_buffer(
+    # Save to Cloudinary (with local buffer fallback)
+    photo_url = await photo_storage.save_new_visitor_photo_buffer(
         photo_data,
         photo.filename or "new_visitor_photo.jpg"
     )
     
+    # Determine storage type based on URL
+    storage_type = "cloudinary" if photo_url.startswith("http") else "local_buffer"
+    message = "Photo saved to Cloudinary" if storage_type == "cloudinary" else "Photo saved to local buffer (Cloudinary unavailable)"
+    
     return PhotoUploadResponse(
-        photo_url=filepath,
-        storage_type="local_buffer",
-        message="Photo saved to local buffer temporarily"
+        photo_url=photo_url,
+        storage_type=storage_type,
+        message=message
     )
 
 

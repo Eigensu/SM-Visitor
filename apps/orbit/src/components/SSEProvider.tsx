@@ -20,9 +20,12 @@ export function SSEProvider({ children }: { children: React.ReactNode }) {
     isAuthenticated: isAuthenticated && !isAuthLoading && sseEnabled,
     createConnection: createSSEConnection,
     onEvent: (data) => {
+      console.log("📨 [Orbit] SSE event received:", data);
+
       switch (data.type) {
         case "visit_approved":
           // Backend sends: { visit_id, visitor_name, approved_at }
+          console.log("✅ [Orbit] Processing visit_approved:", data.data);
           updateVisitStatus(data.data.visit_id, "approved");
           toast.success(`Visit approved for ${data.data.visitor_name}`, {
             duration: 5000,
@@ -32,6 +35,7 @@ export function SSEProvider({ children }: { children: React.ReactNode }) {
 
         case "visit_rejected":
           // Backend sends: { visit_id, visitor_name, rejected_at }
+          console.log("❌ [Orbit] Processing visit_rejected:", data.data);
           updateVisitStatus(data.data.visit_id, "rejected");
           toast.error(`Visit rejected for ${data.data.visitor_name}`, {
             duration: 5000,
@@ -40,7 +44,7 @@ export function SSEProvider({ children }: { children: React.ReactNode }) {
           break;
 
         default:
-          console.log("Unknown SSE event type:", data.type);
+          console.log("⚠️ [Orbit] Unknown SSE event type:", data.type);
       }
     },
   });

@@ -168,10 +168,31 @@ export const useStore = create<AppState>((set) => ({
     })),
 
   updateVisitStatus: (visitId, status) =>
-    set((state) => ({
-      pendingVisits: state.pendingVisits.map((v) => (v.id === visitId ? { ...v, status } : v)),
-      recentActivity: state.recentActivity.map((v) => (v.id === visitId ? { ...v, status } : v)),
-    })),
+    set((state) => {
+      console.log("🔄 [Horizon] Updating visit status:", {
+        visitId,
+        status,
+        currentPending: state.pendingVisits.length,
+      });
+
+      const updatedPending = state.pendingVisits.map((v) =>
+        v.id === visitId ? { ...v, status } : v
+      );
+
+      const updatedRecent = state.recentActivity.map((v) =>
+        v.id === visitId ? { ...v, status } : v
+      );
+
+      console.log("✅ [Horizon] Updated arrays:", {
+        pendingChanged: updatedPending !== state.pendingVisits,
+        recentChanged: updatedRecent !== state.recentActivity,
+      });
+
+      return {
+        pendingVisits: updatedPending,
+        recentActivity: updatedRecent,
+      };
+    }),
 
   // Regular visitor actions
   setRegularVisitors: (visitors) => set({ regularVisitors: visitors }),

@@ -102,10 +102,30 @@ export const useStore = create<AppState>((set, get) => ({
     })),
 
   updateVisitStatus: (visitId, status) =>
-    set((state) => ({
-      pendingVisits: state.pendingVisits.map((v) => (v.id === visitId ? { ...v, status } : v)),
-      todayVisits: state.todayVisits.map((v) => (v.id === visitId ? { ...v, status } : v)),
-    })),
+    set((state) => {
+      console.log("🔄 Updating visit status:", {
+        visitId,
+        status,
+        currentTodayVisits: state.todayVisits.length,
+      });
+
+      const updatedPending = state.pendingVisits.map((v) =>
+        v.id === visitId ? { ...v, status } : v
+      );
+
+      const updatedToday = state.todayVisits.map((v) => (v.id === visitId ? { ...v, status } : v));
+
+      console.log("✅ Updated arrays:", {
+        pendingChanged: updatedPending !== state.pendingVisits,
+        todayChanged: updatedToday !== state.todayVisits,
+        updatedTodayCount: updatedToday.length,
+      });
+
+      return {
+        pendingVisits: updatedPending,
+        todayVisits: updatedToday,
+      };
+    }),
 
   setLoading: (loading) => set({ isLoading: loading }),
 

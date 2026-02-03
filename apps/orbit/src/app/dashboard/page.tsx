@@ -23,8 +23,15 @@ interface Visit {
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { user, isAuthenticated, isAuthLoading, logout, pendingVisits } = useStore();
-  const [todayVisits, setTodayVisits] = useState<Visit[]>([]);
+  const {
+    user,
+    isAuthenticated,
+    isAuthLoading,
+    logout,
+    pendingVisits,
+    todayVisits,
+    setTodayVisits,
+  } = useStore();
   const [isLoadingStats, setIsLoadingStats] = useState(true);
 
   // All hooks must be at the top level - no conditional hooks!
@@ -53,7 +60,7 @@ export default function DashboardPage() {
     if (isAuthenticated && !isAuthLoading) {
       fetchTodayVisits();
     }
-  }, [isAuthenticated, isAuthLoading]);
+  }, [isAuthenticated, isAuthLoading, setTodayVisits]);
 
   const handleLogout = () => {
     logout();

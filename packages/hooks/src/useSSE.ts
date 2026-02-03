@@ -66,15 +66,41 @@ export function useSSE(config: SSEConfig) {
       });
 
       if (eventSourceRef.current) {
-        eventSourceRef.current.onopen = () => {
+        const es = eventSourceRef.current;
+
+        es.onopen = () => {
           console.log("SSE connected successfully");
           reconnectAttempts.current = 0; // Reset on successful connection
         };
 
-        eventSourceRef.current.onerror = (error) => {
+        es.onerror = (error) => {
           console.warn("SSE connection lost, will attempt to reconnect...");
           reconnect();
         };
+
+        // CRITICAL FIX: Listen for custom event types
+        // Backend sends events like: event: visit_approved, event: visit_rejected, etc.
+        const eventTypes = [
+          "visit_approved",
+          "visit_rejected",
+          "new_visit_pending",
+          "visit_auto_approved",
+          "visit_cancelled",
+          "test_event",
+        ];
+
+        eventTypes.forEach((eventType) => {
+          es.addEventListener(eventType, (event: Event) => {
+            try {
+              const messageEvent = event as MessageEvent;
+              const data = JSON.parse(messageEvent.data);
+              console.log(`📨 SSE Event [${eventType}]:`, data);
+              onEvent({ type: eventType, data });
+            } catch (error) {
+              console.error(`SSE parse error for ${eventType}:`, error);
+            }
+          });
+        });
       }
     } catch (error) {
       console.error("Failed to create SSE connection:", error);

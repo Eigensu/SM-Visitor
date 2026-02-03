@@ -511,7 +511,7 @@ async def get_regular_visitors(
     visitors_collection = get_visitors_collection()
     
     visitors = await visitors_collection.find({
-        "created_by": str(current_user["_id"]),
+        "created_by": current_user["user_id"],
         "visitor_type": "regular",
         "is_active": True
     }).sort("created_at", -1).to_list(length=1000)
@@ -544,7 +544,7 @@ async def get_regular_count(
     visitors_collection = get_visitors_collection()
     
     count = await visitors_collection.count_documents({
-        "created_by": str(current_user["_id"]),
+        "created_by": current_user["user_id"],
         "visitor_type": "regular",
         "is_active": True
     })
@@ -566,7 +566,7 @@ async def get_visitor_by_id(
     try:
         visitor = await visitors_collection.find_one({
             "_id": ObjectId(visitor_id),
-            "created_by": str(current_user["_id"])
+            "created_by": current_user["user_id"]
         })
     except Exception:
         raise HTTPException(
