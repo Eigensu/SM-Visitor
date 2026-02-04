@@ -86,13 +86,17 @@ export default function ScanPage() {
     setScanState("submitting");
 
     try {
-      await visitsAPI.startVisit({
+      const visit = await visitsAPI.startVisit({
         qr_token: qrToken,
         owner_id: visitorData.owner_id,
         purpose: visitorData.purpose || "Visit",
       });
 
-      toast.success("Entry recorded successfully!");
+      if (visit.status === "pending") {
+        toast.success("Entry requested! Waiting for owner approval.");
+      } else {
+        toast.success("Entry recorded successfully!");
+      }
       router.push("/dashboard");
     } catch (error: any) {
       console.error("Submit entry error:", error);

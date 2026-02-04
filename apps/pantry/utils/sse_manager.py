@@ -101,6 +101,20 @@ class SSEManager:
             if user_role == role:
                 await self.send_event(user_id, event_type, data)
     
+    async def broadcast_to_flats(self, flat_ids: list[str], event_type: str, data: dict, db):
+        """
+        Broadcast an event to all residents of specific flats
+        """
+        if not flat_ids:
+            return
+            
+        # Find all residents associated with these flats
+        residents = await db.residents.find({"flat_id": {"$in": flat_ids}}).to_list(length=100)
+        user_ids = [str(r["_id"]) for r in residents]
+        
+        for user_id in user_ids:
+            await self.send_event(user_id, event_type, data)
+    
     async def event_generator(self, queue: asyncio.Queue):
         """
         Generate SSE events from queue

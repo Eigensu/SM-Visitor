@@ -20,6 +20,8 @@ router = APIRouter(prefix="/temp-qr", tags=["Temporary QR"])
 class GenerateTemporaryQRRequest(BaseModel):
     guest_name: Optional[str] = Field(None, max_length=100)
     validity_hours: int = Field(..., ge=1, le=72, description="Validity period in hours (1-72)")
+    is_all_flats: bool = False
+    valid_flats: Optional[List[str]] = None
 
 
 class TemporaryQRResponse(BaseModel):
@@ -66,6 +68,8 @@ async def generate_temporary_qr(
         "expires_at": expires_at,
         "one_time": True,
         "used_at": None,
+        "is_all_flats": request.is_all_flats,
+        "valid_flats": request.valid_flats or [],
         "created_at": datetime.utcnow()
     }
     
