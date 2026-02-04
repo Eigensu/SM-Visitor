@@ -12,3 +12,5 @@ scripts
 !config.py
 !database.py
 !models.py
+!utils/
+!utils/*.py

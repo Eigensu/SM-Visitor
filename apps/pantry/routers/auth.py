@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime, timedelta
 import jwt
-from passlib.context import CryptContext
+import bcrypt  # Added bcrypt
 import os
 
 from database import get_database
@@ -17,10 +17,6 @@ from bson import ObjectId
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 security = HTTPBearer()
-
-# Password hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
 # JWT Configuration
 JWT_SECRET = os.getenv("JWT_SECRET", "your-secret-key-change-in-production")
 JWT_ALGORITHM = "HS256"
@@ -59,12 +55,21 @@ class UserResponse(BaseModel):
 # Helper Functions
 def hash_password(password: str) -> str:
     """Hash a password using bcrypt"""
-    return pwd_context.hash(password)
+    salt = bcrypt.gensalt()
+    # bcrypt.hashpw returns bytes, decode to string for storage
+    return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against its hash"""
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        # bcrypt.checkpw requires bytes
+        return bcrypt.checkpw(
+            plain_password.encode('utf-8'), 
+            hashed_password.encode('utf-8')
+        )
+    except Exception:
+        return False
 
 
 def create_access_token(user_id: str, role: str) -> str:

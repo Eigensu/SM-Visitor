@@ -45,6 +45,9 @@ interface Visit {
   date: string;
   status: StatusType;
   photo?: string;
+  is_all_flats?: boolean;
+  target_flat_ids?: string[];
+  owner_id: string;
 }
 
 export default function Visitors() {
@@ -76,6 +79,9 @@ export default function Visitors() {
         }),
         status: v.status,
         photo: v.photo_snapshot_url,
+        is_all_flats: v.is_all_flats,
+        target_flat_ids: v.target_flat_ids,
+        owner_id: v.owner_id,
       }));
 
       setVisits(transformedVisits);
@@ -212,7 +218,22 @@ export default function Visitors() {
                             <User className="h-4 w-4 text-primary" strokeWidth={1.5} />
                           )}
                         </div>
-                        <span className="font-medium">{visitor.name}</span>
+                        <div className="flex flex-col">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{visitor.name}</span>
+                            {visitor.is_all_flats && (
+                              <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold text-primary">
+                                BROADCAST
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-[10px] text-muted-foreground">
+                            To:{" "}
+                            {visitor.is_all_flats
+                              ? "Society"
+                              : visitor.target_flat_ids?.join(", ") || visitor.owner_id}
+                          </span>
+                        </div>
                       </div>
                     </TableCell>
                     <TableCell className="text-muted-foreground">{visitor.phone}</TableCell>
@@ -295,7 +316,15 @@ export default function Visitors() {
                   <StatusBadge status={visitor.status} />
                 </div>
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">{visitor.purpose}</span>
+                  <div className="flex flex-col">
+                    <span className="text-muted-foreground">{visitor.purpose}</span>
+                    <span className="text-[10px] font-medium text-primary">
+                      To:{" "}
+                      {visitor.is_all_flats
+                        ? "Society"
+                        : visitor.target_flat_ids?.join(", ") || visitor.owner_id}
+                    </span>
+                  </div>
                   <span className="text-muted-foreground">{visitor.date}</span>
                 </div>
 

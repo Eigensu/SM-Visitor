@@ -12,6 +12,7 @@ interface NotificationItemProps {
     message: string;
     timestamp: string;
     read: boolean;
+    is_broadcast?: boolean;
   };
   onClick?: () => void;
   className?: string;
@@ -59,6 +60,11 @@ export function NotificationItem({ notification, onClick, className }: Notificat
             className={cn("truncate text-sm font-medium", !notification.read && "text-foreground")}
           >
             {notification.title}
+            {notification.is_broadcast && (
+              <span className="ml-2 rounded bg-primary/10 px-1 py-0.5 align-middle text-[9px] font-bold text-primary">
+                BROADCAST
+              </span>
+            )}
           </h4>
           {!notification.read && (
             <span className="mt-1.5 h-2 w-2 flex-shrink-0 rounded-full bg-primary" />

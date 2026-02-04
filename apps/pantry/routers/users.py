@@ -9,6 +9,17 @@ from routers.auth import UserResponse, get_current_user, require_role, require_g
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
+@router.get("/flats", response_model=List[str])
+async def list_flats(
+    current_user = Depends(get_current_user),
+    db = Depends(get_database)
+):
+    """
+    List all unique flat IDs in the system.
+    """
+    flats = await db.residents.distinct("flat_id")
+    return sorted([f for f in flats if f])
+
 @router.get("/", response_model=List[UserResponse])
 async def list_users(
     role: Optional[str] = None,

@@ -64,6 +64,9 @@ export function OwnerSelect({ value, onChange, error }: OwnerSelectProps) {
         <option key="placeholder" value="">
           {isLoading ? "Loading owners..." : "Select owner/flat"}
         </option>
+        <option key="all" value="all" className="font-bold text-blue-600">
+          🏢 All Flats (Broadcast Approval)
+        </option>
         {owners.map((owner) => (
           <option key={owner.id} value={owner.flat_id || owner.id}>
             {owner.name} {owner.flat_id ? `(${owner.flat_id})` : ""}

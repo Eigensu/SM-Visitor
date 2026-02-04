@@ -27,6 +27,10 @@ def get_category_label(category: str) -> str:
         "cook": "Cook",
         "driver": "Driver",
         "delivery": "Delivery",
+        "milkman": "Milkman",
+        "car_wash": "Car Wash",
+        "dog_walker": "Dog Walker",
+        "cleaner": "Cleaner",
         "other": "Other"
     }
     return labels.get(category, "Other")
@@ -37,46 +41,12 @@ def get_auto_approval_label(rule: str) -> str:
     labels = {
         "always": "Always auto-approve",
         "within_schedule": "Auto-approve if within schedule",
-        "notify_only": "Notify but don't block"
+        "notify_only": "Notify but don't block",
+        "manual": "Require manual approval"
     }
     return labels.get(rule, "Always auto-approve")
 
 
-def is_within_schedule(schedule: dict) -> bool:
-    """Check if current time is within visitor's schedule"""
-    if not schedule.get("enabled"):
-        return True  # No schedule = always allowed
-    
-    try:
-        import pytz
-        from datetime import datetime
-        
-        # Get current day and time in IST
-        ist = pytz.timezone("Asia/Kolkata")
-        now = datetime.now(ist)
-        current_day = now.isoweekday()  # 1=Monday, 7=Sunday
-        current_time = now.strftime("%H:%M")
-        
-        # Check day of week
-        days_of_week = schedule.get("days_of_week", [])
-        if days_of_week and current_day not in days_of_week:
-            return False
-        
-        # Check time windows
-        time_windows = schedule.get("time_windows", [])
-        if not time_windows:
-            return True  # No time restriction
-        
-        for window in time_windows:
-            start_time = window.get("start_time", "00:00")
-            end_time = window.get("end_time", "23:59")
-            if start_time <= current_time <= end_time:
-                return True
-        
-        return False
-    except Exception as e:
-        print(f"[ERROR] Schedule validation failed: {str(e)}")
-        return True  # Default to allowing if validation fails
 
 
 
@@ -87,7 +57,7 @@ class CreateRegularVisitorRequest(BaseModel):
     default_purpose: Optional[str] = Field(None, max_length=200)
     
     # Category
-    category: str = Field(default="other", pattern="^(maid|cook|driver|delivery|other)$")
+    category: str = Field(default="other", pattern="^(maid|cook|driver|delivery|milkman|car_wash|dog_walker|cleaner|other)$")
     
     # Schedule fields
     schedule_enabled: bool = False
@@ -97,13 +67,19 @@ class CreateRegularVisitorRequest(BaseModel):
     
     # Auto-approval fields
     auto_approval_enabled: bool = True
-    auto_approval_rule: str = Field(default="always", pattern="^(always|within_schedule|notify_only)$")
+    auto_approval_rule: str = Field(default="always", pattern="^(always|within_schedule|notify_only|manual)$")
+    
+    # Targeting fields
+    is_all_flats: bool = False
+    valid_flats: Optional[List[str]] = None
 
 
 class UpdateVisitorRequest(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     phone: Optional[str] = Field(None, min_length=10, max_length=15)
     default_purpose: Optional[str] = Field(None, max_length=200)
+    is_all_flats: Optional[bool] = None
+    valid_flats: Optional[List[str]] = None
 
 
 class VisitorResponse(BaseModel):
@@ -116,11 +92,15 @@ class VisitorResponse(BaseModel):
     default_purpose: Optional[str]
     qr_token: Optional[str]
     is_active: bool
+    is_all_flats: bool = False
+    valid_flats: Optional[List[str]] = None
     created_at: datetime
 
 
 class VisitorWithQRResponse(VisitorResponse):
     qr_image_url: str
+    is_all_flats: bool = False
+    valid_flats: Optional[List[str]] = None
 
 
 @router.post("/regular", response_model=VisitorWithQRResponse, status_code=status.HTTP_201_CREATED)
@@ -188,6 +168,10 @@ async def create_regular_visitor(
             "rule_label": get_auto_approval_label(request.auto_approval_rule)
         },
         
+        # Flat targeting
+        "is_all_flats": request.is_all_flats,
+        "valid_flats": request.valid_flats or [],
+        
         "is_active": True,
         "created_at": datetime.utcnow(),
     }
@@ -229,6 +213,8 @@ async def create_regular_visitor(
         default_purpose=request.default_purpose,
         qr_token=qr_token,
         is_active=True,
+        is_all_flats=request.is_all_flats,
+        valid_flats=request.valid_flats,
         created_at=visitor_doc["created_at"],
         qr_image_url=qr_image_url
     )
@@ -322,6 +308,8 @@ async def list_visitors(
             default_purpose=v.get("default_purpose"),
             qr_token=v.get("qr_token"),
             is_active=v["is_active"],
+            is_all_flats=v.get("is_all_flats", False),
+            valid_flats=v.get("valid_flats"),
             created_at=v["created_at"]
         )
         for v in visitor_list
@@ -396,6 +384,8 @@ async def update_visitor(
         default_purpose=updated_visitor.get("default_purpose"),
         qr_token=updated_visitor.get("qr_token"),
         is_active=updated_visitor["is_active"],
+        is_all_flats=updated_visitor.get("is_all_flats", False),
+        valid_flats=updated_visitor.get("valid_flats"),
         created_at=updated_visitor["created_at"]
     )
 
@@ -527,6 +517,8 @@ async def get_regular_visitors(
             default_purpose=visitor.get("default_purpose"),
             qr_token=visitor.get("qr_token"),
             is_active=visitor["is_active"],
+            is_all_flats=visitor.get("is_all_flats", False),
+            valid_flats=visitor.get("valid_flats"),
             created_at=visitor["created_at"]
         )
         for visitor in visitors
@@ -590,5 +582,7 @@ async def get_visitor_by_id(
         default_purpose=visitor.get("default_purpose"),
         qr_token=visitor.get("qr_token"),
         is_active=visitor["is_active"],
+        is_all_flats=visitor.get("is_all_flats", False),
+        valid_flats=visitor.get("valid_flats"),
         created_at=visitor["created_at"]
     )

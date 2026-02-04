@@ -3,7 +3,7 @@ Pydantic models for MongoDB documents
 These models provide validation and serialization for database operations
 """
 from pydantic import BaseModel, Field
-from typing import Optional, Any
+from typing import Optional, Any, List
 from datetime import datetime
 from bson import ObjectId
 
@@ -56,6 +56,8 @@ class VisitorModel(BaseModel):
     default_purpose: Optional[str] = None
     qr_token: Optional[str] = None
     qr_expires_at: Optional[datetime] = None
+    is_all_flats: bool = False
+    valid_flats: Optional[List[str]] = None
     is_active: bool = True
     created_at: datetime = Field(default_factory=datetime.utcnow)
     metadata: Optional[dict[str, Any]] = None
@@ -97,6 +99,8 @@ class TemporaryQRModel(BaseModel):
     token: str
     expires_at: datetime
     one_time: bool = True
+    is_all_flats: bool = False
+    valid_flats: Optional[List[str]] = None
     used_at: Optional[datetime] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 

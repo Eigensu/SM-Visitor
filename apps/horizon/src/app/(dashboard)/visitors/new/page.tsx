@@ -7,7 +7,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useStore } from "@/lib/store";
-import { visitorsAPI, uploadsAPI } from "@/lib/api";
+import { visitorsAPI, uploadsAPI, tempQRAPI } from "@/lib/api";
 import { Button } from "@sm-visitor/ui";
 import { Input } from "@sm-visitor/ui";
 import { Card } from "@sm-visitor/ui";
@@ -35,7 +35,10 @@ export default function NewVisitorPage() {
     schedule_end_time: "18:00",
     auto_approval_enabled: true,
     auto_approval_rule: "always",
+    is_all_flats: false,
+    valid_flats: [] as string[],
   });
+  const [availableFlats, setAvailableFlats] = useState<string[]>([]);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -54,6 +57,18 @@ export default function NewVisitorPage() {
         setPhotoPreview(URL.createObjectURL(file));
       }
     },
+  });
+
+  useState(() => {
+    const fetchFlats = async () => {
+      try {
+        const flats = await tempQRAPI.getAvailableFlats();
+        setAvailableFlats(flats);
+      } catch (error) {
+        console.error("Failed to fetch flats:", error);
+      }
+    };
+    fetchFlats();
   });
 
   const handleUploadPhoto = async () => {
@@ -120,6 +135,9 @@ export default function NewVisitorPage() {
                 Back
               </Button>
               <h1 className="ml-4 text-xl font-bold text-gray-900">Add Regular Visitor</h1>
+              <span className="ml-3 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700">
+                PERMANENT QR
+              </span>
             </div>
           </div>
         </div>
@@ -180,6 +198,10 @@ export default function NewVisitorPage() {
                   <option value="cook">👨‍🍳 Cook</option>
                   <option value="driver">🚗 Driver</option>
                   <option value="delivery">📦 Delivery</option>
+                  <option value="milkman">🥛 Milkman</option>
+                  <option value="car_wash">🧼 Car Wash</option>
+                  <option value="dog_walker">🐕 Dog Walker</option>
+                  <option value="cleaner">✨ Cleaner</option>
                   <option value="other">📋 Other</option>
                 </select>
               </div>
@@ -245,6 +267,7 @@ export default function NewVisitorPage() {
                 >
                   <option value="always">✅ Always auto-approve</option>
                   <option value="within_schedule">📅 Auto-approve if within schedule</option>
+                  <option value="manual">✋ Manual approval required</option>
                   <option value="notify_only">🔔 Notify but don't block</option>
                 </select>
                 <p className="mt-1 text-xs text-gray-500">
@@ -252,9 +275,58 @@ export default function NewVisitorPage() {
                     "Visitor will be automatically approved at any time"}
                   {formData.auto_approval_rule === "within_schedule" &&
                     "Visitor will be auto-approved only during scheduled times"}
+                  {formData.auto_approval_rule === "manual" &&
+                    "You will be notified to approve/reject every time the visitor scans"}
                   {formData.auto_approval_rule === "notify_only" &&
                     "Visitor will always be allowed, but you'll be notified"}
                 </p>
+              </div>
+
+              {/* Flat Selection */}
+              <div className="space-y-4 rounded-lg border border-gray-200 bg-gray-50/50 p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="text-sm font-medium text-gray-700">Valid for All Flats</label>
+                    <p className="text-xs text-gray-500">QR will be valid for entry at any house</p>
+                  </div>
+                  <Switch
+                    checked={formData.is_all_flats}
+                    onCheckedChange={(checked) =>
+                      setFormData({ ...formData, is_all_flats: checked, valid_flats: [] })
+                    }
+                  />
+                </div>
+
+                {!formData.is_all_flats && (
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold uppercase text-gray-400">
+                      Target Flats
+                    </label>
+                    <div className="grid grid-cols-4 gap-2">
+                      {availableFlats.map((flat) => (
+                        <button
+                          key={flat}
+                          type="button"
+                          onClick={() => {
+                            setFormData((prev) => ({
+                              ...prev,
+                              valid_flats: prev.valid_flats.includes(flat)
+                                ? prev.valid_flats.filter((f) => f !== flat)
+                                : [...prev.valid_flats, flat],
+                            }));
+                          }}
+                          className={`rounded-md border px-2 py-2 text-xs font-medium transition-all ${
+                            formData.valid_flats.includes(flat)
+                              ? "border-purple-600 bg-purple-600 text-white shadow-sm"
+                              : "border-gray-200 bg-white text-gray-600 hover:border-purple-300"
+                          }`}
+                        >
+                          {flat}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Photo Upload */}

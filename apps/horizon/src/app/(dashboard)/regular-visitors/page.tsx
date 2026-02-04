@@ -6,7 +6,7 @@ import { PageContainer } from "@/components/shared/PageContainer";
 import { GlassCard } from "@/components/shared/GlassCard";
 import { Button } from "@sm-visitor/ui";
 import { Spinner } from "@sm-visitor/ui";
-import { Plus, User, QrCode, Trash2, Calendar, Clock } from "lucide-react";
+import { Plus, User, QrCode, Trash2, Calendar, Clock, Shield } from "lucide-react";
 import { visitorsAPI } from "@/lib/api";
 import toast from "react-hot-toast";
 
@@ -15,6 +15,10 @@ const CATEGORY_ICONS: Record<string, string> = {
   cook: "👨‍🍳",
   driver: "🚗",
   delivery: "📦",
+  milkman: "🥛",
+  car_wash: "🧼",
+  dog_walker: "🐕",
+  cleaner: "✨",
   other: "📋",
 };
 
@@ -23,7 +27,18 @@ const CATEGORY_LABELS: Record<string, string> = {
   cook: "Cook",
   driver: "Driver",
   delivery: "Delivery",
+  milkman: "Milkman",
+  car_wash: "Car Wash",
+  dog_walker: "Dog Walker",
+  cleaner: "Cleaner",
   other: "Other",
+};
+
+const APPROVAL_LABELS: Record<string, string> = {
+  always: "Auto-approve",
+  within_schedule: "Schedule-based",
+  manual: "Manual approval",
+  notify_only: "Notify only",
 };
 
 const DAY_LABELS: Record<number, string> = {
@@ -154,8 +169,25 @@ export default function RegularVisitorsPage() {
                   </div>
                 )}
                 <div className="flex-1">
-                  <h3 className="font-semibold text-foreground">{visitor.name}</h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-semibold text-foreground">{visitor.name}</h3>
+                    <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-bold text-blue-700">
+                      PERMANENT QR
+                    </span>
+                  </div>
                   <p className="text-sm text-muted-foreground">{visitor.phone || "No phone"}</p>
+                </div>
+              </div>
+
+              <div className="mt-4 flex items-center justify-between border-t border-gray-100 pt-3">
+                <div className="flex items-center gap-1.5 text-xs font-medium text-gray-500">
+                  <div
+                    className={`h-2 w-2 rounded-full ${visitor.auto_approval?.rule === "manual" ? "bg-yellow-400" : "bg-green-400"}`}
+                  />
+                  {APPROVAL_LABELS[visitor.auto_approval?.rule || "always"]}
+                </div>
+                <div className="flex items-center gap-1.5 text-xs text-gray-400">
+                  {visitor.schedule_enabled ? "📅 Scheduled" : "🔓 24/7 Access"}
                 </div>
               </div>
 
@@ -174,9 +206,19 @@ export default function RegularVisitorsPage() {
               </div>
 
               {/* Auto-approval Rule */}
-              <div className="mb-4 flex items-start gap-2 text-sm text-muted-foreground">
+              <div className="mb-1.5 flex items-start gap-2 text-sm text-muted-foreground">
                 <Clock className="mt-0.5 h-4 w-4 flex-shrink-0" />
                 <span>{visitor.auto_approval?.rule_label || "Always auto-approve"}</span>
+              </div>
+
+              {/* Targeting Info */}
+              <div className="mb-4 flex items-start gap-2 text-sm">
+                <Shield className="mt-0.5 h-4 w-4 flex-shrink-0 text-primary" />
+                <span className="font-medium text-primary">
+                  {visitor.is_all_flats
+                    ? "Valid for All Flats"
+                    : `Valid for: ${visitor.valid_flats?.join(", ") || "Selected Flat"}`}
+                </span>
               </div>
 
               {/* Actions */}

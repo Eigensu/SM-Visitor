@@ -1,17 +1,19 @@
 """
 Visit Lifecycle Router - Handle QR scanning, visit creation, approval/rejection, and checkout
 """
-from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi import APIRouter, HTTPException, status, Depends, Body
 from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import datetime, timedelta
 from bson import ObjectId
+import random
 
 from database import get_visits_collection, get_visitors_collection, get_temporary_qr_collection, get_database
 from middleware.auth import get_current_guard, get_current_owner, get_current_user
 from utils.jwt_utils import decode_qr_token
 from utils.qr_utils import parse_qr_data
 from utils.sse_manager import sse_manager
+from utils.time_utils import is_within_schedule
 
 
 router = APIRouter(prefix="/visits", tags=["Visits"])
@@ -55,7 +57,10 @@ class VisitResponse(BaseModel):
     entry_time: Optional[datetime]
     exit_time: Optional[datetime]
     status: str
-    qr_token: Optional[str]
+    qr_token: Optional[str] = None
+    is_all_flats: bool = False
+    valid_flats: Optional[List[str]] = None
+    target_flat_ids: Optional[List[str]] = None
     created_at: datetime
 
 
@@ -109,9 +114,6 @@ async def scan_qr_code(
                 auto_approve=False,
                 error="Visitor has been deactivated"
             )
-        
-        # Import schedule validation function from visitors router
-        from routers.visitors import is_within_schedule
         
         # Check schedule
         schedule = visitor.get("schedule", {})
@@ -205,9 +207,10 @@ async def scan_qr_code(
 
 @router.post("/start", response_model=VisitResponse, status_code=status.HTTP_201_CREATED)
 async def start_visit(
-    qr_request: Optional[StartVisitQRRequest] = None,
-    new_request: Optional[StartVisitNewRequest] = None,
-    current_user: dict = Depends(get_current_guard)
+    qr_request: Optional[StartVisitQRRequest] = Body(None),
+    new_request: Optional[StartVisitNewRequest] = Body(None),
+    current_user: dict = Depends(get_current_guard),
+    db = Depends(get_database)
 ):
     """
     Start a visit
@@ -247,17 +250,47 @@ async def start_visit(
                     detail="Invalid or inactive visitor"
                 )
             
+            # Determine target owners/flats
+            is_all_flats = visitor.get("is_all_flats", False)
+            valid_flats = visitor.get("valid_flats", [])
+            
+            target_flat_ids = []
+            if is_all_flats:
+                # Fetch all unique flat IDs from residents
+                all_flats = await db.residents.distinct("flat_id")
+                target_flat_ids = random.sample(all_flats, min(len(all_flats), 3)) if all_flats else []
+            elif valid_flats:
+                target_flat_ids = valid_flats
+            else:
+                target_flat_ids = [qr_request.owner_id]
+
+            # Determine status based on auto-approval rules
+            auto_approval = visitor.get("auto_approval", {})
+            rule = auto_approval.get("rule", "always")
+            
+            status_val = "auto_approved"
+            entry_time = datetime.utcnow()
+            
+            if rule == "manual":
+                status_val = "pending"
+                entry_time = None
+            elif rule == "within_schedule":
+                if not is_within_schedule(visitor.get("schedule", {})):
+                    status_val = "pending"
+                    entry_time = None
+            
             visit_doc = {
                 "visitor_id": str(visitor["_id"]),
                 "name_snapshot": visitor["name"],
                 "phone_snapshot": visitor.get("phone"),
                 "photo_snapshot_url": visitor["photo_url"],
                 "purpose": qr_request.purpose or visitor.get("default_purpose", "Visit"),
-                "owner_id": qr_request.owner_id,
+                "owner_id": target_flat_ids[0] if target_flat_ids else qr_request.owner_id,
+                "target_flat_ids": target_flat_ids,
                 "guard_id": current_user["user_id"],
-                "entry_time": datetime.utcnow(),
+                "entry_time": entry_time,
                 "exit_time": None,
-                "status": "auto_approved",
+                "status": status_val,
                 "qr_token": qr_request.qr_token,
                 "created_at": datetime.utcnow(),
                 "updated_at": datetime.utcnow()
@@ -273,6 +306,19 @@ async def start_visit(
                     detail="Invalid or expired temporary QR"
                 )
             
+            # Determine target owners/flats
+            is_all_flats = temp_qr.get("is_all_flats", False)
+            valid_flats = temp_qr.get("valid_flats", [])
+            
+            target_flat_ids = []
+            if is_all_flats:
+                all_flats = await db.residents.distinct("flat_id")
+                target_flat_ids = random.sample(all_flats, min(len(all_flats), 3)) if all_flats else []
+            elif valid_flats:
+                target_flat_ids = valid_flats
+            else:
+                target_flat_ids = [temp_qr["owner_id"]]
+
             # Mark temp QR as used
             await temp_qr_collection.update_one(
                 {"_id": ObjectId(payload["temp_qr_id"])},
@@ -283,9 +329,10 @@ async def start_visit(
                 "visitor_id": None,
                 "name_snapshot": temp_qr.get("guest_name", "Guest"),
                 "phone_snapshot": None,
-                "photo_snapshot_url": None,  # No photo for temp QR
+                "photo_snapshot_url": None,
                 "purpose": "Guest visit",
-                "owner_id": temp_qr["owner_id"],
+                "owner_id": target_flat_ids[0] if target_flat_ids else temp_qr["owner_id"],
+                "target_flat_ids": target_flat_ids,
                 "guard_id": current_user["user_id"],
                 "entry_time": datetime.utcnow(),
                 "exit_time": None,
@@ -303,27 +350,52 @@ async def start_visit(
         # Insert visit
         result = await visits.insert_one(visit_doc)
         
-        # Send SSE notification to owner
-        await sse_manager.send_event(
-            visit_doc["owner_id"],
-            "visit_auto_approved",
-            {
-                "visit_id": str(result.inserted_id),
-                "visitor_name": visit_doc["name_snapshot"],
-                "purpose": visit_doc["purpose"],
-                "entry_time": visit_doc["entry_time"].isoformat()
-            }
-        )
+        # Send SSE notification based on status
+        if visit_doc["status"] == "pending":
+            await sse_manager.broadcast_to_flats(
+                visit_doc["target_flat_ids"],
+                "new_visit_pending",
+                {
+                    "visit_id": str(result.inserted_id),
+                    "visitor_name": visit_doc["name_snapshot"],
+                    "visitor_phone": visit_doc["phone_snapshot"],
+                    "purpose": visit_doc["purpose"],
+                    "photo_url": visit_doc["photo_snapshot_url"],
+                    "guard_id": current_user["user_id"]
+                },
+                db
+            )
+        else:
+            await sse_manager.broadcast_to_flats(
+                visit_doc["target_flat_ids"],
+                "visit_auto_approved",
+                {
+                    "visit_id": str(result.inserted_id),
+                    "visitor_name": visit_doc["name_snapshot"],
+                    "purpose": visit_doc["purpose"],
+                    "entry_time": visit_doc["entry_time"].isoformat() if visit_doc["entry_time"] else None
+                },
+                db
+            )
     
     # Handle new visitor flow
     else:
+        # Determine target owners/flats for New Visitor
+        target_flat_ids = []
+        if new_request.owner_id == "all":
+            all_flats = await db.residents.distinct("flat_id")
+            target_flat_ids = random.sample(all_flats, min(len(all_flats), 3)) if all_flats else []
+        else:
+            target_flat_ids = [new_request.owner_id]
+
         visit_doc = {
             "visitor_id": None,
             "name_snapshot": new_request.name,
             "phone_snapshot": new_request.phone,
             "photo_snapshot_url": new_request.photo_url,  # Local buffer path
             "purpose": new_request.purpose,
-            "owner_id": new_request.owner_id,
+            "owner_id": target_flat_ids[0] if target_flat_ids else new_request.owner_id,
+            "target_flat_ids": target_flat_ids,
             "guard_id": current_user["user_id"],
             "entry_time": None,  # Set after approval
             "exit_time": None,
@@ -336,9 +408,9 @@ async def start_visit(
         # Insert visit
         result = await visits.insert_one(visit_doc)
         
-        # Send SSE notification to owner for approval
-        await sse_manager.send_event(
-            new_request.owner_id,
+        # Send SSE notification to all targeted flats for approval
+        await sse_manager.broadcast_to_flats(
+            target_flat_ids,
             "new_visit_pending",
             {
                 "visit_id": str(result.inserted_id),
@@ -347,7 +419,8 @@ async def start_visit(
                 "purpose": new_request.purpose,
                 "photo_url": new_request.photo_url,
                 "guard_id": current_user["user_id"]
-            }
+            },
+            db
         )
     
     # Fetch and return created visit
@@ -397,14 +470,16 @@ async def approve_visit(
             detail="Visit not found"
         )
     
-    # Check ownership (match user_id OR flat_id)
+    # Check ownership (match user_id OR flat_id OR target_flat_ids)
     is_owner = visit["owner_id"] == current_user["user_id"]
     
     # If not direct match, check flat_id
     if not is_owner:
         resident = await db.residents.find_one({"_id": ObjectId(current_user["user_id"])})
-        if resident and resident.get("flat_id") == visit["owner_id"]:
-            is_owner = True
+        if resident:
+            flat_id = resident.get("flat_id")
+            if flat_id == visit["owner_id"] or flat_id in visit.get("target_flat_ids", []):
+                is_owner = True
             
     if not is_owner:
         raise HTTPException(
@@ -616,6 +691,9 @@ async def get_todays_visits(
             exit_time=v.get("exit_time"),
             status=v["status"],
             qr_token=v.get("qr_token"),
+            is_all_flats=v.get("is_all_flats", False),
+            valid_flats=v.get("valid_flats"),
+            target_flat_ids=v.get("target_flat_ids"),
             created_at=v["created_at"]
         )
         for v in visit_list
@@ -764,9 +842,12 @@ async def get_notifications(
         if not flat_id:
             return []
             
-        # Fetch recent visits (last 50)
+        # Fetch recent visits (last 50) where specifically for this flat or broadcast to this flat
         cursor = visits_collection.find({
-            "owner_id": flat_id,
+            "$or": [
+                {"owner_id": flat_id},
+                {"target_flat_ids": flat_id}
+            ],
             "status": {"$in": ["approved", "rejected", "auto_approved"]}
         }).sort("updated_at", -1).limit(50)
         
@@ -805,13 +886,16 @@ async def get_notifications(
             else:
                 timestamp = "Just now"
                 
+            is_broadcast = visit.get("is_all_flats") or (visit.get("target_flat_ids") and len(visit["target_flat_ids"]) > 1)
+                
             notifications.append({
                 "id": str(visit["_id"]),
                 "type": notif_type,
                 "title": title,
                 "message": message,
                 "timestamp": timestamp,
-                "read": True # For now, mark all as read since we don't track read status
+                "read": True, # For now, mark all as read since we don't track read status
+                "is_broadcast": is_broadcast
             })
             
         return notifications
@@ -863,7 +947,10 @@ async def get_pending_visits(
         
         print(f"[DEBUG] Querying visits for flat_id: {flat_id}")
         visits = await visits_collection.find({
-            "owner_id": flat_id,  # Match by flat_id (e.g. "A-207")
+            "$or": [
+                {"owner_id": flat_id},
+                {"target_flat_ids": flat_id}
+            ],
             "status": "pending"
         }).sort("created_at", -1).to_list(length=100)
         
@@ -936,7 +1023,10 @@ async def get_pending_count(
     flat_id = await get_owner_flat_id(current_user["user_id"], db)
     
     count = await visits_collection.count_documents({
-        "owner_id": flat_id,
+        "$or": [
+            {"owner_id": flat_id},
+            {"target_flat_ids": flat_id}
+        ],
         "status": "pending"
     })
     
@@ -959,7 +1049,10 @@ async def get_today_count(
     today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     
     count = await visits_collection.count_documents({
-        "owner_id": flat_id,
+        "$or": [
+            {"owner_id": flat_id},
+            {"target_flat_ids": flat_id}
+        ],
         "created_at": {"$gte": today_start}
     })
     
@@ -980,7 +1073,10 @@ async def get_recent_visits(
     flat_id = await get_owner_flat_id(current_user["user_id"], db)
     
     visits = await visits_collection.find({
-        "owner_id": flat_id
+        "$or": [
+            {"owner_id": flat_id},
+            {"target_flat_ids": flat_id}
+        ]
     }).sort("created_at", -1).limit(limit).to_list(length=limit)
     
     return [
@@ -997,6 +1093,9 @@ async def get_recent_visits(
             exit_time=visit.get("exit_time"),
             status=visit["status"],
             qr_token=visit.get("qr_token"),
+            is_all_flats=visit.get("is_all_flats", False),
+            valid_flats=visit.get("valid_flats"),
+            target_flat_ids=visit.get("target_flat_ids"),
             created_at=visit["created_at"]
         )
         for visit in visits
@@ -1016,25 +1115,32 @@ async def get_dashboard_stats(
     temp_qr_collection = get_temporary_qr_collection()
     flat_id = await get_owner_flat_id(current_user["user_id"], db)
     
+    query_target = {
+        "$or": [
+            {"owner_id": flat_id},
+            {"target_flat_ids": flat_id}
+        ]
+    }
+    
     # Time ranges
     today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     now = datetime.utcnow()
     
     # 1. Today's Visitors (Created today)
     today_count = await visits_collection.count_documents({
-        "owner_id": flat_id,
+        **query_target,
         "created_at": {"$gte": today_start}
     })
     
     # 2. Pending Approvals
     pending_count = await visits_collection.count_documents({
-        "owner_id": flat_id,
+        **query_target,
         "status": "pending"
     })
     
     # 3. Approved Today (Status approved/auto_approved and created today)
     approved_count = await visits_collection.count_documents({
-        "owner_id": flat_id,
+        **query_target,
         "status": {"$in": ["approved", "auto_approved"]},
         "created_at": {"$gte": today_start}
     })

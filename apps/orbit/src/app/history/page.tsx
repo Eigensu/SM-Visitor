@@ -29,6 +29,9 @@ interface Visit {
   entry_time?: string;
   exit_time?: string;
   status: "pending" | "approved" | "rejected" | "auto_approved";
+  is_all_flats?: boolean;
+  valid_flats?: string[];
+  target_flat_ids?: string[];
   created_at: string;
 }
 
@@ -225,10 +228,23 @@ export default function HistoryPage() {
                   <div className="flex-1">
                     <div className="flex items-start justify-between">
                       <div>
-                        <h3 className="font-semibold text-gray-900">{visit.name_snapshot}</h3>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-semibold text-gray-900">{visit.name_snapshot}</h3>
+                          {visit.is_all_flats && (
+                            <span className="bg-blue-100 text-blue-700 text-[10px] px-1.5 py-0.5 rounded font-bold uppercase">
+                              Broadcast
+                            </span>
+                          )}
+                        </div>
                         {visit.phone_snapshot && (
                           <p className="text-sm text-gray-600">{visit.phone_snapshot}</p>
                         )}
+                        <p className="text-sm font-medium text-primary">
+                          To:{" "}
+                          {visit.is_all_flats
+                            ? "Society (Random 3)"
+                            : visit.target_flat_ids?.join(", ") || visit.owner_id}
+                        </p>
                         <p className="text-sm text-gray-600">{visit.purpose}</p>
                       </div>
                       <StatusBadge status={visit.status} />

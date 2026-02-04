@@ -136,6 +136,18 @@ export const visitsAPI = {
   },
 };
 
+// Visitors API
+export const visitorsAPI = {
+  getRegularVisitors: async () => {
+    const response = await apiClient.get("/visitors/regular");
+    return response.data;
+  },
+  getAllVisitors: async () => {
+    const response = await apiClient.get("/visitors/");
+    return response.data;
+  },
+};
+
 // Uploads API
 export const uploadsAPI = {
   uploadNewVisitorPhoto: async (file: File) => {

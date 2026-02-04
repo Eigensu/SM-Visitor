@@ -25,6 +25,9 @@ interface Visit {
   entry_time?: string;
   exit_time?: string;
   status: "pending" | "approved" | "rejected" | "auto_approved";
+  is_all_flats?: boolean;
+  valid_flats?: string[];
+  target_flat_ids?: string[];
   created_at: string;
 }
 
