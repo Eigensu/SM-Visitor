@@ -10,7 +10,7 @@ import { createSSEConnection } from "@/lib/api";
 import toast from "react-hot-toast";
 
 export function SSEProvider({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isAuthLoading, updateVisitStatus } = useStore();
+  const { isAuthenticated, isAuthLoading, updateVisitStatus, addVisit } = useStore();
 
   // Check if SSE is enabled (can be disabled via env var for development)
   const sseEnabled = process.env.NEXT_PUBLIC_SSE_ENABLED !== "false";
@@ -31,6 +31,20 @@ export function SSEProvider({ children }: { children: React.ReactNode }) {
             duration: 5000,
             icon: "✅",
           });
+          break;
+
+        case "new_visit_pending":
+          console.log("📨 [Orbit] Processing new_visit_pending:", data.data);
+          addVisit(data.data as any); // Type assertion for now, data matches Visit shape
+          toast("New visitor waiting for approval", {
+            icon: "⏳",
+          });
+          break;
+
+        case "visit_auto_approved":
+          console.log("📨 [Orbit] Processing visit_auto_approved:", data.data);
+          addVisit(data.data as any);
+          toast.success("Visitor auto-approved");
           break;
 
         case "visit_rejected":

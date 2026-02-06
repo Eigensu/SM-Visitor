@@ -365,6 +365,27 @@ async def start_visit(
                 },
                 db
             )
+            
+            # Broadcast to guards for real-time dashboard update
+            await sse_manager.broadcast_to_role(
+                "guard",
+                "new_visit_pending",
+                {
+                    "id": str(result.inserted_id),
+                    "visitor_id": str(visitor["_id"]),
+                    "name_snapshot": visit_doc["name_snapshot"],
+                    "phone_snapshot": visit_doc["phone_snapshot"],
+                    "photo_snapshot_url": visit_doc["photo_snapshot_url"],
+                    "purpose": visit_doc["purpose"],
+                    "owner_id": visit_doc["owner_id"],
+                    "guard_id": visit_doc["guard_id"],
+                    "entry_time": visit_doc["entry_time"].isoformat() if visit_doc["entry_time"] else None,
+                    "exit_time": None,
+                    "status": visit_doc["status"],
+                    "qr_token": visit_doc["qr_token"],
+                    "created_at": visit_doc["created_at"].isoformat()
+                }
+            )
         else:
             await sse_manager.broadcast_to_flats(
                 visit_doc["target_flat_ids"],
@@ -376,6 +397,27 @@ async def start_visit(
                     "entry_time": visit_doc["entry_time"].isoformat() if visit_doc["entry_time"] else None
                 },
                 db
+            )
+            
+            # Broadcast to guards for real-time dashboard update
+            await sse_manager.broadcast_to_role(
+                "guard",
+                "visit_auto_approved",
+                {
+                    "id": str(result.inserted_id),
+                    "visitor_id": str(visitor["_id"]),
+                    "name_snapshot": visit_doc["name_snapshot"],
+                    "phone_snapshot": visit_doc["phone_snapshot"],
+                    "photo_snapshot_url": visit_doc["photo_snapshot_url"],
+                    "purpose": visit_doc["purpose"],
+                    "owner_id": visit_doc["owner_id"],
+                    "guard_id": visit_doc["guard_id"],
+                    "entry_time": visit_doc["entry_time"].isoformat() if visit_doc["entry_time"] else None,
+                    "exit_time": None,
+                    "status": visit_doc["status"],
+                    "qr_token": visit_doc["qr_token"],
+                    "created_at": visit_doc["created_at"].isoformat()
+                }
             )
     
     # Handle new visitor flow
@@ -421,6 +463,27 @@ async def start_visit(
                 "guard_id": current_user["user_id"]
             },
             db
+        )
+        
+        # Broadcast to guards for real-time dashboard update
+        await sse_manager.broadcast_to_role(
+            "guard",
+            "new_visit_pending",
+            {
+                "id": str(result.inserted_id),
+                "visitor_id": None,
+                "name_snapshot": visit_doc["name_snapshot"],
+                "phone_snapshot": visit_doc["phone_snapshot"],
+                "photo_snapshot_url": visit_doc["photo_snapshot_url"],
+                "purpose": visit_doc["purpose"],
+                "owner_id": visit_doc["owner_id"],
+                "guard_id": visit_doc["guard_id"],
+                "entry_time": None,
+                "exit_time": None,
+                "status": visit_doc["status"],
+                "qr_token": None,
+                "created_at": visit_doc["created_at"].isoformat()
+            }
         )
     
     # Fetch and return created visit

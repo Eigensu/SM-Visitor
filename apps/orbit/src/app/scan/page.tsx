@@ -40,6 +40,8 @@ export default function ScanPage() {
       }
 
       if (!token) {
+        setErrorMessage("Invalid QR code format");
+        setScanState("error");
         toast.error("Invalid QR code format");
         return;
       }
@@ -60,15 +62,11 @@ export default function ScanPage() {
           response.error?.includes("already scanned")
         ) {
           setErrorMessage("This QR code has already been used");
-          setScanState("error");
-
-          toast.error("QR code already used. Check today's visits or scan a new code.", {
-            duration: 4000,
-          });
-
-          return;
+        } else {
+          setErrorMessage(response.error || "Invalid or expired QR code");
         }
 
+        setScanState("error");
         toast.error(response.error || "Invalid or expired QR code");
         return;
       }
@@ -82,7 +80,10 @@ export default function ScanPage() {
       toast.success("QR code validated successfully!");
     } catch (error: any) {
       console.error("QR scan error:", error);
-      toast.error(error.response?.data?.detail || "Failed to validate QR code");
+      const msg = error.response?.data?.detail || "Failed to validate QR code";
+      setErrorMessage(msg);
+      setScanState("error");
+      toast.error(msg);
     }
   };
 
