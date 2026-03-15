@@ -1312,8 +1312,11 @@ async def get_visit_details(
             detail="Visit not found"
         )
     
-    # Verify ownership
-    if visit["owner_id"] != flat_id:
+    # Owner can view the visit if:
+    # - visit.owner_id matches their flat_id OR
+    # - their flat_id is one of the broadcast target_flat_ids
+    target_flat_ids = visit.get("target_flat_ids", [])
+    if visit["owner_id"] != flat_id and flat_id not in target_flat_ids:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied"
