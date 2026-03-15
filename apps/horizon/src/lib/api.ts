@@ -208,7 +208,13 @@ export const uploadsAPI = {
         "Content-Type": "multipart/form-data",
       },
     });
-    return response.data;
+    // Backend returns { photo_url, storage_type, message }
+    // Horizon expects a stable photo_id to send when creating the visitor.
+    return {
+      photo_id: response.data.photo_url,
+      storage_type: response.data.storage_type,
+      message: response.data.message,
+    };
   },
 };
 

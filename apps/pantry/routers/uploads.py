@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, status, Depends, UploadFile, File
 from pydantic import BaseModel
 from typing import Optional
 
-from middleware.auth import get_current_guard
+from middleware.auth import get_current_guard, get_current_owner, get_current_user
 from utils.storage import photo_storage
 
 
@@ -22,7 +22,7 @@ class PhotoUploadResponse(BaseModel):
 @router.post("/photo/regular", response_model=PhotoUploadResponse)
 async def upload_regular_visitor_photo(
     photo: UploadFile = File(...),
-    current_user: dict = Depends(get_current_guard)
+    current_user: dict = Depends(get_current_guard),
 ):
     """
     Upload photo for regular visitor (saved to MongoDB GridFS)
@@ -34,8 +34,8 @@ async def upload_regular_visitor_photo(
     # Read photo data
     photo_data = await photo.read()
     
-    # Validate photo
-    is_valid, error_msg = photo_storage.validate_photo(photo_data)
+    # Validate photo (allow up to 10MB to be safe for uploads from web)
+    is_valid, error_msg = photo_storage.validate_photo(photo_data, max_size_mb=10)
     if not is_valid:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -45,13 +45,46 @@ async def upload_regular_visitor_photo(
     # Save to GridFS
     file_id = await photo_storage.save_regular_visitor_photo(
         photo_data,
-        photo.filename or "visitor_photo.jpg"
+        photo.filename or "visitor_photo.jpg",
     )
-    
+
     return PhotoUploadResponse(
         photo_url=file_id,
         storage_type="gridfs",
-        message="Photo saved to MongoDB GridFS"
+        message="Photo saved to MongoDB GridFS",
+    )
+
+
+@router.post("/photo/regular-visitor", response_model=PhotoUploadResponse)
+async def upload_regular_visitor_photo_owner(
+    photo: UploadFile = File(...),
+    current_user: dict = Depends(get_current_owner),
+):
+    """
+    Upload photo for regular visitor from Horizon (owner app).
+    Uses the same storage behavior as guard endpoint but allows owner/admin roles.
+    """
+    # Read photo data
+    photo_data = await photo.read()
+
+    # Validate photo (allow up to 10MB)
+    is_valid, error_msg = photo_storage.validate_photo(photo_data, max_size_mb=10)
+    if not is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_msg,
+        )
+
+    # Save to GridFS
+    file_id = await photo_storage.save_regular_visitor_photo(
+        photo_data,
+        photo.filename or "visitor_photo.jpg",
+    )
+
+    return PhotoUploadResponse(
+        photo_url=file_id,
+        storage_type="gridfs",
+        message="Photo saved to MongoDB GridFS",
     )
 
 
@@ -70,8 +103,8 @@ async def upload_new_visitor_photo(
     # Read photo data
     photo_data = await photo.read()
     
-    # Validate photo
-    is_valid, error_msg = photo_storage.validate_photo(photo_data)
+    # Validate photo (allow up to 10MB)
+    is_valid, error_msg = photo_storage.validate_photo(photo_data, max_size_mb=10)
     if not is_valid:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -98,7 +131,7 @@ async def upload_new_visitor_photo(
 @router.get("/photo/regular/{file_id}")
 async def get_regular_visitor_photo(
     file_id: str,
-    current_user: dict = Depends(get_current_guard)
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Retrieve regular visitor photo from GridFS
@@ -124,7 +157,7 @@ async def get_regular_visitor_photo(
 @router.get("/photo/buffer/{filename}")
 async def get_buffer_photo(
     filename: str,
-    current_user: dict = Depends(get_current_guard)
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Retrieve new visitor photo from local buffer
