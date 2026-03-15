@@ -19,3 +19,7 @@ apps/horizon/.env.local
 # Coverage
 coverage/
 
+# Local environment
+.env
+env/
+
