@@ -30,6 +30,8 @@ export default function NewVisitorPage() {
     purpose: "",
     owner_id: "",
     photo_url: "",
+    id_type: "",
+    id_number: "",
   });
   const [visit, setVisit] = useState<any>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -118,6 +120,8 @@ export default function NewVisitorPage() {
         photo_url: formData.photo_url,
         owner_id: formData.owner_id,
         purpose: formData.purpose,
+        id_type: formData.id_type || undefined,
+        id_number: formData.id_number || undefined,
       });
 
       setVisit(response);
@@ -220,6 +224,65 @@ export default function NewVisitorPage() {
                   required
                   placeholder="e.g., Delivery, Guest visit"
                 />
+
+                {/* Proof of Identity */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground">
+                    Proof of Identity{" "}
+                    <span className="text-muted-foreground text-xs">(Optional)</span>
+                  </label>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setFormData({
+                          ...formData,
+                          id_type: formData.id_type === "aadhar" ? "" : "aadhar",
+                          id_number: "",
+                        })
+                      }
+                      className={`flex-1 rounded-lg border py-2 text-sm font-medium transition-colors ${
+                        formData.id_type === "aadhar"
+                          ? "border-primary bg-primary/5 text-primary"
+                          : "border-border hover:bg-muted"
+                      }`}
+                    >
+                      Aadhar Card
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setFormData({
+                          ...formData,
+                          id_type: formData.id_type === "pan" ? "" : "pan",
+                          id_number: "",
+                        })
+                      }
+                      className={`flex-1 rounded-lg border py-2 text-sm font-medium transition-colors ${
+                        formData.id_type === "pan"
+                          ? "border-primary bg-primary/5 text-primary"
+                          : "border-border hover:bg-muted"
+                      }`}
+                    >
+                      PAN Card
+                    </button>
+                  </div>
+                  {formData.id_type && (
+                    <Input
+                      type="text"
+                      value={formData.id_number}
+                      onChange={(e) =>
+                        setFormData({ ...formData, id_number: e.target.value.toUpperCase() })
+                      }
+                      placeholder={
+                        formData.id_type === "aadhar"
+                          ? "Enter 12-digit Aadhar number"
+                          : "Enter PAN number (e.g. ABCDE1234F)"
+                      }
+                      maxLength={formData.id_type === "aadhar" ? 12 : 10}
+                    />
+                  )}
+                </div>
 
                 <OwnerSelect
                   value={formData.owner_id}
