@@ -93,6 +93,7 @@ export const visitsAPI = {
     photo_url?: string;
     id_type?: string;
     id_number?: string;
+    id_photo_url?: string;
   }) => {
     const payload = data.qr_token
       ? {
@@ -111,6 +112,7 @@ export const visitsAPI = {
             purpose: data.purpose,
             id_type: data.id_type,
             id_number: data.id_number,
+            id_photo_url: data.id_photo_url,
           },
         };
 
@@ -158,9 +160,17 @@ export const uploadsAPI = {
     formData.append("photo", file);
 
     const response = await apiClient.post("/uploads/photo/new-visitor", formData, {
-      headers: {
-        "Content-Type": "multipart/form-data",
-      },
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+    return response.data;
+  },
+
+  uploadIDCardPhoto: async (file: File) => {
+    const formData = new FormData();
+    formData.append("photo", file);
+
+    const response = await apiClient.post("/uploads/photo/id-card", formData, {
+      headers: { "Content-Type": "multipart/form-data" },
     });
     return response.data;
   },

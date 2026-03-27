@@ -51,6 +51,7 @@ class StartVisitNewRequest(BaseModel):
     purpose: str = Field(..., min_length=1, max_length=200)
     id_type: Optional[str] = Field(None, pattern="^(aadhar|pan)$")
     id_number: Optional[str] = Field(None, max_length=20)
+    id_photo_url: Optional[str] = None
 
 
 class VisitResponse(BaseModel):
@@ -465,6 +466,7 @@ async def start_visit(
             "qr_token": None,
             "id_type": new_request.id_type,
             "id_number": new_request.id_number,
+            "id_photo_url": new_request.id_photo_url,
             "created_at": datetime.utcnow(),
             "updated_at": datetime.utcnow(),
         }
@@ -1340,6 +1342,7 @@ async def get_visit_details(
         "qr_token": visit.get("qr_token"),
         "id_type": visit.get("id_type"),
         "id_number": visit.get("id_number"),
+        "id_photo_url": visit.get("id_photo_url"),
         "created_at": visit["created_at"].isoformat(),
         "updated_at": (
             visit.get("updated_at").isoformat()

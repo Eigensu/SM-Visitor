@@ -34,6 +34,7 @@ interface Visit {
   target_flat_ids?: string[];
   id_type?: string;
   id_number?: string;
+  id_photo_url?: string;
   created_at: string;
 }
 
@@ -353,6 +354,16 @@ export default function HistoryPage() {
                     label={selectedVisit.id_type === "aadhar" ? "Aadhar No." : "PAN No."}
                     value={selectedVisit.id_number || "N/A"}
                   />
+                )}
+                {selectedVisit.id_photo_url && (
+                  <div className="pt-1">
+                    <p className="mb-1.5 text-sm text-gray-500">ID Card Photo</p>
+                    <img
+                      src={selectedVisit.id_photo_url}
+                      alt="ID card"
+                      className="w-full rounded-lg border object-cover"
+                    />
+                  </div>
                 )}
               </div>
             </div>
