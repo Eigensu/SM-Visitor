@@ -7,16 +7,13 @@
 import { useSSE } from "@sm-visitor/hooks";
 import { useStore } from "@/lib/store";
 import { createSSEConnection } from "@/lib/api";
+import { sendNotification } from "@/lib/notifications";
 import toast from "react-hot-toast";
+import { useRouter } from "next/navigation";
 
 export function SSEProvider({ children }: { children: React.ReactNode }) {
-  const {
-    isAuthenticated,
-    updateVisitStatus,
-    addPendingVisit,
-    removePendingVisit,
-    setRecentActivity,
-  } = useStore();
+  const router = useRouter();
+  const { isAuthenticated, updateVisitStatus, addPendingVisit, removePendingVisit } = useStore();
 
   useSSE({
     isAuthenticated,
@@ -25,11 +22,12 @@ export function SSEProvider({ children }: { children: React.ReactNode }) {
       console.log("SSE event received:", data.type, data.data);
 
       switch (data.type) {
-        case "new_visit_pending":
-          // New visitor request - add to pending list
+        case "new_visit_pending": {
+          const name = data.data.visitor_name || "Unknown";
+
           addPendingVisit({
             id: data.data.visit_id,
-            name_snapshot: data.data.visitor_name,
+            name_snapshot: name,
             phone_snapshot: data.data.visitor_phone,
             photo_snapshot_url: data.data.photo_url,
             purpose: data.data.purpose,
@@ -39,19 +37,35 @@ export function SSEProvider({ children }: { children: React.ReactNode }) {
             created_at: new Date().toISOString(),
           });
 
-          toast.success(`New visitor request: ${data.data.visitor_name}`, {
-            duration: 5000,
+          // In-app toast
+          toast(`${name} is requesting entry`, {
+            duration: 8000,
             icon: "🔔",
           });
-          break;
 
-        case "visit_auto_approved":
-          // QR code visit - show notification
-          toast.success(`${data.data.visitor_name} entered using QR code`, {
+          // OS-level browser notification
+          sendNotification("Visitor Approval Required", {
+            body: `${name} is at the gate${data.data.purpose ? ` — ${data.data.purpose}` : ""}. Tap to review.`,
+            tag: `visit-pending-${data.data.visit_id}`,
+            onClick: () => router.push("/approvals"),
+          });
+          break;
+        }
+
+        case "visit_auto_approved": {
+          const name = data.data.visitor_name || "Visitor";
+
+          toast.success(`${name} entered using QR code`, {
             duration: 5000,
             icon: "✅",
           });
+
+          sendNotification("Visitor Auto-Approved", {
+            body: `${name} has entered the premises automatically.`,
+            tag: `visit-auto-${data.data.visit_id}`,
+          });
           break;
+        }
 
         case "visit_approved":
           updateVisitStatus(data.data.visit_id, "approved");
@@ -70,7 +84,6 @@ export function SSEProvider({ children }: { children: React.ReactNode }) {
           break;
 
         case "visit_cancelled":
-          // Visit cancelled by guard - remove from pending list
           removePendingVisit(data.data.visit_id);
           toast(`Visit request cancelled: ${data.data.visitor_name}`, {
             duration: 4000,

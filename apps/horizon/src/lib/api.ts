@@ -110,6 +110,11 @@ export const visitsAPI = {
     return response.data;
   },
 
+  exportAll: async () => {
+    const response = await apiClient.get("/visits/recent?limit=10000");
+    return response.data;
+  },
+
   getNotifications: async () => {
     const response = await apiClient.get("/visits/notifications");
     return response.data;

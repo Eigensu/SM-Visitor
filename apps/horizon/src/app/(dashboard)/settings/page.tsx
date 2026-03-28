@@ -5,8 +5,27 @@ import { GlassCard } from "@/components/shared/GlassCard";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@sm-visitor/ui";
-import { Bell, Shield, Moon, Smartphone, LogOut, ChevronRight, User, Home } from "lucide-react";
+import {
+  Bell,
+  Shield,
+  Moon,
+  Smartphone,
+  LogOut,
+  ChevronRight,
+  User,
+  Home,
+  Download,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useState, useEffect } from "react";
+import { visitsAPI } from "@/lib/api";
+import toast from "react-hot-toast";
+import * as XLSX from "xlsx";
+import {
+  requestNotificationPermission,
+  isNotificationSupported,
+  getNotificationPermission,
+} from "@/lib/notifications";
 
 const settingsSections = [
   {
@@ -39,6 +58,69 @@ const settingsSections = [
 
 export default function Settings() {
   const router = useRouter();
+  const [isExporting, setIsExporting] = useState(false);
+  const [notifPermission, setNotifPermission] = useState<NotificationPermission | "unsupported">(
+    "default"
+  );
+
+  useEffect(() => {
+    setNotifPermission(isNotificationSupported() ? getNotificationPermission() : "unsupported");
+  }, []);
+
+  const handleEnableNotifications = async () => {
+    const granted = await requestNotificationPermission();
+    setNotifPermission(granted ? "granted" : "denied");
+    if (granted) {
+      toast.success("Browser notifications enabled!");
+    } else {
+      toast.error("Notifications blocked. Please allow them in your browser settings.");
+    }
+  };
+
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      const visits = await visitsAPI.exportAll();
+
+      if (!visits || visits.length === 0) {
+        toast.error("No activity data to export");
+        return;
+      }
+
+      // Format rows for the sheet
+      const rows = visits.map((v: any) => ({
+        "Visitor Name": v.name_snapshot || "N/A",
+        Phone: v.phone_snapshot || "N/A",
+        Purpose: v.purpose || "N/A",
+        "Flat / Owner": v.owner_id || "N/A",
+        Status: v.status || "N/A",
+        "Entry Time": v.entry_time ? new Date(v.entry_time).toLocaleString() : "N/A",
+        "Exit Time": v.exit_time ? new Date(v.exit_time).toLocaleString() : "N/A",
+        Date: new Date(v.created_at).toLocaleDateString(),
+      }));
+
+      const ws = XLSX.utils.json_to_sheet(rows);
+
+      // Auto-size columns
+      const colWidths = Object.keys(rows[0]).map((key) => ({
+        wch: Math.max(key.length, ...rows.map((r: any) => String(r[key] || "").length)) + 2,
+      }));
+      ws["!cols"] = colWidths;
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Visit Activity");
+
+      const filename = `visit-activity-${new Date().toISOString().split("T")[0]}.xlsx`;
+      XLSX.writeFile(wb, filename);
+
+      toast.success(`Exported ${rows.length} records`);
+    } catch (error) {
+      console.error("Export error:", error);
+      toast.error("Failed to export activity");
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   return (
     <PageContainer title="Settings" description="Manage your preferences and account">
@@ -107,6 +189,80 @@ export default function Settings() {
                 <span className="text-foreground">Just now</span>
               </div>
             </div>
+          </GlassCard>
+
+          {/* Browser Notifications */}
+          <GlassCard className="space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="rounded-lg bg-primary/10 p-2">
+                <Bell className="h-4 w-4 text-primary" strokeWidth={1.5} />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-semibold text-foreground">Browser Notifications</h3>
+                <p className="text-xs text-muted-foreground">
+                  Get OS-level popups for visitor approvals and auto-entries
+                </p>
+              </div>
+            </div>
+
+            {notifPermission === "unsupported" && (
+              <p className="text-sm text-muted-foreground">
+                Your browser does not support notifications.
+              </p>
+            )}
+
+            {notifPermission === "granted" && (
+              <div className="flex items-center gap-2 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700">
+                <span className="text-base">✅</span>
+                Notifications are enabled
+              </div>
+            )}
+
+            {notifPermission === "denied" && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+                  <span className="text-base">🚫</span>
+                  Notifications are blocked in your browser
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  To enable, click the lock icon in your browser's address bar and allow
+                  notifications.
+                </p>
+              </div>
+            )}
+
+            {notifPermission === "default" && (
+              <Button
+                className="ocean-gradient w-full hover:opacity-90"
+                onClick={handleEnableNotifications}
+              >
+                <Bell className="mr-2 h-4 w-4" strokeWidth={1.5} />
+                Enable Notifications
+              </Button>
+            )}
+          </GlassCard>
+
+          {/* Export Activity */}
+          <GlassCard className="space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="rounded-lg bg-primary/10 p-2">
+                <Download className="h-4 w-4 text-primary" strokeWidth={1.5} />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-semibold text-foreground">Export Activity</h3>
+                <p className="text-xs text-muted-foreground">
+                  Download all your visit history as an Excel file
+                </p>
+              </div>
+            </div>
+            <Button
+              className="ocean-gradient w-full hover:opacity-90"
+              onClick={handleExport}
+              disabled={isExporting}
+            >
+              <Download className="mr-2 h-4 w-4" strokeWidth={1.5} />
+              {isExporting ? "Exporting..." : "Export as XLSX"}
+            </Button>
           </GlassCard>
 
           {/* Logout */}
