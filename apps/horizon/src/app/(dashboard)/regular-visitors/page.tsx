@@ -56,6 +56,11 @@ const DAY_LABELS: Record<number, string> = {
 const getCategoryLabel = (visitor: any): string =>
   visitor.category_label || CATEGORY_LABELS[visitor.category || "other"] || "Other";
 
+const getVisitorPhotoSrc = (photoUrl: string, apiBaseUrl: string | undefined): string =>
+  `${apiBaseUrl}/uploads/photo/regular/${photoUrl}${
+    typeof window !== "undefined" ? `?token=${localStorage.getItem("auth_token") || ""}` : ""
+  }`;
+
 export default function RegularVisitorsPage() {
   const router = useRouter();
   const [visitors, setVisitors] = useState<any[]>([]);
@@ -167,11 +172,7 @@ export default function RegularVisitorsPage() {
               <div className="mb-4 flex items-start gap-4">
                 {visitor.photo_url ? (
                   <img
-                    src={`${apiBaseUrl}/uploads/photo/regular/${visitor.photo_url}${
-                      typeof window !== "undefined"
-                        ? `?token=${localStorage.getItem("auth_token") || ""}`
-                        : ""
-                    }`}
+                    src={getVisitorPhotoSrc(visitor.photo_url, apiBaseUrl)}
                     alt={visitor.name}
                     className="h-16 w-16 rounded-full object-cover ring-2 ring-primary/20"
                   />
@@ -309,11 +310,7 @@ export default function RegularVisitorsPage() {
               <div className="flex items-center gap-4">
                 {infoVisitor.photo_url ? (
                   <img
-                    src={`${apiBaseUrl}/uploads/photo/regular/${infoVisitor.photo_url}${
-                      typeof window !== "undefined"
-                        ? `?token=${localStorage.getItem("auth_token") || ""}`
-                        : ""
-                    }`}
+                    src={getVisitorPhotoSrc(infoVisitor.photo_url, apiBaseUrl)}
                     alt={infoVisitor.name}
                     className="h-20 w-20 rounded-full object-cover ring-2 ring-primary/20"
                   />
@@ -381,4 +378,3 @@ export default function RegularVisitorsPage() {
     </PageContainer>
   );
 }
-
