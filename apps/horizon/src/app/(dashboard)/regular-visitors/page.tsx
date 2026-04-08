@@ -53,6 +53,9 @@ const DAY_LABELS: Record<number, string> = {
   7: "Sun",
 };
 
+const getCategoryLabel = (visitor: any): string =>
+  visitor.category_label || CATEGORY_LABELS[visitor.category || "other"] || "Other";
+
 export default function RegularVisitorsPage() {
   const router = useRouter();
   const [visitors, setVisitors] = useState<any[]>([]);
@@ -204,7 +207,7 @@ export default function RegularVisitorsPage() {
               <div className="mb-3 flex items-center gap-2">
                 <span className="text-2xl">{CATEGORY_ICONS[visitor.category || "other"]}</span>
                 <span className="text-sm font-medium text-foreground">
-                  {visitor.category_label || CATEGORY_LABELS[visitor.category || "other"] || "Other"}
+                  {getCategoryLabel(visitor)}
                 </span>
               </div>
 
@@ -333,9 +336,7 @@ export default function RegularVisitorsPage() {
                   <span className="text-muted-foreground">Category</span>
                   <span className="font-medium">
                     {CATEGORY_ICONS[infoVisitor.category || "other"]}{" "}
-                    {infoVisitor.category_label ||
-                      CATEGORY_LABELS[infoVisitor.category || "other"] ||
-                      "Other"}
+                    {getCategoryLabel(infoVisitor)}
                   </span>
                 </div>
                 <div className="flex justify-between px-4 py-2.5 text-sm">
