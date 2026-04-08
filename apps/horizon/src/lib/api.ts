@@ -110,6 +110,11 @@ export const visitsAPI = {
     return response.data;
   },
 
+  exportAll: async () => {
+    const response = await apiClient.get("/visits/recent?limit=10000");
+    return response.data;
+  },
+
   getNotifications: async () => {
     const response = await apiClient.get("/visits/notifications");
     return response.data;
@@ -208,7 +213,13 @@ export const uploadsAPI = {
         "Content-Type": "multipart/form-data",
       },
     });
-    return response.data;
+    // Backend returns { photo_url, storage_type, message }
+    // Horizon expects a stable photo_id to send when creating the visitor.
+    return {
+      photo_id: response.data.photo_url,
+      storage_type: response.data.storage_type,
+      message: response.data.message,
+    };
   },
 };
 

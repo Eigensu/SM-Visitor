@@ -50,6 +50,7 @@ interface AppState {
   setPendingVisits: (visits: Visit[]) => void;
   setTodayVisits: (visits: Visit[]) => void;
   addPendingVisit: (visit: Visit) => void;
+  addVisit: (visit: Visit) => void;
   updateVisitStatus: (visitId: string, status: Visit["status"]) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
@@ -94,12 +95,34 @@ export const useStore = create<AppState>((set, get) => ({
 
   setPendingVisits: (visits) => set({ pendingVisits: visits }),
 
-  setTodayVisits: (visits) => set({ todayVisits: visits }),
+  // Sync pending visits when setting today's visits
+  setTodayVisits: (visits) =>
+    set({
+      todayVisits: visits,
+      pendingVisits: visits.filter((v) => v.status === "pending"),
+    }),
 
   addPendingVisit: (visit) =>
     set((state) => ({
       pendingVisits: [...state.pendingVisits, visit],
+      todayVisits: [...state.todayVisits, visit],
     })),
+
+  addVisit: (visit: Visit) =>
+    set((state) => {
+      // Avoid duplicates
+      if (state.todayVisits.some((v) => v.id === visit.id)) {
+        return state;
+      }
+
+      const newPending =
+        visit.status === "pending" ? [...state.pendingVisits, visit] : state.pendingVisits;
+
+      return {
+        todayVisits: [visit, ...state.todayVisits], // Add to top
+        pendingVisits: newPending,
+      };
+    }),
 
   updateVisitStatus: (visitId, status) =>
     set((state) => {

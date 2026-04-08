@@ -2,7 +2,7 @@
 Visitor Management Router - REST API for CRUD operations on visitors
 Handles regular visitor management with QR code generation
 """
-from fastapi import APIRouter, HTTPException, status, Depends, UploadFile, File
+from fastapi import APIRouter, HTTPException, status, Depends
 from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import datetime
@@ -47,7 +47,6 @@ def get_auto_approval_label(rule: str) -> str:
     return labels.get(rule, "Always auto-approve")
 
 
-from utils.time_utils import is_within_schedule
 
 
 
@@ -56,6 +55,7 @@ class CreateRegularVisitorRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     phone: Optional[str] = Field(None, min_length=10, max_length=15)
     default_purpose: Optional[str] = Field(None, max_length=200)
+    photo_id: str = Field(..., description="ID of the uploaded photo (GridFS file ID)")
     
     # Category
     category: str = Field(default="other", pattern="^(maid|cook|driver|delivery|milkman|car_wash|dog_walker|cleaner|other)$")
@@ -107,7 +107,6 @@ class VisitorWithQRResponse(VisitorResponse):
 @router.post("/regular", response_model=VisitorWithQRResponse, status_code=status.HTTP_201_CREATED)
 async def create_regular_visitor(
     request: CreateRegularVisitorRequest,
-    photo: UploadFile = File(...),
     current_user: dict = Depends(get_current_owner)
 ):
     """
@@ -122,21 +121,8 @@ async def create_regular_visitor(
     """
     visitors = get_visitors_collection()
     
-    # Validate and save photo to GridFS
-    photo_data = await photo.read()
-    is_valid, error_msg = photo_storage.validate_photo(photo_data)
-    
-    if not is_valid:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=error_msg
-        )
-    
-    # Save photo to MongoDB GridFS
-    photo_file_id = await photo_storage.save_regular_visitor_photo(
-        photo_data,
-        photo.filename or "visitor_photo.jpg"
-    )
+    # Use previously uploaded photo from /uploads/photo/regular-visitor
+    photo_file_id = request.photo_id
     
     # Create visitor document
     visitor_doc = {
@@ -221,7 +207,7 @@ async def create_regular_visitor(
     )
 
 
-@router.get("/{visitor_id}", response_model=VisitorResponse)
+@router.get("/by-id/{visitor_id}", response_model=VisitorResponse)
 async def get_visitor(
     visitor_id: str,
     current_user: dict = Depends(get_current_user)
@@ -392,6 +378,7 @@ async def update_visitor(
 
 
 @router.delete("/{visitor_id}", status_code=status.HTTP_200_OK)
+@router.delete("/regular/{visitor_id}", status_code=status.HTTP_200_OK)
 async def delete_visitor(
     visitor_id: str,
     current_user: dict = Depends(get_current_owner)

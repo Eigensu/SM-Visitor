@@ -7,7 +7,6 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@sm-visitor/ui";
-import { Input } from "@sm-visitor/ui";
 import { StatusBadge } from "@sm-visitor/ui";
 import { Spinner } from "@sm-visitor/ui";
 import { GlassCard } from "@/components/GlassCard";
@@ -15,7 +14,7 @@ import { visitsAPI } from "@/lib/api";
 import { formatTime } from "@/lib/utils";
 import { useStore } from "@/lib/store";
 import toast from "react-hot-toast";
-import { ArrowLeft, Search } from "lucide-react";
+import { ArrowLeft, Search, X, Phone, User, Clock, Shield, CreditCard } from "lucide-react";
 
 interface Visit {
   id: string;
@@ -26,12 +25,16 @@ interface Visit {
   purpose: string;
   owner_id: string;
   guard_id: string;
+  guard_name?: string;
   entry_time?: string;
   exit_time?: string;
   status: "pending" | "approved" | "rejected" | "auto_approved";
   is_all_flats?: boolean;
   valid_flats?: string[];
   target_flat_ids?: string[];
+  id_type?: string;
+  id_number?: string;
+  id_photo_url?: string;
   created_at: string;
 }
 
@@ -43,21 +46,18 @@ export default function HistoryPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [isLoading, setIsLoading] = useState(true);
   const [selectedVisit, setSelectedVisit] = useState<Visit | null>(null);
+  const [isLoadingDetails, setIsLoadingDetails] = useState(false);
 
-  // Initialize filter from URL params
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const statusParam = params.get("status");
-    if (statusParam) {
-      setStatusFilter(statusParam);
-    }
+    if (statusParam) setStatusFilter(statusParam);
   }, []);
 
   useEffect(() => {
     fetchVisits();
   }, []);
 
-  // Sync filtered visits when store updates or filters change
   useEffect(() => {
     filterVisits();
   }, [todayVisits, searchQuery, statusFilter]);
@@ -76,15 +76,11 @@ export default function HistoryPage() {
 
   const filterVisits = () => {
     let filtered = [...todayVisits];
-
-    // Search filter
     if (searchQuery) {
       filtered = filtered.filter((v) =>
         v.name_snapshot.toLowerCase().includes(searchQuery.toLowerCase())
       );
     }
-
-    // Status filter
     if (statusFilter !== "all") {
       if (statusFilter === "active") {
         filtered = filtered.filter((v) => v.entry_time && !v.exit_time);
@@ -92,30 +88,39 @@ export default function HistoryPage() {
         filtered = filtered.filter((v) => v.status === statusFilter);
       }
     }
-
     setFilteredVisits(filtered);
+  };
+
+  const handleViewDetails = async (visitId: string) => {
+    setIsLoadingDetails(true);
+    try {
+      const details = await visitsAPI.getVisit(visitId);
+      setSelectedVisit(details);
+    } catch (error: any) {
+      console.error("Failed to fetch visit details:", error);
+      toast.error("Failed to load visit details");
+    } finally {
+      setIsLoadingDetails(false);
+    }
   };
 
   const handleCheckout = async (visitId: string) => {
     try {
       await visitsAPI.checkout(visitId);
       toast.success("Visitor checked out successfully!");
-      fetchVisits(); // Refresh list
+      fetchVisits();
     } catch (error: any) {
-      console.error("Checkout error:", error);
       toast.error(error.response?.data?.detail || "Failed to checkout visitor");
     }
   };
 
   const handleCancel = async (visitId: string) => {
     if (!confirm("Are you sure you want to cancel this request?")) return;
-
     try {
       await visitsAPI.cancelVisit(visitId);
       toast.success("Request cancelled successfully");
-      fetchVisits(); // Refresh list
+      fetchVisits();
     } catch (error: any) {
-      console.error("Cancel error:", error);
       toast.error(error.response?.data?.detail || "Failed to cancel request");
     }
   };
@@ -159,7 +164,6 @@ export default function HistoryPage() {
               className="w-full rounded-lg border border-border py-2.5 pl-10 pr-4 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-primary"
             />
           </div>
-
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
@@ -217,14 +221,11 @@ export default function HistoryPage() {
             {filteredVisits.map((visit) => (
               <GlassCard key={visit.id} className="p-4 hover:shadow-lg">
                 <div className="flex items-center gap-4">
-                  {/* Photo */}
                   <img
                     src={visit.photo_snapshot_url}
                     alt={visit.name_snapshot}
                     className="h-16 w-16 rounded-full border-2 border-gray-200 object-cover"
                   />
-
-                  {/* Details */}
                   <div className="flex-1">
                     <div className="flex items-start justify-between">
                       <div>
@@ -249,15 +250,20 @@ export default function HistoryPage() {
                       </div>
                       <StatusBadge status={visit.status} />
                     </div>
-
                     <div className="mt-2 flex items-center gap-4 text-sm text-gray-500">
                       <span>Entry: {visit.entry_time ? formatTime(visit.entry_time) : "N/A"}</span>
                       {visit.exit_time && <span>Exit: {formatTime(visit.exit_time)}</span>}
                     </div>
                   </div>
-
-                  {/* Actions */}
                   <div className="flex flex-col gap-2">
+                    <Button
+                      onClick={() => handleViewDetails(visit.id)}
+                      size="sm"
+                      variant="secondary"
+                      disabled={isLoadingDetails}
+                    >
+                      {isLoadingDetails ? "..." : "Details"}
+                    </Button>
                     {visit.entry_time && !visit.exit_time && (
                       <Button onClick={() => handleCheckout(visit.id)} size="sm">
                         Check Out
@@ -275,6 +281,119 @@ export default function HistoryPage() {
           </div>
         )}
       </main>
+
+      {/* Visit Details Modal */}
+      {selectedVisit && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b p-4">
+              <h2 className="text-lg font-semibold text-gray-900">Visit Details</h2>
+              <button
+                onClick={() => setSelectedVisit(null)}
+                className="rounded-full p-1 hover:bg-gray-100"
+              >
+                <X className="h-5 w-5 text-gray-500" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-4 space-y-4">
+              {/* Photo + Name */}
+              <div className="flex items-center gap-4">
+                <img
+                  src={selectedVisit.photo_snapshot_url}
+                  alt={selectedVisit.name_snapshot}
+                  className="h-20 w-20 rounded-full border-2 border-gray-200 object-cover"
+                />
+                <div>
+                  <h3 className="text-xl font-bold text-gray-900">{selectedVisit.name_snapshot}</h3>
+                  <StatusBadge status={selectedVisit.status} />
+                </div>
+              </div>
+
+              {/* Details Grid */}
+              <div className="space-y-3 rounded-xl bg-gray-50 p-4">
+                <DetailRow
+                  icon={<Phone className="h-4 w-4" />}
+                  label="Phone"
+                  value={selectedVisit.phone_snapshot || "N/A"}
+                />
+                <DetailRow
+                  icon={<User className="h-4 w-4" />}
+                  label="Purpose"
+                  value={selectedVisit.purpose}
+                />
+                <DetailRow
+                  icon={<User className="h-4 w-4" />}
+                  label="Flat"
+                  value={selectedVisit.target_flat_ids?.join(", ") || selectedVisit.owner_id}
+                />
+                <DetailRow
+                  icon={<Shield className="h-4 w-4" />}
+                  label="Guard"
+                  value={selectedVisit.guard_name || "Unknown"}
+                />
+                <DetailRow
+                  icon={<Clock className="h-4 w-4" />}
+                  label="Entry"
+                  value={
+                    selectedVisit.entry_time ? formatTime(selectedVisit.entry_time) : "Not yet"
+                  }
+                />
+                {selectedVisit.exit_time && (
+                  <DetailRow
+                    icon={<Clock className="h-4 w-4" />}
+                    label="Exit"
+                    value={formatTime(selectedVisit.exit_time)}
+                  />
+                )}
+                {selectedVisit.id_type && (
+                  <DetailRow
+                    icon={<CreditCard className="h-4 w-4" />}
+                    label={selectedVisit.id_type === "aadhar" ? "Aadhar No." : "PAN No."}
+                    value={selectedVisit.id_number || "N/A"}
+                  />
+                )}
+                {selectedVisit.id_photo_url && (
+                  <div className="pt-1">
+                    <p className="mb-1.5 text-sm text-gray-500">ID Card Photo</p>
+                    <img
+                      src={selectedVisit.id_photo_url}
+                      alt="ID card"
+                      className="w-full rounded-lg border object-cover"
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="border-t p-4">
+              <Button onClick={() => setSelectedVisit(null)} className="w-full" variant="secondary">
+                Close
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DetailRow({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <span className="text-gray-400">{icon}</span>
+      <span className="w-20 text-sm text-gray-500">{label}</span>
+      <span className="flex-1 text-sm font-medium text-gray-900">{value}</span>
     </div>
   );
 }

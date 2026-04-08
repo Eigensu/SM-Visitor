@@ -15,7 +15,6 @@ const CATEGORY_ICONS: Record<string, string> = {
   cook: "👨‍🍳",
   driver: "🚗",
   delivery: "📦",
-  delivery: "📦",
   milkman: "🥛",
   car_wash: "🧼",
   dog_walker: "🐕",
@@ -27,7 +26,6 @@ const CATEGORY_LABELS: Record<string, string> = {
   maid: "Maid",
   cook: "Cook",
   driver: "Driver",
-  delivery: "Delivery",
   delivery: "Delivery",
   milkman: "Milkman",
   car_wash: "Car Wash",
@@ -58,6 +56,7 @@ export default function RegularVisitorsPage() {
   const [visitors, setVisitors] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
+  const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL;
 
   const fetchVisitors = async () => {
     try {
@@ -155,13 +154,17 @@ export default function RegularVisitorsPage() {
         </GlassCard>
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {filteredVisitors.map((visitor) => (
-            <GlassCard key={visitor._id} className="p-6">
+          {filteredVisitors.map((visitor, index) => (
+            <GlassCard key={`${visitor._id || "visitor"}-${index}`} className="p-6">
               {/* Header with Photo */}
               <div className="mb-4 flex items-start gap-4">
                 {visitor.photo_url ? (
                   <img
-                    src={`/api/uploads/regular-visitor-photo/${visitor.photo_url}`}
+                    src={`${apiBaseUrl}/uploads/photo/regular/${visitor.photo_url}${
+                      typeof window !== "undefined"
+                        ? `?token=${localStorage.getItem("auth_token") || ""}`
+                        : ""
+                    }`}
                     alt={visitor.name}
                     className="h-16 w-16 rounded-full object-cover ring-2 ring-primary/20"
                   />

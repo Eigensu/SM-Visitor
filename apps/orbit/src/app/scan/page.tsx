@@ -25,16 +25,28 @@ export default function ScanPage() {
 
   const handleScanSuccess = async (decodedText: string) => {
     try {
-      // Parse QR data (it's a JSON string)
-      const qrData = JSON.parse(decodedText);
-      const token = qrData.token;
+      let token: string | null = null;
+      let visitorInfo: any = null;
+
+      try {
+        // Try to parse as JSON first (new format)
+        const qrData = JSON.parse(decodedText);
+        token = qrData.token;
+        visitorInfo = qrData; // Store other details if needed
+      } catch (e) {
+        // Fallback: Treat the whole text as the token (legacy format)
+        console.log("Failed to parse QR JSON, using raw text as token");
+        token = decodedText;
+      }
 
       if (!token) {
+        setErrorMessage("Invalid QR code format");
+        setScanState("error");
         toast.error("Invalid QR code format");
         return;
       }
 
-      // Prevent duplicate scans of the same QR token (not the full text)
+      // Prevent duplicate scans of the same QR token
       if (qrToken === token) {
         console.log("Duplicate QR token ignored");
         return;
@@ -50,20 +62,17 @@ export default function ScanPage() {
           response.error?.includes("already scanned")
         ) {
           setErrorMessage("This QR code has already been used");
-          setScanState("error");
-
-          toast.error("QR code already used. Check today's visits or scan a new code.", {
-            duration: 4000,
-          });
-
-          return;
+        } else {
+          setErrorMessage(response.error || "Invalid or expired QR code");
         }
 
+        setScanState("error");
         toast.error(response.error || "Invalid or expired QR code");
         return;
       }
 
       // Show visitor preview
+      // Use backend response data, or merge with QR data if useful
       setVisitorData(response.visitor_data);
       setQRToken(token);
       setScanState("preview");
@@ -71,12 +80,10 @@ export default function ScanPage() {
       toast.success("QR code validated successfully!");
     } catch (error: any) {
       console.error("QR scan error:", error);
-
-      if (error.message?.includes("JSON")) {
-        toast.error("Invalid QR code format");
-      } else {
-        toast.error(error.response?.data?.detail || "Failed to validate QR code");
-      }
+      const msg = error.response?.data?.detail || "Failed to validate QR code";
+      setErrorMessage(msg);
+      setScanState("error");
+      toast.error(msg);
     }
   };
 

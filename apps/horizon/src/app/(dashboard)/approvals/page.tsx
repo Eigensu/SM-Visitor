@@ -19,22 +19,23 @@ export default function Approvals() {
   const [isLoading, setIsLoading] = useState(true);
   const { pendingVisits, removePendingVisit } = useStore();
 
-  // Fetch pending visits on mount
+  // Fetch recent visits on mount (pending + approved + rejected)
   useEffect(() => {
-    const fetchPending = async () => {
+    const fetchVisits = async () => {
       try {
         setIsLoading(true);
-        const pending = await visitsAPI.getPending();
-        setVisitors(pending);
+        // Load recent visits for this owner (includes all statuses)
+        const recent = await visitsAPI.getRecent(100);
+        setVisitors(recent);
       } catch (error) {
-        console.error("Failed to fetch pending visits:", error);
+        console.error("Failed to fetch visits for approvals page:", error);
         toast.error("Failed to load visitor requests");
       } finally {
         setIsLoading(false);
       }
     };
 
-    fetchPending();
+    fetchVisits();
   }, []);
 
   // Sync with SSE updates from store
@@ -51,8 +52,18 @@ export default function Approvals() {
     try {
       await visitsAPI.approve(id);
 
-      // Remove from local state
-      setVisitors((prev) => prev.filter((v) => v.id !== id));
+      // Update status in local state to "approved"
+      setVisitors((prev) =>
+        prev.map((v) =>
+          v.id === id
+            ? {
+                ...v,
+                status: "approved",
+                entry_time: new Date().toISOString(),
+              }
+            : v
+        )
+      );
       removePendingVisit(id);
 
       toast.success("Visitor approved! Gate notified.", {
@@ -68,8 +79,17 @@ export default function Approvals() {
     try {
       await visitsAPI.reject(id);
 
-      // Remove from local state
-      setVisitors((prev) => prev.filter((v) => v.id !== id));
+      // Update status in local state to "rejected"
+      setVisitors((prev) =>
+        prev.map((v) =>
+          v.id === id
+            ? {
+                ...v,
+                status: "rejected",
+              }
+            : v
+        )
+      );
       removePendingVisit(id);
 
       toast.error("Visitor rejected", {
