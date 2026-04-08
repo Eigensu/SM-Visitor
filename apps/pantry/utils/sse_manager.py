@@ -40,7 +40,7 @@ class SSEManager:
         self.connections[user_id].add(queue)
         self.user_roles[user_id] = role
         
-        print(f"✅ SSE connected: user_id={user_id}, role={role}")
+        print(f"[SSE] Connected: user_id={user_id}, role={role}")
         return queue
     
     async def disconnect(self, user_id: str, queue: asyncio.Queue):
@@ -60,7 +60,7 @@ class SSEManager:
                 if user_id in self.user_roles:
                     del self.user_roles[user_id]
         
-        print(f"🔌 SSE disconnected: user_id={user_id}")
+        print(f"[SSE] Disconnected: user_id={user_id}")
     
     async def send_event(self, user_id: str, event_type: str, data: dict):
         """
@@ -72,7 +72,7 @@ class SSEManager:
             data: Event data
         """
         if user_id not in self.connections:
-            print(f"⚠️  No SSE connection for user_id={user_id}")
+            print(f"[SSE] No connection for user_id={user_id}")
             return
         
         event = {
@@ -86,20 +86,25 @@ class SSEManager:
             try:
                 await queue.put(event)
             except Exception as e:
-                print(f"❌ Error sending SSE event: {e}")
+                print(f"[SSE] Error sending event: {e}")
     
     async def broadcast_to_role(self, role: str, event_type: str, data: dict):
         """
-        Broadcast an event to all users with a specific role
+        Broadcast an event to all users with a specific role.
+        Iterates over a snapshot to avoid RuntimeError if connections change mid-broadcast.
         
         Args:
-            role: User role to broadcast to
+            role: User role to broadcast to (e.g. "owner", "guard", "admin")
             event_type: Type of event
             data: Event data
         """
-        for user_id, user_role in self.user_roles.items():
+        snapshot = list(self.user_roles.items())
+        for user_id, user_role in snapshot:
             if user_role == role:
-                await self.send_event(user_id, event_type, data)
+                try:
+                    await self.send_event(user_id, event_type, data)
+                except Exception as e:
+                    print(f"[SSE] Failed to broadcast to user_id={user_id}: {e}")
     
     async def broadcast_to_flats(self, flat_ids: list[str], event_type: str, data: dict, db):
         """

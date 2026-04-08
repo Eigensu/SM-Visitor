@@ -96,6 +96,11 @@ class VisitorResponse(BaseModel):
     is_all_flats: bool = False
     valid_flats: Optional[List[str]] = None
     created_at: datetime
+    category: Optional[str] = None
+    category_label: Optional[str] = None
+    schedule: Optional[dict] = None
+    auto_approval: Optional[dict] = None
+    schedule_enabled: Optional[bool] = None
 
 
 class VisitorWithQRResponse(VisitorResponse):
@@ -252,7 +257,14 @@ async def get_visitor(
         default_purpose=visitor.get("default_purpose"),
         qr_token=visitor.get("qr_token"),
         is_active=visitor["is_active"],
-        created_at=visitor["created_at"]
+        is_all_flats=visitor.get("is_all_flats", False),
+        valid_flats=visitor.get("valid_flats"),
+        created_at=visitor["created_at"],
+        category=visitor.get("category"),
+        category_label=visitor.get("category_label"),
+        schedule=visitor.get("schedule"),
+        auto_approval=visitor.get("auto_approval"),
+        schedule_enabled=visitor.get("schedule", {}).get("enabled", False) if visitor.get("schedule") else False,
     )
 
 
@@ -297,7 +309,12 @@ async def list_visitors(
             is_active=v["is_active"],
             is_all_flats=v.get("is_all_flats", False),
             valid_flats=v.get("valid_flats"),
-            created_at=v["created_at"]
+            created_at=v["created_at"],
+            category=v.get("category"),
+            category_label=v.get("category_label"),
+            schedule=v.get("schedule"),
+            auto_approval=v.get("auto_approval"),
+            schedule_enabled=v.get("schedule", {}).get("enabled", False) if v.get("schedule") else False,
         )
         for v in visitor_list
     ]
@@ -373,7 +390,12 @@ async def update_visitor(
         is_active=updated_visitor["is_active"],
         is_all_flats=updated_visitor.get("is_all_flats", False),
         valid_flats=updated_visitor.get("valid_flats"),
-        created_at=updated_visitor["created_at"]
+        created_at=updated_visitor["created_at"],
+        category=updated_visitor.get("category"),
+        category_label=updated_visitor.get("category_label"),
+        schedule=updated_visitor.get("schedule"),
+        auto_approval=updated_visitor.get("auto_approval"),
+        schedule_enabled=updated_visitor.get("schedule", {}).get("enabled", False) if updated_visitor.get("schedule") else False,
     )
 
 
@@ -507,7 +529,12 @@ async def get_regular_visitors(
             is_active=visitor["is_active"],
             is_all_flats=visitor.get("is_all_flats", False),
             valid_flats=visitor.get("valid_flats"),
-            created_at=visitor["created_at"]
+            created_at=visitor["created_at"],
+            category=visitor.get("category"),
+            category_label=visitor.get("category_label"),
+            schedule=visitor.get("schedule"),
+            auto_approval=visitor.get("auto_approval"),
+            schedule_enabled=visitor.get("schedule", {}).get("enabled", False) if visitor.get("schedule") else False,
         )
         for visitor in visitors
     ]
@@ -572,5 +599,10 @@ async def get_visitor_by_id(
         is_active=visitor["is_active"],
         is_all_flats=visitor.get("is_all_flats", False),
         valid_flats=visitor.get("valid_flats"),
-        created_at=visitor["created_at"]
+        created_at=visitor["created_at"],
+        category=visitor.get("category"),
+        category_label=visitor.get("category_label"),
+        schedule=visitor.get("schedule"),
+        auto_approval=visitor.get("auto_approval"),
+        schedule_enabled=visitor.get("schedule", {}).get("enabled", False) if visitor.get("schedule") else False,
     )

@@ -3,7 +3,7 @@ Unified Authentication System
 Handles signup, login, and JWT token management for all user types
 Supports: Owners (Residents), Guards, Admins
 """
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Depends, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 from typing import Optional
@@ -14,6 +14,7 @@ import os
 
 from database import get_database
 from bson import ObjectId
+from utils.sse_manager import sse_manager
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 security = HTTPBearer()
@@ -93,7 +94,7 @@ def decode_token(token: str) -> dict:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token has expired"
         )
-    except jwt.JWTError:
+    except jwt.InvalidTokenError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token"
@@ -152,9 +153,31 @@ async def get_current_user(
     return user
 
 
+async def _notify_new_user(
+    user_id: str,
+    name: str,
+    role: str,
+    flat_id: Optional[str],
+    registered_at: str,
+):
+    """Broadcast new_user_registered to all connected staff. Runs as a background task."""
+    payload = {
+        "user_id": user_id,
+        "name": name,
+        "role": role,
+        "flat_id": flat_id,
+        "registered_at": registered_at,
+    }
+    for target_role in ("admin", "owner", "guard"):
+        try:
+            await sse_manager.broadcast_to_role(target_role, "new_user_registered", payload)
+        except Exception as e:
+            print(f"[SSE] broadcast to {target_role} failed: {e}")
+
+
 # Endpoints
 @router.post("/signup", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
-async def signup(request: SignupRequest, db = Depends(get_database)):
+async def signup(request: SignupRequest, background_tasks: BackgroundTasks, db = Depends(get_database)):
     """
     Register a new user (Owner, Guard, or Admin)
     
@@ -211,6 +234,17 @@ async def signup(request: SignupRequest, db = Depends(get_database)):
         "created_at": user_doc["created_at"]
     }
     
+    # Notify all connected users (admins, owners, guards) about the new registration.
+    # Runs in the background – never blocks or fails the signup response.
+    background_tasks.add_task(
+        _notify_new_user,
+        user_id,
+        request.name,
+        request.role,
+        request.flat_id,
+        user_doc["created_at"].isoformat(),
+    )
+
     return {
         "access_token": access_token,
         "token_type": "bearer",

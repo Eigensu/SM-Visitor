@@ -6,9 +6,11 @@ import { PageContainer } from "@/components/shared/PageContainer";
 import { GlassCard } from "@/components/shared/GlassCard";
 import { Button } from "@sm-visitor/ui";
 import { Spinner } from "@sm-visitor/ui";
-import { Plus, User, QrCode, Trash2, Calendar, Clock, Shield } from "lucide-react";
+import { Plus, User, QrCode, Trash2, Calendar, Clock, Shield, Info } from "lucide-react";
 import { visitorsAPI } from "@/lib/api";
 import toast from "react-hot-toast";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { QRCodeSVG } from "qrcode.react";
 
 const CATEGORY_ICONS: Record<string, string> = {
   maid: "🧹",
@@ -51,11 +53,21 @@ const DAY_LABELS: Record<number, string> = {
   7: "Sun",
 };
 
+const getCategoryLabel = (visitor: any): string =>
+  visitor.category_label || CATEGORY_LABELS[visitor.category || "other"] || "Other";
+
+const getVisitorPhotoSrc = (photoUrl: string, apiBaseUrl: string | undefined): string =>
+  `${apiBaseUrl}/uploads/photo/regular/${photoUrl}${
+    typeof window !== "undefined" ? `?token=${localStorage.getItem("auth_token") || ""}` : ""
+  }`;
+
 export default function RegularVisitorsPage() {
   const router = useRouter();
   const [visitors, setVisitors] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
+  const [qrVisitor, setQrVisitor] = useState<any | null>(null);
+  const [infoVisitor, setInfoVisitor] = useState<any | null>(null);
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL;
 
   const fetchVisitors = async () => {
@@ -160,11 +172,7 @@ export default function RegularVisitorsPage() {
               <div className="mb-4 flex items-start gap-4">
                 {visitor.photo_url ? (
                   <img
-                    src={`${apiBaseUrl}/uploads/photo/regular/${visitor.photo_url}${
-                      typeof window !== "undefined"
-                        ? `?token=${localStorage.getItem("auth_token") || ""}`
-                        : ""
-                    }`}
+                    src={getVisitorPhotoSrc(visitor.photo_url, apiBaseUrl)}
                     alt={visitor.name}
                     className="h-16 w-16 rounded-full object-cover ring-2 ring-primary/20"
                   />
@@ -192,7 +200,7 @@ export default function RegularVisitorsPage() {
                   {APPROVAL_LABELS[visitor.auto_approval?.rule || "always"]}
                 </div>
                 <div className="flex items-center gap-1.5 text-xs text-gray-400">
-                  {visitor.schedule_enabled ? "📅 Scheduled" : "🔓 24/7 Access"}
+                  {visitor.schedule?.enabled ? "📅 Scheduled" : "🔓 24/7 Access"}
                 </div>
               </div>
 
@@ -200,7 +208,7 @@ export default function RegularVisitorsPage() {
               <div className="mb-3 flex items-center gap-2">
                 <span className="text-2xl">{CATEGORY_ICONS[visitor.category || "other"]}</span>
                 <span className="text-sm font-medium text-foreground">
-                  {visitor.category_label || "Other"}
+                  {getCategoryLabel(visitor)}
                 </span>
               </div>
 
@@ -232,13 +240,19 @@ export default function RegularVisitorsPage() {
                   variant="outline"
                   size="sm"
                   className="flex-1"
-                  onClick={() => {
-                    // TODO: Show QR code modal
-                    toast.success("QR code display coming soon");
-                  }}
+                  onClick={() => setQrVisitor(visitor)}
                 >
                   <QrCode className="mr-2 h-4 w-4" />
                   QR Code
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => setInfoVisitor(visitor)}
+                >
+                  <Info className="mr-2 h-4 w-4" />
+                  View Info
                 </Button>
                 <Button
                   variant="outline"
@@ -253,6 +267,114 @@ export default function RegularVisitorsPage() {
           ))}
         </div>
       )}
+
+      {/* QR Code Modal */}
+      <Dialog open={qrVisitor !== null} onOpenChange={(open) => !open && setQrVisitor(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>QR Code — {qrVisitor?.name}</DialogTitle>
+          </DialogHeader>
+          {qrVisitor?.qr_token ? (
+            <div className="flex flex-col items-center gap-4 py-2">
+              <div className="rounded-xl border border-border/50 bg-card p-4 shadow-inner">
+                <QRCodeSVG
+                  value={qrVisitor.qr_token}
+                  size={220}
+                  level="H"
+                  includeMargin={false}
+                  bgColor="transparent"
+                  fgColor="currentColor"
+                  className="text-foreground"
+                />
+              </div>
+              <p className="text-center text-sm text-muted-foreground">
+                Share this QR code with <span className="font-semibold">{qrVisitor.name}</span> for
+                permanent gate access.
+              </p>
+            </div>
+          ) : (
+            <p className="py-4 text-center text-muted-foreground">QR code not available.</p>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* View Information Modal */}
+      <Dialog open={infoVisitor !== null} onOpenChange={(open) => !open && setInfoVisitor(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Visitor Details</DialogTitle>
+          </DialogHeader>
+          {infoVisitor && (
+            <div className="space-y-4">
+              {/* Photo + Name */}
+              <div className="flex items-center gap-4">
+                {infoVisitor.photo_url ? (
+                  <img
+                    src={getVisitorPhotoSrc(infoVisitor.photo_url, apiBaseUrl)}
+                    alt={infoVisitor.name}
+                    className="h-20 w-20 rounded-full object-cover ring-2 ring-primary/20"
+                  />
+                ) : (
+                  <div className="flex h-20 w-20 items-center justify-center rounded-full bg-muted ring-2 ring-primary/20">
+                    <User className="h-10 w-10 text-muted-foreground" />
+                  </div>
+                )}
+                <div>
+                  <h3 className="text-lg font-semibold">{infoVisitor.name}</h3>
+                  <p className="text-sm text-muted-foreground">{infoVisitor.phone || "No phone"}</p>
+                  <span className="mt-1 inline-block rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700">
+                    PERMANENT QR
+                  </span>
+                </div>
+              </div>
+
+              <div className="divide-y divide-border rounded-lg border">
+                <div className="flex justify-between px-4 py-2.5 text-sm">
+                  <span className="text-muted-foreground">Category</span>
+                  <span className="font-medium">
+                    {CATEGORY_ICONS[infoVisitor.category || "other"]}{" "}
+                    {getCategoryLabel(infoVisitor)}
+                  </span>
+                </div>
+                <div className="flex justify-between px-4 py-2.5 text-sm">
+                  <span className="text-muted-foreground">Default Purpose</span>
+                  <span className="font-medium">{infoVisitor.default_purpose || "—"}</span>
+                </div>
+                <div className="flex justify-between px-4 py-2.5 text-sm">
+                  <span className="text-muted-foreground">Schedule</span>
+                  <span className="font-medium">{formatSchedule(infoVisitor)}</span>
+                </div>
+                <div className="flex justify-between px-4 py-2.5 text-sm">
+                  <span className="text-muted-foreground">Approval Rule</span>
+                  <span className="font-medium">
+                    {infoVisitor.auto_approval?.rule_label || "Always auto-approve"}
+                  </span>
+                </div>
+                <div className="flex justify-between px-4 py-2.5 text-sm">
+                  <span className="text-muted-foreground">Valid For</span>
+                  <span className="font-medium">
+                    {infoVisitor.is_all_flats
+                      ? "All Flats"
+                      : infoVisitor.valid_flats?.join(", ") || "Selected Flat"}
+                  </span>
+                </div>
+                <div className="flex justify-between px-4 py-2.5 text-sm">
+                  <span className="text-muted-foreground">Added On</span>
+                  <span className="font-medium">
+                    {infoVisitor.created_at
+                      ? new Date(infoVisitor.created_at).toLocaleDateString([], {
+                          day: "numeric",
+                          month: "short",
+                          year: "numeric",
+                        })
+                      : "—"}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </PageContainer>
   );
 }
