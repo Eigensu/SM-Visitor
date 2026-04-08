@@ -96,6 +96,11 @@ class VisitorResponse(BaseModel):
     is_all_flats: bool = False
     valid_flats: Optional[List[str]] = None
     created_at: datetime
+    category: Optional[str] = None
+    category_label: Optional[str] = None
+    schedule: Optional[dict] = None
+    auto_approval: Optional[dict] = None
+    schedule_enabled: Optional[bool] = None
 
 
 class VisitorWithQRResponse(VisitorResponse):
@@ -507,7 +512,12 @@ async def get_regular_visitors(
             is_active=visitor["is_active"],
             is_all_flats=visitor.get("is_all_flats", False),
             valid_flats=visitor.get("valid_flats"),
-            created_at=visitor["created_at"]
+            created_at=visitor["created_at"],
+            category=visitor.get("category"),
+            category_label=visitor.get("category_label"),
+            schedule=visitor.get("schedule"),
+            auto_approval=visitor.get("auto_approval"),
+            schedule_enabled=visitor.get("schedule", {}).get("enabled", False) if visitor.get("schedule") else False,
         )
         for visitor in visitors
     ]

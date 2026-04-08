@@ -91,6 +91,25 @@ export function SSEProvider({ children }: { children: React.ReactNode }) {
           });
           break;
 
+        case "new_user_registered": {
+          const roleName =
+            data.data.role === "owner"
+              ? "resident"
+              : data.data.role === "guard"
+                ? "guard"
+                : "user";
+          const flatInfo = data.data.flat_id ? ` (Flat ${data.data.flat_id})` : "";
+          toast(`New ${roleName} registered: ${data.data.name}${flatInfo}`, {
+            duration: 6000,
+            icon: "👤",
+          });
+          sendNotification("New User Registered", {
+            body: `${data.data.name}${flatInfo} has registered as a ${roleName}.`,
+            tag: `new-user-${data.data.user_id}`,
+          });
+          break;
+        }
+
         default:
           console.log("Unknown SSE event type:", data.type);
       }

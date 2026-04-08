@@ -57,6 +57,22 @@ export function SSEProvider({ children }: { children: React.ReactNode }) {
           });
           break;
 
+        case "new_user_registered": {
+          const roleName =
+            data.data.role === "owner"
+              ? "resident"
+              : data.data.role === "guard"
+                ? "guard"
+                : "user";
+          const flatInfo = data.data.flat_id ? ` (Flat ${data.data.flat_id})` : "";
+          console.log("👤 [Orbit] New user registered:", data.data);
+          toast(`New ${roleName} registered: ${data.data.name}${flatInfo}`, {
+            duration: 6000,
+            icon: "👤",
+          });
+          break;
+        }
+
         default:
           console.log("⚠️ [Orbit] Unknown SSE event type:", data.type);
       }

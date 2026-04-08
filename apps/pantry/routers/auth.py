@@ -14,6 +14,7 @@ import os
 
 from database import get_database
 from bson import ObjectId
+from utils.sse_manager import sse_manager
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 security = HTTPBearer()
@@ -210,6 +211,15 @@ async def signup(request: SignupRequest, db = Depends(get_database)):
         "flat_id": request.flat_id,
         "created_at": user_doc["created_at"]
     }
+    
+    # Notify all connected admins about the new registration
+    await sse_manager.broadcast_to_role("admin", "new_user_registered", {
+        "user_id": user_id,
+        "name": request.name,
+        "role": request.role,
+        "flat_id": request.flat_id,
+        "registered_at": user_doc["created_at"].isoformat()
+    })
     
     return {
         "access_token": access_token,
