@@ -13,7 +13,10 @@ from middleware.auth import get_current_owner, get_current_user, get_current_gua
 from utils.jwt_utils import create_qr_token
 from utils.qr_utils import generate_qr_image_with_details
 from utils.storage import photo_storage
+from utils.sse_manager import sse_manager
+from utils.time_utils import get_ist_now
 from models import VisitorModel
+from fastapi import Form
 
 
 router = APIRouter(prefix="/visitors", tags=["Visitors"])
@@ -98,6 +101,9 @@ class CreateRegularVisitorRequest(BaseModel):
     # Auto-approval fields
     auto_approval_enabled: bool = True
     auto_approval_rule: str = Field(default="always", pattern="^(always|within_schedule|notify_only)$")
+    
+    # Assignment (for Guard-initiated requests)
+    assigned_owner_id: Optional[str] = None
 
 
 class UpdateVisitorRequest(BaseModel):
@@ -116,6 +122,9 @@ class VisitorResponse(BaseModel):
     default_purpose: Optional[str]
     qr_token: Optional[str]
     is_active: bool
+    approval_status: str
+    assigned_owner_id: Optional[str]
+    created_by_role: str
     created_at: datetime
 
 
@@ -189,7 +198,10 @@ async def create_regular_visitor(
         },
         
         "is_active": True,
-        "created_at": datetime.utcnow(),
+        "approval_status": "approved",
+        "assigned_owner_id": None,
+        "created_by_role": "owner",
+        "created_at": get_ist_now(),
     }
     
     # Insert visitor
@@ -216,22 +228,232 @@ async def create_regular_visitor(
         "phone": request.phone,
         "visitor_type": "regular",
         "token": qr_token,
-        "created_at": datetime.utcnow().isoformat()
+        "created_at": get_ist_now().isoformat()
     })
     
-    return VisitorWithQRResponse(
+def get_category_label(category: str) -> str:
+    mapping = {
+        "maid": "Maid",
+        "cook": "Cook",
+        "driver": "Driver",
+        "delivery": "Delivery",
+        "other": "Other Staff"
+    }
+    return mapping.get(category, "Staff")
+
+def get_auto_approval_label(rule: str) -> str:
+    mapping = {
+        "always": "Always",
+        "within_schedule": "Within Schedule",
+        "notify_only": "Notify Only"
+    }
+    return mapping.get(rule, "Standard")
+
+async def get_visitor_request(
+    name: str = Form(...),
+    phone: Optional[str] = Form(None),
+    category: str = Form("other"),
+    assigned_owner_id: Optional[str] = Form(None),
+    default_purpose: Optional[str] = Form(None),
+    schedule_enabled: bool = Form(False),
+    schedule_start_time: Optional[str] = Form(None),
+    schedule_end_time: Optional[str] = Form(None),
+    auto_approval_enabled: bool = Form(True),
+    auto_approval_rule: str = Form("always")
+) -> CreateRegularVisitorRequest:
+    return CreateRegularVisitorRequest(
+        name=name,
+        phone=phone,
+        category=category,
+        assigned_owner_id=assigned_owner_id,
+        default_purpose=default_purpose,
+        schedule_enabled=schedule_enabled,
+        schedule_start_time=schedule_start_time,
+        schedule_end_time=schedule_end_time,
+        auto_approval_enabled=auto_approval_enabled,
+        auto_approval_rule=auto_approval_rule
+    )
+
+@router.post("/regular/guard", response_model=VisitorResponse, status_code=status.HTTP_201_CREATED)
+async def create_regular_visitor_by_guard(
+    request: CreateRegularVisitorRequest = Depends(get_visitor_request),
+    photo: UploadFile = File(...),
+    current_user: dict = Depends(get_current_guard)
+):
+    """
+    Initiate a regular visitor registration by a guard
+    Requires owner approval before activation
+    """
+    if not request.assigned_owner_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="assigned_owner_id is required for guard-initiated registrations"
+        )
+
+    visitors = get_visitors_collection()
+    
+    # Save photo
+    photo_data = await photo.read()
+    photo_file_id = await photo_storage.save_regular_visitor_photo(
+        photo_data,
+        photo.filename or "visitor_photo.jpg"
+    )
+    
+    # Create visitor document (inactive)
+    visitor_doc = {
+        "name": request.name,
+        "phone": request.phone,
+        "photo_url": photo_file_id,
+        "visitor_type": "regular",
+        "created_by": current_user["user_id"],
+        "created_by_role": "guard",
+        "assigned_owner_id": request.assigned_owner_id,
+        "approval_status": "pending",
+        "is_active": False,
+        "default_purpose": request.default_purpose,
+        "category": request.category,
+        "category_label": get_category_label(request.category),
+        "schedule": {
+            "enabled": request.schedule_enabled,
+            "days_of_week": request.schedule_days or [],
+            "time_windows": [{
+                "start_time": request.schedule_start_time,
+                "end_time": request.schedule_end_time
+            }] if request.schedule_enabled else [],
+            "timezone": "Asia/Kolkata"
+        },
+        "auto_approval": {
+            "enabled": request.auto_approval_enabled,
+            "rule": request.auto_approval_rule,
+            "rule_label": get_auto_approval_label(request.auto_approval_rule)
+        },
+        "created_at": get_ist_now(),
+    }
+    
+    result = await visitors.insert_one(visitor_doc)
+    visitor_id = str(result.inserted_id)
+    
+    # Notify Owner via SSE
+    from utils.sse_manager import sse_manager
+    await sse_manager.send_event(
+        request.assigned_owner_id,
+        "new_regular_visitor_pending",
+        {
+            "visitor_id": visitor_id,
+            "visitor_name": request.name,
+            "category": request.category,
+            "photo_url": photo_file_id,
+            "guard_id": current_user["user_id"]
+        }
+    )
+    
+    return VisitorResponse(
         _id=visitor_id,
         name=request.name,
         phone=request.phone,
         photo_url=photo_file_id,
         visitor_type="regular",
         created_by=current_user["user_id"],
-        default_purpose=request.default_purpose,
-        qr_token=qr_token,
+        created_by_role="guard",
+        approval_status="pending",
+        is_active=False,
+        assigned_owner_id=request.assigned_owner_id,
+        created_at=visitor_doc["created_at"]
+    )
+
+
+@router.get("/approvals/regular", response_model=List[VisitorResponse])
+async def get_pending_regular_visitors(
+    current_user: dict = Depends(get_current_owner)
+):
+    """Get regular visitors pending approval for the current owner"""
+    visitors = get_visitors_collection()
+    cursor = visitors.find({
+        "assigned_owner_id": current_user["user_id"],
+        "approval_status": "pending"
+    })
+    
+    results = []
+    async for doc in cursor:
+        results.append(VisitorResponse(
+            _id=str(doc["_id"]),
+            name=doc["name"],
+            phone=doc.get("phone"),
+            photo_url=doc["photo_url"],
+            visitor_type=doc["visitor_type"],
+            created_by=doc["created_by"],
+            created_by_role=doc["created_by_role"],
+            approval_status=doc["approval_status"],
+            is_active=doc["is_active"],
+            assigned_owner_id=doc["assigned_owner_id"],
+            created_at=doc["created_at"]
+        ))
+    return results
+
+
+@router.patch("/{visitor_id}/approve-regular", response_model=VisitorWithQRResponse)
+async def approve_regular_visitor(
+    visitor_id: str,
+    current_user: dict = Depends(get_current_owner)
+):
+    """Approve a guard-initiated regular visitor registration"""
+    visitors = get_visitors_collection()
+    visitor = await visitors.find_one({
+        "_id": ObjectId(visitor_id),
+        "assigned_owner_id": current_user["user_id"]
+    })
+    
+    if not visitor:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Visitor request not found"
+        )
+    
+    # Generate QR
+    qr_token = create_qr_token({
+        "type": "regular",
+        "visitor_id": visitor_id,
+        "created_by": visitor.get("created_by")
+    })
+    
+    # Update to active
+    await visitors.update_one(
+        {"_id": ObjectId(visitor_id)},
+        {
+            "$set": {
+                "approval_status": "approved",
+                "is_active": True,
+                "qr_token": qr_token
+            }
+        }
+    )
+    
+    # Generate QR image
+    qr_image_url = generate_qr_image_with_details({
+        "visitor_id": visitor_id,
+        "name": visitor["name"],
+        "phone": visitor.get("phone"),
+        "visitor_type": "regular",
+        "token": qr_token,
+        "created_at": get_ist_now().isoformat()
+    })
+    
+    return VisitorWithQRResponse(
+        _id=visitor_id,
+        name=visitor["name"],
+        phone=visitor.get("phone"),
+        photo_url=visitor["photo_url"],
+        visitor_type="regular",
+        created_by=visitor["created_by"],
+        created_by_role=visitor["created_by_role"],
+        approval_status="approved",
         is_active=True,
-        created_at=visitor_doc["created_at"],
+        assigned_owner_id=visitor["assigned_owner_id"],
+        created_at=visitor["created_at"],
+        qr_token=qr_token,
         qr_image_url=qr_image_url
     )
+
 
 
 @router.get("/{visitor_id}", response_model=VisitorResponse)

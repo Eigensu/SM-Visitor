@@ -13,6 +13,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { SSEIndicator } from "@/components/shared/SSEIndicator";
+import { useRouter } from "next/navigation";
+import { useStore } from "@/lib/store";
+import { NotificationCenter } from "../NotificationCenter";
 
 const navItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
@@ -32,6 +35,13 @@ interface AppSidebarProps {
 
 export function AppSidebar({ collapsed = false, onToggle }: AppSidebarProps) {
   const pathname = usePathname();
+  const router = useRouter();
+  const logout = useStore((state: any) => state.logout);
+
+  const handleLogout = () => {
+    logout();
+    router.replace("/login");
+  };
 
   return (
     <aside
@@ -42,18 +52,21 @@ export function AppSidebar({ collapsed = false, onToggle }: AppSidebarProps) {
     >
       {/* Logo */}
       <div className="border-b border-sidebar-border p-4">
-        <div className="flex items-center gap-3">
-          <div className="ocean-gradient flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl">
-            <Home className="h-5 w-5 text-primary-foreground" strokeWidth={1.5} />
-          </div>
-          {!collapsed && (
-            <div className="overflow-hidden">
-              <h1 className="text-lg font-semibold tracking-tight text-sidebar-foreground">
-                Horizon
-              </h1>
-              <p className="text-xs text-muted-foreground">Resident Portal</p>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="ocean-gradient flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl">
+              <Home className="h-5 w-5 text-primary-foreground" strokeWidth={1.5} />
             </div>
-          )}
+            {!collapsed && (
+              <div className="overflow-hidden">
+                <h1 className="text-lg font-semibold tracking-tight text-sidebar-foreground">
+                  Horizon
+                </h1>
+                <p className="text-xs text-muted-foreground">Resident Portal</p>
+              </div>
+            )}
+          </div>
+          {!collapsed && <NotificationCenter />}
         </div>
       </div>
 

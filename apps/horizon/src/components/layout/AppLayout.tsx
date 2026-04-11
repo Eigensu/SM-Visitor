@@ -9,6 +9,7 @@ import { Menu, X } from "lucide-react";
 import { Button } from "@sm-visitor/ui";
 import { Spinner } from "@/components/shared/Spinner";
 import { cn } from "@/lib/utils";
+import { NotificationCenter } from "../NotificationCenter";
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -93,17 +94,19 @@ export function AppLayout({ children }: AppLayoutProps) {
       {/* Main Content */}
       <div className="flex min-h-screen flex-1 flex-col">
         {/* Mobile Header */}
-        <header className="sticky top-0 z-30 flex items-center justify-between border-b border-border bg-background/95 p-4 backdrop-blur-xl md:hidden">
+        <header className="sticky top-0 z-30 flex items-center justify-between border-b border-sidebar-border bg-background/90 p-4 backdrop-blur-xl md:hidden">
           <Button
             variant="ghost"
             size="icon"
             onClick={() => setSidebarOpen(true)}
             className="-ml-2"
           >
-            <Menu className="h-5 w-5" />
+            <Menu className="h-5 w-5 text-slate-500" />
           </Button>
-          <h1 className="font-semibold text-foreground">Horizon</h1>
-          <div className="w-9" /> {/* Spacer for centering */}
+          <h1 className="font-bold tracking-tight text-foreground">Horizon</h1>
+          <div className="flex items-center">
+            <NotificationCenter />
+          </div>
         </header>
 
         {/* Page Content */}

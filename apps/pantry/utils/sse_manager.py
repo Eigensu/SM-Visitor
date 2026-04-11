@@ -8,6 +8,7 @@ from fastapi.responses import StreamingResponse
 import asyncio
 import json
 from datetime import datetime
+from utils.time_utils import get_ist_now
 
 
 class SSEManager:
@@ -65,41 +66,86 @@ class SSEManager:
     async def send_event(self, user_id: str, event_type: str, data: dict):
         """
         Send an event to a specific user (all their connections)
-        
-        Args:
-            user_id: User ID to send to
-            event_type: Type of event
-            data: Event data
+        AND save it as a persistent notification in the DB
         """
+        # 1. Prepare Persistent Notification
+        try:
+            from database import get_notifications_collection
+            from models import NotificationModel
+            
+            # Map event type to Title/Message
+            title = "Notification"
+            message = "You have a new alert"
+            
+            if event_type == "new_visit_pending":
+                title = "Entry Request"
+                message = f"New visitor {data.get('visitor_name', '')} is at the gate."
+            elif event_type == "visit_approved":
+                title = "Visit Approved"
+                message = f"Your visitor {data.get('visitor_name', '')} has been approved."
+            elif event_type == "visit_rejected":
+                title = "Visit Rejected"
+                message = f"Your visitor {data.get('visitor_name', '')} was rejected."
+            elif event_type == "new_regular_visitor_pending":
+                title = "Staff Registration"
+                message = f"Guard has registered a new staff: {data.get('visitor_name', '')}."
+            
+            notif_doc = NotificationModel(
+                title=title,
+                message=message,
+                type=event_type,
+                recipient_id=user_id,
+                data=data
+            )
+            
+            # Save to DB - don't await to keep it fast? 
+            # No, we should await but it's okay because Mongo is fast.
+            # However, for MAX performance, we wrap in try-except.
+            notifications = get_notifications_collection()
+            await notifications.insert_one(notif_doc.dict(by_alias=True, exclude_none=True))
+            
+        except Exception as e:
+            print(f"⚠️  Failed to save persistent notification: {e}")
+
+        # 2. Push to Active Connections (Real-time)
         if user_id not in self.connections:
-            print(f"⚠️  No SSE connection for user_id={user_id}")
+            # Still return, but notification is now in DB for later
             return
         
         event = {
             "type": event_type,
             "data": data,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": get_ist_now().isoformat() 
         }
         
         # Send to all connections for this user
-        for queue in self.connections[user_id]:
+        for queue in list(self.connections[user_id]): # Snapshot for thread safety
             try:
-                await queue.put(event)
+                # Use put_nowait to NEVER block the API request
+                queue.put_nowait(event)
+            except asyncio.QueueFull:
+                print(f"⚠️  SSE Queue full for user_id={user_id}, dropping real-time event")
             except Exception as e:
                 print(f"❌ Error sending SSE event: {e}")
-    
+
     async def broadcast_to_role(self, role: str, event_type: str, data: dict):
         """
         Broadcast an event to all users with a specific role
-        
-        Args:
-            role: User role to broadcast to
-            event_type: Type of event
-            data: Event data
         """
-        for user_id, user_role in self.user_roles.items():
-            if user_role == role:
-                await self.send_event(user_id, event_type, data)
+        # Snapshoting the items to avoid RuntimeError during concurrent modification
+        targets = [
+            user_id for user_id, user_role in list(self.user_roles.items())
+            if user_role == role
+        ]
+        
+        if targets:
+            # Parallelize sending to all target users
+            # Use asyncio.create_task to make it even more non-blocking?
+            # For now gather is okay since we used put_nowait inside send_event
+            await asyncio.gather(
+                *[self.send_event(user_id, event_type, data) for user_id in targets],
+                return_exceptions=True
+            )
     
     async def event_generator(self, queue: asyncio.Queue):
         """

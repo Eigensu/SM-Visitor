@@ -11,6 +11,7 @@ from database import get_temporary_qr_collection
 from middleware.auth import get_current_owner, get_current_guard
 from utils.jwt_utils import create_qr_token, decode_qr_token
 from utils.qr_utils import generate_qr_image_with_details
+from utils.time_utils import get_ist_now
 
 
 router = APIRouter(prefix="/temp-qr", tags=["Temporary QR"])
@@ -57,7 +58,7 @@ async def generate_temporary_qr(
     temp_qr_collection = get_temporary_qr_collection()
     
     # Calculate expiry
-    expires_at = datetime.utcnow() + timedelta(hours=request.validity_hours)
+    expires_at = get_ist_now() + timedelta(hours=request.validity_hours)
     
     # Create temporary QR document
     temp_qr_doc = {
@@ -66,7 +67,7 @@ async def generate_temporary_qr(
         "expires_at": expires_at,
         "one_time": True,
         "used_at": None,
-        "created_at": datetime.utcnow()
+        "created_at": get_ist_now()
     }
     
     # Insert document
@@ -96,7 +97,7 @@ async def generate_temporary_qr(
         "name": request.guest_name or "Guest",
         "visitor_type": "temporary",
         "token": qr_token,
-        "created_at": datetime.utcnow().isoformat()
+        "created_at": get_ist_now().isoformat()
     })
     
     return TemporaryQRResponse(
@@ -161,7 +162,7 @@ async def validate_temporary_qr(token: str):
         )
     
     # Check expiry
-    if datetime.utcnow() > temp_qr["expires_at"]:
+    if get_ist_now() > temp_qr["expires_at"]:
         return ValidateTemporaryQRResponse(
             valid=False,
             error="QR code expired"
@@ -199,7 +200,7 @@ async def mark_temporary_qr_used(
     # Mark as used
     result = await temp_qr_collection.update_one(
         {"_id": ObjectId(payload["temp_qr_id"])},
-        {"$set": {"used_at": datetime.utcnow()}}
+        {"$set": {"used_at": get_ist_now()}}
     )
     
     if result.modified_count == 0:
@@ -234,7 +235,7 @@ async def list_temporary_qrs(
             "guest_name": qr.get("guest_name"),
             "expires_at": qr["expires_at"],
             "used_at": qr.get("used_at"),
-            "is_active": qr.get("used_at") is None and datetime.utcnow() < qr["expires_at"],
+            "is_active": qr.get("used_at") is None and get_ist_now() < qr["expires_at"],
             "created_at": qr["created_at"]
         }
         for qr in temp_qrs
@@ -254,7 +255,7 @@ async def get_active_qr_codes(
     temp_qr_collection = get_temporary_qr_collection()
     
     # Get all QR codes that haven't expired and haven't been used
-    now = datetime.utcnow()
+    now = get_ist_now()
     
     qr_codes = await temp_qr_collection.find({
         "owner_id": str(current_user["user_id"]),

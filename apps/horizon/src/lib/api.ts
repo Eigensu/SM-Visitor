@@ -144,6 +144,24 @@ export const visitorsAPI = {
     return response.data;
   },
 
+  getPendingRegular: async () => {
+    const response = await apiClient.get("/visitors/approvals/regular");
+    return response.data;
+  },
+
+  approveRegular: async (visitorId: string) => {
+    const response = await apiClient.patch(`/visitors/${visitorId}/approve-regular`);
+    return response.data;
+  },
+
+  rejectRegular: async (visitorId: string) => {
+    // Current backend doesn't have a specific reject-regular, but we can use delete or add it.
+    // Let's assume for now we use the regular delete or add a reject endpoint if needed.
+    // For now I'll just use delete as 'rejection' of a pending request.
+    const response = await apiClient.delete(`/visitors/regular/${visitorId}`);
+    return response.data;
+  },
+
   getRegularCount: async () => {
     const response = await apiClient.get("/visitors/regular/count");
     return response.data.count;
@@ -181,6 +199,26 @@ export const tempQRAPI = {
 
   getActive: async () => {
     const response = await apiClient.get("/temp-qr/active");
+    return response.data;
+  },
+};
+
+// Notifications API
+export const notificationsAPI = {
+  getNotifications: async (unreadOnly: boolean = false) => {
+    const response = await apiClient.get(`/notifications?unread_only=${unreadOnly}`);
+    return response.data;
+  },
+  getUnreadCount: async () => {
+    const response = await apiClient.get("/notifications/unread/count");
+    return response.data;
+  },
+  markAsRead: async (id: string) => {
+    const response = await apiClient.patch(`/notifications/${id}/read`);
+    return response.data;
+  },
+  markAllAsRead: async () => {
+    const response = await apiClient.post("/notifications/read-all");
     return response.data;
   },
 };

@@ -107,3 +107,25 @@ export const capturePhoto = async (): Promise<File | null> => {
     return null;
   }
 };
+// Get full photo URL
+export const getPhotoUrl = (photoPath?: string): string | undefined => {
+  if (!photoPath) return undefined;
+
+  // If it's already a full URL or a data URI, return as is
+  if (photoPath.startsWith("http") || photoPath.startsWith("data:")) {
+    return photoPath;
+  }
+
+  // If it's an absolute path (from legacy code), we can't load it
+  if (photoPath.includes(":\\") || photoPath.startsWith("/")) {
+    if (photoPath.startsWith("/")) {
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+      return `${baseUrl}${photoPath}`;
+    }
+    return undefined; // Broken path
+  }
+
+  // Internal photo (ID or relative path)
+  const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+  return `${baseUrl}/${photoPath}`;
+};

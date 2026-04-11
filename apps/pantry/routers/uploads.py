@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, status, Depends, UploadFile, File
 from pydantic import BaseModel
 from typing import Optional
 
-from middleware.auth import get_current_guard
+from middleware.auth import get_current_guard, get_current_user
 from utils.storage import photo_storage
 
 
@@ -20,6 +20,7 @@ class PhotoUploadResponse(BaseModel):
 
 
 @router.post("/photo/regular", response_model=PhotoUploadResponse)
+@router.post("/photo/regular-visitor", response_model=PhotoUploadResponse)
 async def upload_regular_visitor_photo(
     photo: UploadFile = File(...),
     current_user: dict = Depends(get_current_guard)
@@ -49,7 +50,7 @@ async def upload_regular_visitor_photo(
     )
     
     return PhotoUploadResponse(
-        photo_url=file_id,
+        photo_url=f"/uploads/photo/regular/{file_id}",
         storage_type="gridfs",
         message="Photo saved to MongoDB GridFS"
     )
@@ -79,22 +80,22 @@ async def upload_new_visitor_photo(
         )
     
     # Save to local buffer
-    filepath = photo_storage.save_new_visitor_photo_buffer(
+    filename = photo_storage.save_new_visitor_photo_buffer(
         photo_data,
         photo.filename or "new_visitor_photo.jpg"
     )
     
     return PhotoUploadResponse(
-        photo_url=filepath,
+        photo_url=f"/uploads/photo/buffer/{filename}",
         storage_type="local_buffer",
         message="Photo saved to local buffer temporarily"
     )
 
 
 @router.get("/photo/regular/{file_id}")
+@router.get("/regular/{file_id}")
 async def get_regular_visitor_photo(
-    file_id: str,
-    current_user: dict = Depends(get_current_guard)
+    file_id: str
 ):
     """
     Retrieve regular visitor photo from GridFS
@@ -118,9 +119,9 @@ async def get_regular_visitor_photo(
 
 
 @router.get("/photo/buffer/{filename}")
+@router.get("/buffer/{filename}")
 async def get_buffer_photo(
-    filename: str,
-    current_user: dict = Depends(get_current_guard)
+    filename: str
 ):
     """
     Retrieve new visitor photo from local buffer

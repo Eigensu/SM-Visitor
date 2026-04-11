@@ -1,6 +1,12 @@
 import { cn } from "@/lib/utils";
 
-export type StatusType = "approved" | "pending" | "rejected" | "expired" | "active";
+export type StatusType =
+  | "approved"
+  | "pending"
+  | "rejected"
+  | "expired"
+  | "active"
+  | "auto_approved";
 
 interface StatusBadgeProps {
   status: StatusType;
@@ -28,10 +34,21 @@ const statusConfig: Record<StatusType, { label: string; className: string }> = {
     label: "Active",
     className: "bg-primary/10 text-primary border-primary/20",
   },
+  auto_approved: {
+    label: "Auto Approved",
+    className: "bg-success/10 text-success border-success/20",
+  },
 };
 
 export function StatusBadge({ status, className }: StatusBadgeProps) {
-  const config = statusConfig[status];
+  const safeStatus = status || "pending";
+  const config = statusConfig[safeStatus as StatusType] || {
+    label:
+      typeof safeStatus === "string"
+        ? safeStatus.charAt(0).toUpperCase() + safeStatus.slice(1).replace("_", " ")
+        : "Unknown",
+    className: "bg-muted text-muted-foreground border-border",
+  };
 
   return (
     <span
@@ -48,7 +65,7 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
           status === "pending" && "animate-pulse bg-pending",
           status === "rejected" && "bg-destructive",
           status === "expired" && "bg-muted-foreground",
-          status === "active" && "bg-primary"
+          (status === "active" || status === "auto_approved") && "bg-primary"
         )}
       />
       {config.label}

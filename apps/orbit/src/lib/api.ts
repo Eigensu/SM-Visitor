@@ -136,6 +136,18 @@ export const visitsAPI = {
   },
 };
 
+// Regular Visitors API
+export const visitorsAPI = {
+  createRegularByGuard: async (data: FormData) => {
+    const response = await apiClient.post("/visitors/regular/guard", data, {
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
+    });
+    return response.data;
+  },
+};
+
 // Uploads API
 export const uploadsAPI = {
   uploadNewVisitorPhoto: async (file: File) => {
@@ -149,12 +161,44 @@ export const uploadsAPI = {
     });
     return response.data;
   },
+
+  uploadRegularVisitorPhoto: async (file: File) => {
+    const formData = new FormData();
+    formData.append("photo", file);
+
+    const response = await apiClient.post("/uploads/photo/regular-visitor", formData, {
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
+    });
+    return response.data;
+  },
 };
 
 // Users API
 export const usersAPI = {
   getOwners: async () => {
     const response = await apiClient.get("/users/?role=owner");
+    return response.data;
+  },
+};
+
+// Notifications API
+export const notificationsAPI = {
+  getNotifications: async (unreadOnly: boolean = false) => {
+    const response = await apiClient.get(`/notifications?unread_only=${unreadOnly}`);
+    return response.data;
+  },
+  getUnreadCount: async () => {
+    const response = await apiClient.get("/notifications/unread/count");
+    return response.data;
+  },
+  markAsRead: async (id: string) => {
+    const response = await apiClient.patch(`/notifications/${id}/read`);
+    return response.data;
+  },
+  markAllAsRead: async () => {
+    const response = await apiClient.post("/notifications/read-all");
     return response.data;
   },
 };

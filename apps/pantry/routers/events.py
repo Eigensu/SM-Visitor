@@ -40,7 +40,9 @@ async def event_stream(current_user: dict = Depends(get_current_user)):
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
-            "X-Accel-Buffering": "no"  # Disable nginx buffering
+            "X-Accel-Buffering": "no",  # Disable nginx buffering
+            "Access-Control-Allow-Origin": "*",  # Will be refined by middleware if possible, but safe fallback
+            "Access-Control-Allow-Credentials": "true",
         }
     )
 

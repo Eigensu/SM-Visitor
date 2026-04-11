@@ -1,4 +1,4 @@
-import { cn } from "@/lib/utils";
+import { cn, getPhotoUrl } from "@/lib/utils";
 import { User, Clock, MapPin, Phone } from "lucide-react";
 import { StatusBadge, StatusType } from "./StatusBadge";
 import { GlassCard } from "./GlassCard";
@@ -40,7 +40,11 @@ export function VisitorCard({
         <div className="flex items-start gap-4">
           <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl bg-primary/10">
             {visitor.photo ? (
-              <img src={visitor.photo} alt={visitor.name} className="h-full w-full object-cover" />
+              <img
+                src={getPhotoUrl(visitor.photo)}
+                alt={visitor.name}
+                className="h-full w-full object-cover"
+              />
             ) : (
               <User className="h-6 w-6 text-primary" strokeWidth={1.5} />
             )}

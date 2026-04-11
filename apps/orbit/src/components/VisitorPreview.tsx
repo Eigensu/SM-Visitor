@@ -6,6 +6,7 @@
 
 import { Button } from "@sm-visitor/ui";
 import { Card, CardBody, CardFooter } from "@sm-visitor/ui";
+import { getPhotoUrl } from "@/lib/utils";
 
 interface VisitorData {
   visitor_id?: string;
@@ -35,7 +36,7 @@ export function VisitorPreview({ visitor, onSubmit, onCancel, isLoading }: Visit
           {visitor.photo_url && (
             <div className="flex justify-center">
               <img
-                src={visitor.photo_url}
+                src={getPhotoUrl(visitor.photo_url)}
                 alt={visitor.name}
                 className="h-32 w-32 rounded-full border-4 border-blue-100 object-cover"
               />

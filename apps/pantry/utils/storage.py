@@ -97,40 +97,42 @@ class PhotoStorage:
         with open(filepath, 'wb') as f:
             f.write(photo_data)
         
-        return filepath
+        return unique_filename
     
-    def get_new_visitor_photo_buffer(self, filepath: str) -> Optional[bytes]:
+    def get_new_visitor_photo_buffer(self, filename: str) -> Optional[bytes]:
         """
         Retrieve new visitor photo from local buffer
         
         Args:
-            filepath: Local file path
+            filename: Local file name
         
         Returns:
             Photo binary data or None
         """
         try:
-            if os.path.exists(filepath):
-                with open(filepath, 'rb') as f:
+            full_path = os.path.join(self.local_buffer_path, filename)
+            if os.path.exists(full_path):
+                with open(full_path, 'rb') as f:
                     return f.read()
             return None
         except Exception as e:
             print(f"Error reading buffer photo: {e}")
             return None
     
-    def delete_buffer_photo(self, filepath: str) -> bool:
+    def delete_buffer_photo(self, filename: str) -> bool:
         """
         Delete photo from local buffer
         
         Args:
-            filepath: Local file path
+            filename: Local file name
         
         Returns:
             True if deleted successfully
         """
         try:
-            if os.path.exists(filepath):
-                os.remove(filepath)
+            full_path = os.path.join(self.local_buffer_path, filename)
+            if os.path.exists(full_path):
+                os.remove(full_path)
                 return True
             return False
         except Exception as e:

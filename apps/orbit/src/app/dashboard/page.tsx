@@ -9,9 +9,10 @@ import { useStore } from "@/lib/store";
 import { visitsAPI } from "@/lib/api";
 import { Button } from "@sm-visitor/ui";
 import { Spinner } from "@sm-visitor/ui";
-import { QrCode, UserPlus, ClipboardList, LogOut, Clock, CheckCircle2, Users } from "lucide-react";
+import { LogOut, QrCode, UserPlus, ClipboardList, Clock, CheckCircle2, Users } from "lucide-react";
 import { StatCard } from "@/components/StatCard";
 import { GlassCard } from "@/components/GlassCard";
+import { NotificationCenter } from "@/components/NotificationCenter";
 import toast from "react-hot-toast";
 
 interface Visit {
@@ -99,6 +100,12 @@ export default function DashboardPage() {
       href: "/new-visitor",
     },
     {
+      title: "Register Regular",
+      description: "Staff, Maid, Cook registration",
+      icon: Users,
+      href: "/new-regular-visitor",
+    },
+    {
       title: "Today's Log",
       description: "View all visits today",
       icon: ClipboardList,
@@ -116,10 +123,13 @@ export default function DashboardPage() {
               <h1 className="text-xl font-bold text-foreground">Orbit Guard</h1>
               <p className="text-sm text-muted-foreground">Welcome, {user.name}</p>
             </div>
-            <Button variant="ghost" size="sm" onClick={handleLogout}>
-              <LogOut className="mr-2 h-4 w-4" />
-              Logout
-            </Button>
+            <div className="flex items-center gap-4">
+              <NotificationCenter />
+              <Button variant="ghost" size="sm" onClick={handleLogout}>
+                <LogOut className="mr-2 h-4 w-4" />
+                Logout
+              </Button>
+            </div>
           </div>
         </div>
       </header>
@@ -167,7 +177,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Action Cards */}
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+        <div className="grid grid-cols-2 gap-6">
           {actionCards.map((card) => (
             <GlassCard key={card.title} hover onClick={() => router.push(card.href)}>
               <div className="p-8">

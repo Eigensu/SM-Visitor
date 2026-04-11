@@ -97,6 +97,12 @@ async def create_indexes():
     await db.temporary_qr.create_index("owner_id")
     await db.temporary_qr.create_index("expires_at")
     await db.temporary_qr.create_index("used_at")
+
+    # Notifications collection indexes
+    await db.notifications.create_index("recipient_id")
+    await db.notifications.create_index("is_read")
+    await db.notifications.create_index([("recipient_id", 1), ("is_read", 1)])
+    await db.notifications.create_index("created_at")
     
     print("[+] Database indexes created")
 
@@ -120,6 +126,11 @@ def get_visits_collection():
 def get_temporary_qr_collection():
     """Get temporary_qr collection"""
     return get_database().temporary_qr
+
+
+def get_notifications_collection():
+    """Get notifications collection"""
+    return get_database().notifications
 
 
 # Backward compatibility: db object that proxies to get_database()
@@ -153,6 +164,10 @@ class DatabaseProxy:
     @property
     def events(self):
         return get_database().events
+
+    @property
+    def notifications(self):
+        return get_database().notifications
 
 db = DatabaseProxy()
 
