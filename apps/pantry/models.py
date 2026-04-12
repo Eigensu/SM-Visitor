@@ -1,12 +1,13 @@
-"""
-Pydantic models for MongoDB documents
-These models provide validation and serialization for database operations
-"""
+from enum import Enum
 from pydantic import BaseModel, Field
-from typing import Optional, Any
+from typing import Optional, Any, List
 from datetime import datetime
 from bson import ObjectId
 
+class ApprovalStatus(str, Enum):
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
 
 class PyObjectId(ObjectId):
     """Custom ObjectId type for Pydantic"""

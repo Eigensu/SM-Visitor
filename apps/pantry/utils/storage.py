@@ -77,37 +77,27 @@ class PhotoStorage:
             print(f"Error retrieving photo: {e}")
             return None
     
-    def save_new_visitor_photo_buffer(self, photo_data: bytes, filename: str) -> str:
+    async def save_new_visitor_photo_buffer(self, photo_data: bytes, filename: str) -> str:
         """
         Save new visitor photo to local buffer (temporary storage)
-        
-        Args:
-            photo_data: Photo binary data
-            filename: Original filename
-        
-        Returns:
-            Local file path
         """
+        import asyncio
         # Generate unique filename
         ext = os.path.splitext(filename)[1]
         unique_filename = f"{uuid.uuid4()}{ext}"
         filepath = os.path.join(self.local_buffer_path, unique_filename)
         
-        # Save to local buffer
-        with open(filepath, 'wb') as f:
-            f.write(photo_data)
+        # Save to local buffer off-thread
+        def write_file():
+            with open(filepath, 'wb') as f:
+                f.write(photo_data)
         
+        await asyncio.to_thread(write_file)
         return unique_filename
-    
+
     def get_new_visitor_photo_buffer(self, filename: str) -> Optional[bytes]:
         """
         Retrieve new visitor photo from local buffer
-        
-        Args:
-            filename: Local file name
-        
-        Returns:
-            Photo binary data or None
         """
         try:
             full_path = os.path.join(self.local_buffer_path, filename)
@@ -122,12 +112,6 @@ class PhotoStorage:
     def delete_buffer_photo(self, filename: str) -> bool:
         """
         Delete photo from local buffer
-        
-        Args:
-            filename: Local file name
-        
-        Returns:
-            True if deleted successfully
         """
         try:
             full_path = os.path.join(self.local_buffer_path, filename)
@@ -142,12 +126,6 @@ class PhotoStorage:
     async def delete_regular_visitor_photo(self, file_id: str) -> bool:
         """
         Delete regular visitor photo from GridFS
-        
-        Args:
-            file_id: GridFS file ID
-        
-        Returns:
-            True if deleted successfully
         """
         try:
             from bson import ObjectId
@@ -170,35 +148,32 @@ class PhotoStorage:
         }
         return content_types.get(ext, 'application/octet-stream')
     
-    def validate_photo(self, photo_data: bytes, max_size_mb: int = 5) -> tuple[bool, str]:
+    async def validate_photo(self, photo_data: bytes, max_size_mb: int = 5) -> tuple[bool, str]:
         """
-        Validate photo data
-        
-        Args:
-            photo_data: Photo binary data
-            max_size_mb: Maximum size in MB
-        
-        Returns:
-            Tuple of (is_valid, error_message)
+        Validate photo data (Non-blocking)
         """
+        import asyncio
         # Check size
         size_mb = len(photo_data) / (1024 * 1024)
         if size_mb > max_size_mb:
             return False, f"Photo size exceeds {max_size_mb}MB limit"
         
-        # Check if it's a valid image using Pillow
-        try:
-            from PIL import Image
-            img = Image.open(io.BytesIO(photo_data))
-            img.verify()
-            
-            # Check format
-            if img.format not in ['JPEG', 'PNG']:
-                return False, "Only JPEG and PNG formats are supported"
-            
-            return True, ""
-        except Exception as e:
-            return False, f"Invalid image file: {str(e)}"
+        # Process image off-thread
+        def verify_image():
+            try:
+                from PIL import Image
+                img = Image.open(io.BytesIO(photo_data))
+                img.verify()
+                
+                # Check format
+                if img.format not in ['JPEG', 'PNG']:
+                    return False, "Only JPEG and PNG formats are supported"
+                
+                return True, ""
+            except Exception as e:
+                return False, f"Invalid image file: {str(e)}"
+        
+        return await asyncio.to_thread(verify_image)
 
 
 # Global instance

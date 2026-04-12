@@ -21,6 +21,13 @@ class SSEManager:
         self.connections: Dict[str, Set[asyncio.Queue]] = {}
         # Map of user_id to role for role-based broadcasting
         self.user_roles: Dict[str, str] = {}
+        # Global Event Counter (Metrics)
+        self.event_count = 0
+    
+    def _generate_event_id(self) -> str:
+        """Internal helper for unique event tracking"""
+        import uuid
+        return str(uuid.uuid4())
     
     async def connect(self, user_id: str, role: str) -> asyncio.Queue:
         """
@@ -109,22 +116,26 @@ class SSEManager:
 
         # 2. Push to Active Connections (Real-time)
         if user_id not in self.connections:
-            # Still return, but notification is now in DB for later
+            print(f"ℹ️  No active SSE connections for user_id={user_id}, event cached in DB only.")
             return
         
+        self.event_count += 1
         event = {
+            "id": self._generate_event_id(),
             "type": event_type,
             "data": data,
             "timestamp": get_ist_now().isoformat() 
         }
         
         # Send to all connections for this user
-        for queue in list(self.connections[user_id]): # Snapshot for thread safety
+        connection_count = len(self.connections[user_id])
+        print(f"📤 [SSE {self.event_count}] Sending '{event_type}' (id={event['id']}) to {connection_count} connection(s)")
+        
+        for queue in list(self.connections[user_id]):
             try:
-                # Use put_nowait to NEVER block the API request
                 queue.put_nowait(event)
             except asyncio.QueueFull:
-                print(f"⚠️  SSE Queue full for user_id={user_id}, dropping real-time event")
+                print(f"⚠️  SSE Queue full for user_id={user_id}")
             except Exception as e:
                 print(f"❌ Error sending SSE event: {e}")
 
@@ -147,34 +158,41 @@ class SSEManager:
                 return_exceptions=True
             )
     
-    async def event_generator(self, queue: asyncio.Queue):
+    async def event_generator(self, request: Request, queue: asyncio.Queue):
         """
-        Generate SSE events from queue
-        
-        Args:
-            queue: Queue to read events from
-        
-        Yields:
-            SSE formatted event strings
+        Generate SSE events from queue with disconnect handling
         """
         try:
             while True:
-                # Wait for event with timeout for keep-alive
+                # 1. Immediate Disconnect Check
+                if await request.is_disconnected():
+                    break
+
                 try:
-                    event = await asyncio.wait_for(queue.get(), timeout=30.0)
+                    # 2. Wait for message with robust timeout (25s)
+                    message = await asyncio.wait_for(queue.get(), timeout=25.0)
                     
-                    # Format as SSE
-                    event_str = f"event: {event['type']}\n"
-                    event_str += f"data: {json.dumps(event['data'])}\n\n"
+                    event_type = message.get("type", "message")
+                    event_data = message.get("data", {})
                     
-                    yield event_str
+                    # 3. Protocol Serialization (Strict ID/NAME/DATA format)
+                    event_id = message.get("id")
+                    if event_id:
+                         yield f"id: {event_id}\n"
+                    yield f"event: {event_type}\ndata: {json.dumps(event_data)}\n\n"
                     
                 except asyncio.TimeoutError:
-                    # Send keep-alive comment
+                    # 4. Mandatory Keep-Alive Heartbeat
                     yield ": keep-alive\n\n"
                     
         except asyncio.CancelledError:
-            # Connection closed
+            # Clean exit on task cancellation
+            pass
+        except Exception as e:
+            # Silent logging for production stability
+            print(f"❌ SSE Stream Error: {e}")
+        finally:
+            # Logic here runs on connection close
             pass
 
 

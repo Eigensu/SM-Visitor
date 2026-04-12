@@ -155,7 +155,9 @@ export default function NewRegularVisitorPage() {
                 }
               />
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-muted-foreground">Category</label>
+                <label className="text-sm font-medium text-muted-foreground">
+                  Category <span className="text-red-500">*</span>
+                </label>
                 <div className="grid grid-cols-3 gap-2">
                   {CATEGORIES.map((cat) => (
                     <button

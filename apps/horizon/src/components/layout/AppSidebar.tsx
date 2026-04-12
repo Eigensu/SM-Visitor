@@ -10,11 +10,10 @@ import {
   UserCheck,
 } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { SSEIndicator } from "@/components/shared/SSEIndicator";
-import { useRouter } from "next/navigation";
-import { useStore } from "@/lib/store";
 import { NotificationCenter } from "../NotificationCenter";
 
 const navItems = [
@@ -121,6 +120,7 @@ export function AppSidebar({ collapsed = false, onToggle }: AppSidebarProps) {
         })}
 
         <button
+          onClick={handleLogout}
           className={cn(
             "flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
             "text-destructive/70 hover:bg-destructive/10 hover:text-destructive",

@@ -1,8 +1,4 @@
-"""
-Visitor Management Router - REST API for CRUD operations on visitors
-Handles regular visitor management with QR code generation
-"""
-from fastapi import APIRouter, HTTPException, status, Depends, UploadFile, File
+from fastapi import APIRouter, HTTPException, status, Depends, UploadFile, File, Form
 from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import datetime
@@ -15,9 +11,9 @@ from utils.qr_utils import generate_qr_image_with_details
 from utils.storage import photo_storage
 from utils.sse_manager import sse_manager
 from utils.time_utils import get_ist_now
-from models import VisitorModel
-from fastapi import Form
-
+from models import VisitorModel, ApprovalStatus
+from services.serializers.visitor import serialize_visitor
+from utils.auth_helpers import get_user_id
 
 router = APIRouter(prefix="/visitors", tags=["Visitors"])
 
@@ -115,15 +111,15 @@ class UpdateVisitorRequest(BaseModel):
 class VisitorResponse(BaseModel):
     _id: str
     name: str
-    phone: Optional[str]
+    phone: Optional[str] = None
     photo_url: str
     visitor_type: str
     created_by: str
-    default_purpose: Optional[str]
-    qr_token: Optional[str]
+    default_purpose: Optional[str] = None
+    qr_token: Optional[str] = None
     is_active: bool
     approval_status: str
-    assigned_owner_id: Optional[str]
+    assigned_owner_id: Optional[str] = None
     created_by_role: str
     created_at: datetime
 
@@ -172,7 +168,7 @@ async def create_regular_visitor(
         "phone": request.phone,
         "photo_url": photo_file_id,  # GridFS file ID
         "visitor_type": "regular",
-        "created_by": current_user["user_id"],
+        "created_by": get_user_id(current_user),
         "default_purpose": request.default_purpose,
         
         # Category
@@ -212,7 +208,7 @@ async def create_regular_visitor(
     qr_token = create_qr_token({
         "type": "regular",
         "visitor_id": visitor_id,
-        "created_by": current_user["user_id"]
+        "created_by": get_user_id(current_user)
     })
     
     # Update visitor with QR token
@@ -221,15 +217,19 @@ async def create_regular_visitor(
         {"$set": {"qr_token": qr_token}}
     )
     
-    # Generate QR image with all visitor details
-    qr_image_url = generate_qr_image_with_details({
-        "visitor_id": visitor_id,
-        "name": request.name,
-        "phone": request.phone,
-        "visitor_type": "regular",
-        "token": qr_token,
-        "created_at": get_ist_now().isoformat()
-    })
+    # FIX: Offload CPU-intensive QR generation
+    import asyncio
+    qr_image_url = await asyncio.to_thread(
+        generate_qr_image_with_details,
+        {
+            "visitor_id": visitor_id,
+            "name": request.name,
+            "phone": request.phone,
+            "visitor_type": "regular",
+            "token": qr_token,
+            "created_at": get_ist_now().isoformat()
+        }
+    )
     
 def get_category_label(category: str) -> str:
     mapping = {
@@ -261,15 +261,23 @@ async def get_visitor_request(
     auto_approval_enabled: bool = Form(True),
     auto_approval_rule: str = Form("always")
 ) -> CreateRegularVisitorRequest:
+    # Convert empty strings to None for optional fields
+    # This prevents Pydantic min_length validation errors for blank form fields
+    s_phone = phone if phone and phone.strip() else None
+    s_assigned_owner_id = assigned_owner_id if assigned_owner_id and assigned_owner_id.strip() else None
+    s_default_purpose = default_purpose if default_purpose and default_purpose.strip() else None
+    s_start_time = schedule_start_time if schedule_start_time and schedule_start_time.strip() else None
+    s_end_time = schedule_end_time if schedule_end_time and schedule_end_time.strip() else None
+
     return CreateRegularVisitorRequest(
         name=name,
-        phone=phone,
+        phone=s_phone,
         category=category,
-        assigned_owner_id=assigned_owner_id,
-        default_purpose=default_purpose,
+        assigned_owner_id=s_assigned_owner_id,
+        default_purpose=s_default_purpose,
         schedule_enabled=schedule_enabled,
-        schedule_start_time=schedule_start_time,
-        schedule_end_time=schedule_end_time,
+        schedule_start_time=s_start_time,
+        schedule_end_time=s_end_time,
         auto_approval_enabled=auto_approval_enabled,
         auto_approval_rule=auto_approval_rule
     )
@@ -305,7 +313,7 @@ async def create_regular_visitor_by_guard(
         "phone": request.phone,
         "photo_url": photo_file_id,
         "visitor_type": "regular",
-        "created_by": current_user["user_id"],
+        "created_by": get_user_id(current_user),
         "created_by_role": "guard",
         "assigned_owner_id": request.assigned_owner_id,
         "approval_status": "pending",
@@ -333,33 +341,22 @@ async def create_regular_visitor_by_guard(
     result = await visitors.insert_one(visitor_doc)
     visitor_id = str(result.inserted_id)
     
-    # Notify Owner via SSE
+    # Notify Owner via SSE (Hardened Name)
     from utils.sse_manager import sse_manager
     await sse_manager.send_event(
         request.assigned_owner_id,
-        "new_regular_visitor_pending",
+        "NEW_VISITOR_REQUEST",
         {
-            "visitor_id": visitor_id,
-            "visitor_name": request.name,
+            "visitor_id": str(visitor_id),
+            "name": request.name,
+            "phone": request.phone,
             "category": request.category,
             "photo_url": photo_file_id,
-            "guard_id": current_user["user_id"]
+            "guard_id": get_user_id(current_user)
         }
     )
     
-    return VisitorResponse(
-        _id=visitor_id,
-        name=request.name,
-        phone=request.phone,
-        photo_url=photo_file_id,
-        visitor_type="regular",
-        created_by=current_user["user_id"],
-        created_by_role="guard",
-        approval_status="pending",
-        is_active=False,
-        assigned_owner_id=request.assigned_owner_id,
-        created_at=visitor_doc["created_at"]
-    )
+    return serialize_visitor(visitor_doc | {"_id": visitor_id})
 
 
 @router.get("/approvals/regular", response_model=List[VisitorResponse])
@@ -367,27 +364,17 @@ async def get_pending_regular_visitors(
     current_user: dict = Depends(get_current_owner)
 ):
     """Get regular visitors pending approval for the current owner"""
+    user_id = get_user_id(current_user)
     visitors = get_visitors_collection()
+    # FIX: Resilient query for legacy ObjectId and new String IDs
     cursor = visitors.find({
-        "assigned_owner_id": current_user["user_id"],
-        "approval_status": "pending"
+        "assigned_owner_id": {"$in": [user_id, ObjectId(user_id)]},
+        "approval_status": "PENDING"
     })
     
     results = []
     async for doc in cursor:
-        results.append(VisitorResponse(
-            _id=str(doc["_id"]),
-            name=doc["name"],
-            phone=doc.get("phone"),
-            photo_url=doc["photo_url"],
-            visitor_type=doc["visitor_type"],
-            created_by=doc["created_by"],
-            created_by_role=doc["created_by_role"],
-            approval_status=doc["approval_status"],
-            is_active=doc["is_active"],
-            assigned_owner_id=doc["assigned_owner_id"],
-            created_at=doc["created_at"]
-        ))
+        results.append(serialize_visitor(doc))
     return results
 
 
@@ -397,10 +384,11 @@ async def approve_regular_visitor(
     current_user: dict = Depends(get_current_owner)
 ):
     """Approve a guard-initiated regular visitor registration"""
+    user_id = get_user_id(current_user)
     visitors = get_visitors_collection()
     visitor = await visitors.find_one({
         "_id": ObjectId(visitor_id),
-        "assigned_owner_id": current_user["user_id"]
+        "assigned_owner_id": {"$in": [user_id, ObjectId(user_id)]}
     })
     
     if not visitor:
@@ -428,29 +416,38 @@ async def approve_regular_visitor(
         }
     )
     
-    # Generate QR image
-    qr_image_url = generate_qr_image_with_details({
-        "visitor_id": visitor_id,
-        "name": visitor["name"],
-        "phone": visitor.get("phone"),
-        "visitor_type": "regular",
-        "token": qr_token,
-        "created_at": get_ist_now().isoformat()
-    })
+    # FIX: Offload CPU-intensive QR generation
+    import asyncio
+    qr_image_url = await asyncio.to_thread(
+        generate_qr_image_with_details,
+        {
+            "visitor_id": visitor_id,
+            "name": visitor["name"],
+            "phone": visitor.get("phone"),
+            "visitor_type": "regular",
+            "token": qr_token,
+            "created_at": get_ist_now().isoformat()
+        }
+    )
+    
+    # Notify Guard via SSE (Hardened Name)
+    from utils.sse_manager import sse_manager
+    await sse_manager.send_event(
+        visitor["created_by"],
+        "VISITOR_APPROVED",
+        {
+            "visitor_id": visitor_id,
+            "visitor_name": visitor["name"],
+            "qr_token": qr_token
+        }
+    )
     
     return VisitorWithQRResponse(
-        _id=visitor_id,
-        name=visitor["name"],
-        phone=visitor.get("phone"),
-        photo_url=visitor["photo_url"],
-        visitor_type="regular",
-        created_by=visitor["created_by"],
-        created_by_role=visitor["created_by_role"],
-        approval_status="approved",
-        is_active=True,
-        assigned_owner_id=visitor["assigned_owner_id"],
-        created_at=visitor["created_at"],
-        qr_token=qr_token,
+        **serialize_visitor(visitor | {
+            "approval_status": ApprovalStatus.APPROVED,
+            "is_active": True,
+            "qr_token": qr_token
+        }),
         qr_image_url=qr_image_url
     )
 
@@ -491,18 +488,7 @@ async def get_visitor(
                 detail="Access denied"
             )
     
-    return VisitorResponse(
-        _id=str(visitor["_id"]),
-        name=visitor["name"],
-        phone=visitor.get("phone"),
-        photo_url=visitor["photo_url"],
-        visitor_type=visitor["visitor_type"],
-        created_by=visitor["created_by"],
-        default_purpose=visitor.get("default_purpose"),
-        qr_token=visitor.get("qr_token"),
-        is_active=visitor["is_active"],
-        created_at=visitor["created_at"]
-    )
+    return serialize_visitor(visitor)
 
 
 @router.get("/", response_model=List[VisitorResponse])
@@ -520,11 +506,22 @@ async def list_visitors(
     visitors = get_visitors_collection()
     
     # Build query
-    query = {"is_active": True}
+    if current_user["role"] == "guard":
+        # Guards can see active ones OR pending regulars
+        query = {
+            "$or": [
+                {"is_active": True},
+                {"visitor_type": "regular", "approval_status": "pending"}
+            ]
+        }
+    else:
+        # Default to active only
+        query = {"is_active": True}
     
     if current_user["role"] == "owner":
         # Owners can only see their own visitors
-        query["created_by"] = current_user["user_id"]
+        user_id = get_user_id(current_user)
+        query["created_by"] = {"$in": [user_id, ObjectId(user_id)]}
     elif owner_id:
         # Admin filtering by owner
         query["created_by"] = owner_id
@@ -533,21 +530,7 @@ async def list_visitors(
     cursor = visitors.find(query).sort("created_at", -1)
     visitor_list = await cursor.to_list(length=100)
     
-    return [
-        VisitorResponse(
-            _id=str(v["_id"]),
-            name=v["name"],
-            phone=v.get("phone"),
-            photo_url=v["photo_url"],
-            visitor_type=v["visitor_type"],
-            created_by=v["created_by"],
-            default_purpose=v.get("default_purpose"),
-            qr_token=v.get("qr_token"),
-            is_active=v["is_active"],
-            created_at=v["created_at"]
-        )
-        for v in visitor_list
-    ]
+    return [serialize_visitor(v) for v in visitor_list]
 
 
 @router.patch("/{visitor_id}", response_model=VisitorResponse)
@@ -608,18 +591,7 @@ async def update_visitor(
     # Fetch updated visitor
     updated_visitor = await visitors.find_one({"_id": ObjectId(visitor_id)})
     
-    return VisitorResponse(
-        _id=str(updated_visitor["_id"]),
-        name=updated_visitor["name"],
-        phone=updated_visitor.get("phone"),
-        photo_url=updated_visitor["photo_url"],
-        visitor_type=updated_visitor["visitor_type"],
-        created_by=updated_visitor["created_by"],
-        default_purpose=updated_visitor.get("default_purpose"),
-        qr_token=updated_visitor.get("qr_token"),
-        is_active=updated_visitor["is_active"],
-        created_at=updated_visitor["created_at"]
-    )
+    return serialize_visitor(updated_visitor)
 
 
 @router.delete("/{visitor_id}", status_code=status.HTTP_200_OK)
@@ -731,28 +703,15 @@ async def get_regular_visitors(
     Used by Horizon visitors page
     """
     visitors_collection = get_visitors_collection()
+    user_id = get_user_id(current_user)
     
     visitors = await visitors_collection.find({
-        "created_by": str(current_user["_id"]),
+        "created_by": {"$in": [user_id, ObjectId(user_id)]},
         "visitor_type": "regular",
         "is_active": True
     }).sort("created_at", -1).to_list(length=1000)
     
-    return [
-        VisitorResponse(
-            _id=str(visitor["_id"]),
-            name=visitor["name"],
-            phone=visitor.get("phone"),
-            photo_url=visitor["photo_url"],
-            visitor_type=visitor["visitor_type"],
-            created_by=visitor["created_by"],
-            default_purpose=visitor.get("default_purpose"),
-            qr_token=visitor.get("qr_token"),
-            is_active=visitor["is_active"],
-            created_at=visitor["created_at"]
-        )
-        for visitor in visitors
-    ]
+    return [serialize_visitor(visitor) for visitor in visitors]
 
 
 @router.get("/regular/count")
@@ -764,9 +723,10 @@ async def get_regular_count(
     Used by Horizon dashboard stats
     """
     visitors_collection = get_visitors_collection()
+    user_id = get_user_id(current_user)
     
     count = await visitors_collection.count_documents({
-        "created_by": str(current_user["_id"]),
+        "created_by": {"$in": [user_id, ObjectId(user_id)]},
         "visitor_type": "regular",
         "is_active": True
     })
@@ -784,11 +744,11 @@ async def get_visitor_by_id(
     Used by Horizon visitor details page
     """
     visitors_collection = get_visitors_collection()
-    
+    user_id = get_user_id(current_user)
     try:
         visitor = await visitors_collection.find_one({
             "_id": ObjectId(visitor_id),
-            "created_by": str(current_user["_id"])
+            "created_by": {"$in": [user_id, ObjectId(user_id)]}
         })
     except Exception:
         raise HTTPException(
@@ -802,15 +762,4 @@ async def get_visitor_by_id(
             detail="Visitor not found"
         )
     
-    return VisitorResponse(
-        _id=str(visitor["_id"]),
-        name=visitor["name"],
-        phone=visitor.get("phone"),
-        photo_url=visitor["photo_url"],
-        visitor_type=visitor["visitor_type"],
-        created_by=visitor["created_by"],
-        default_purpose=visitor.get("default_purpose"),
-        qr_token=visitor.get("qr_token"),
-        is_active=visitor["is_active"],
-        created_at=visitor["created_at"]
-    )
+    return serialize_visitor(visitor)

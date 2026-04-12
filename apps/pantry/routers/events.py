@@ -1,7 +1,7 @@
 """
 SSE Events Router - Real-time notifications via Server-Sent Events
 """
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 from middleware.auth import get_current_user
 from utils.sse_manager import sse_manager
@@ -11,7 +11,7 @@ router = APIRouter(prefix="/events", tags=["Events"])
 
 
 @router.get("/stream")
-async def event_stream(current_user: dict = Depends(get_current_user)):
+async def event_stream(request: Request, current_user: dict = Depends(get_current_user)):
     """
     Establish SSE connection for real-time notifications
     
@@ -28,7 +28,7 @@ async def event_stream(current_user: dict = Depends(get_current_user)):
     
     async def event_generator():
         try:
-            async for event in sse_manager.event_generator(queue):
+            async for event in sse_manager.event_generator(request, queue):
                 yield event
         finally:
             # Clean up on disconnect

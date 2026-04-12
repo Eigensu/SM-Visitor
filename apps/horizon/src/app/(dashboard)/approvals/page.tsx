@@ -18,20 +18,23 @@ export default function Approvals() {
   const [regularRequests, setRegularRequests] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState("pending");
   const [isLoading, setIsLoading] = useState(true);
-  const { pendingVisits, removePendingVisit } = useStore();
+  const { pendingVisits, removePendingVisit, refreshMap } = useStore();
 
   // Fetch pending visits and regular requests on mount
   useEffect(() => {
-    const fetchData = async () => {
+    const fetchData = async (signal?: AbortSignal) => {
       try {
         setIsLoading(true);
         const [pending, pendingReg] = await Promise.all([
-          visitsAPI.getPending(),
-          visitorsAPI.getPendingRegular(),
+          visitsAPI.getPending(signal),
+          visitorsAPI.getPendingRegular(signal),
         ]);
         setVisitors(pending);
         setRegularRequests(pendingReg);
-      } catch (error) {
+      } catch (error: any) {
+        if (error.name === "AbortError" || error.message?.includes("canceled")) {
+          return;
+        }
         console.error("Failed to fetch approvals:", error);
         toast.error("Failed to load approval requests");
       } finally {
@@ -39,8 +42,10 @@ export default function Approvals() {
       }
     };
 
-    fetchData();
-  }, []);
+    const controller = new AbortController();
+    fetchData(controller.signal);
+    return () => controller.abort();
+  }, [refreshMap.approvals]);
 
   // Sync with SSE updates from store
   useEffect(() => {

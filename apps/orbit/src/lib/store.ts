@@ -61,6 +61,12 @@ interface AppState {
   clearUnreadCount: () => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
+  // Refresh Trigger (Scoped for performance)
+  refreshMap: {
+    visitors: number;
+    dashboard: number;
+  };
+  triggerRefresh: (scope: "visitors" | "dashboard") => void;
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -75,6 +81,17 @@ export const useStore = create<AppState>((set, get) => ({
   unreadCount: 0,
   isLoading: false,
   error: null,
+  refreshMap: {
+    visitors: 0,
+    dashboard: 0,
+  },
+  triggerRefresh: (scope) =>
+    set((state) => ({
+      refreshMap: {
+        ...state.refreshMap,
+        [scope]: state.refreshMap[scope] + 1,
+      },
+    })),
 
   // Actions
   setUser: (user) => set({ user, isAuthenticated: !!user }),

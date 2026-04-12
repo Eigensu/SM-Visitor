@@ -13,11 +13,11 @@ import { Button } from "@sm-visitor/ui";
 import { format } from "date-fns";
 
 export function NotificationCenter() {
+  const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const { notifications, unreadCount, addNotification, setNotifications, clearUnreadCount } =
     useStore();
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const router = useRouter();
 
   // Close dropdown when clicking outside
   useEffect(() => {

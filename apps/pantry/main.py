@@ -51,8 +51,18 @@ async def read_root() -> dict[str, str]:
 
 
 @app.get("/health")
-async def health_check() -> dict[str, str]:
-    return {"status": "ok"}
+async def health_check() -> dict:
+    from utils.sse_manager import sse_manager
+    # Flatten connections to get total active streams
+    total_connections = sum(len(conns) for conns in sse_manager.connections.values())
+    return {
+        "status": "ok",
+        "sse": {
+            "active_users": len(sse_manager.connections),
+            "total_connections": total_connections,
+            "event_count": sse_manager.event_count
+        }
+    }
 
 
 

@@ -1,108 +1,54 @@
 /**
  * SSE Provider Component
- * Provides SSE connection to the entire app
+ * Listens for real-time events and triggers UI updates
  */
 "use client";
 
 import { useSSE } from "@sm-visitor/hooks";
 import { useStore } from "@/lib/store";
-import { createSSEConnection, notificationsAPI } from "@/lib/api";
-import { toast } from "sonner";
-import { useEffect } from "react";
+import { createSSEConnection } from "@/lib/api";
+import toast from "react-hot-toast";
 
-export function SSEProvider({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, updateVisitStatus, addNotification, setNotifications, setUnreadCount } =
-    useStore();
+interface SSEProviderProps {
+  children: React.ReactNode;
+  onRefresh?: () => void; // Callback to trigger data refetch
+}
 
-  // Fetch initial notifications
-  useEffect(() => {
-    const fetchInitialNotifications = async () => {
-      try {
-        const notifs = await notificationsAPI.getNotifications();
-        const unreadRes = await notificationsAPI.getUnreadCount();
-        setNotifications(notifs);
-        setUnreadCount(unreadRes.count);
-      } catch (error) {
-        console.error("Failed to fetch notifications:", error);
-      }
-    };
-
-    if (isAuthenticated) {
-      fetchInitialNotifications();
-    }
-  }, [isAuthenticated, setNotifications, setUnreadCount]);
+export function SSEProvider({ children, onRefresh }: SSEProviderProps) {
+  const { isAuthenticated, user, triggerRefresh } = useStore();
 
   useSSE({
-    isAuthenticated,
+    // Only connect when authenticated
+    isAuthenticated: isAuthenticated && !!user,
     createConnection: createSSEConnection,
-    onEvent: (data) => {
-      // Create a notification object from the event
-      const newNotification = {
-        id: Date.now().toString(),
-        title: "Notification",
-        message: "New alert",
-        type: data.type,
-        created_at: new Date().toISOString(),
-        is_read: false,
-        data: data.data,
-      };
+    handlers: {
+      NEW_VISITOR_REQUEST: (data: any) => {
+        console.log("🔔 [HORIZON] New visitor request received:", data);
+        toast.success(`New Request: ${data.name || "Visitor"}`, {
+          icon: "👤",
+          duration: 5000,
+        });
 
-      switch (data.type) {
-        case "new_visit_pending":
-          newNotification.title = "Entry Request";
-          newNotification.message = `New visitor ${data.data.visitor_name} is at the gate.`;
-          toast.success(newNotification.title, {
-            description: newNotification.message,
-            icon: "🔔",
-          });
-          addNotification(newNotification);
-          break;
+        // 🔥 SCOPED REFRESH
+        triggerRefresh("approvals");
+        triggerRefresh("dashboard");
+        if (onRefresh) onRefresh();
+      },
 
-        case "new_regular_visitor_pending":
-          newNotification.title = "Staff Registration";
-          newNotification.message = `Guard registered new staff: ${data.data.visitor_name}`;
-          toast.success(newNotification.title, {
-            description: newNotification.message,
-            icon: "👤",
-          });
-          addNotification(newNotification);
-          break;
+      VISITOR_APPROVED: (data: any) => {
+        console.log("✅ [HORIZON] Visitor approved confirmation:", data);
+        triggerRefresh("visitors");
+        triggerRefresh("approvals");
+        triggerRefresh("dashboard");
+        if (onRefresh) onRefresh();
+      },
 
-        case "visit_auto_approved":
-          // Sent when a regular/temp visitor uses a QR code
-          toast.success(`${data.data.visitor_name} has entered`, {
-            duration: 5000,
-            icon: "🚪",
-            description: "Entry via QR code",
-          });
-          break;
-
-        case "visit_approved":
-          updateVisitStatus(data.data.visit_id || data.data._id, "approved");
-          toast.success(`Visit approved for ${data.data.visitor_name || data.data.name_snapshot}`, {
-            duration: 5000,
-            icon: "✅",
-          });
-          break;
-
-        case "visit_rejected":
-          updateVisitStatus(data.data.visit_id || data.data._id, "rejected");
-          toast.error(`Visit rejected for ${data.data.visitor_name || data.data.name_snapshot}`, {
-            duration: 5000,
-            icon: "❌",
-          });
-          break;
-
-        case "new_user_registered":
-          toast.success(`New ${data.data.role} registered: ${data.data.name}`, {
-            duration: 5000,
-            icon: "👤",
-          });
-          break;
-
-        default:
-          console.log("Unknown SSE event type:", data.type);
-      }
+      // Legacy or other event support
+      visit_request: (data: any) => {
+        toast.success(`Entry Request: ${data.name_snapshot || "Guest"}`, { icon: "🚗" });
+        triggerRefresh("dashboard");
+        if (onRefresh) onRefresh();
+      },
     },
   });
 

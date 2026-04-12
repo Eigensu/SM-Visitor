@@ -115,6 +115,14 @@ interface AppState {
   // UI actions
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
+
+  // Refresh Trigger (Scoped for performance)
+  refreshMap: {
+    visitors: number;
+    approvals: number;
+    dashboard: number;
+  };
+  triggerRefresh: (scope: "visitors" | "approvals" | "dashboard") => void;
 }
 
 export const useStore = create<AppState>((set) => ({
@@ -133,6 +141,18 @@ export const useStore = create<AppState>((set) => ({
   unreadCount: 0,
   isLoading: false,
   error: null,
+  refreshMap: {
+    visitors: 0,
+    approvals: 0,
+    dashboard: 0,
+  },
+  triggerRefresh: (scope) =>
+    set((state) => ({
+      refreshMap: {
+        ...state.refreshMap,
+        [scope]: state.refreshMap[scope] + 1,
+      },
+    })),
 
   // Auth actions
   setUser: (user) => set({ user, isAuthenticated: !!user }),

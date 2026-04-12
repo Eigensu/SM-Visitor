@@ -6,7 +6,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useStore } from "@/lib/store";
-import { visitsAPI } from "@/lib/api";
+import { visitsAPI, visitorsAPI } from "@/lib/api";
 import { Button } from "@sm-visitor/ui";
 import { Spinner } from "@sm-visitor/ui";
 import { LogOut, QrCode, UserPlus, ClipboardList, Clock, CheckCircle2, Users } from "lucide-react";
@@ -24,9 +24,10 @@ interface Visit {
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { user, isAuthenticated, isAuthLoading, logout, pendingVisits } = useStore();
+  const { user, isAuthenticated, isAuthLoading, logout, pendingVisits, refreshMap } = useStore();
   const [todayVisits, setTodayVisits] = useState<Visit[]>([]);
   const [isLoadingStats, setIsLoadingStats] = useState(true);
+  const [pendingStaffCount, setPendingStaffCount] = useState(0);
 
   // All hooks must be at the top level - no conditional hooks!
   useEffect(() => {
@@ -37,24 +38,44 @@ export default function DashboardPage() {
     }
   }, [isAuthenticated, isAuthLoading, router]);
 
-  // Fetch today's visits for statistics
-  useEffect(() => {
-    const fetchTodayVisits = async () => {
-      try {
-        const visits = await visitsAPI.getTodayVisits();
-        setTodayVisits(visits);
-      } catch (error: any) {
-        console.error("Failed to fetch today's visits:", error);
-        toast.error("Failed to load visit statistics");
-      } finally {
-        setIsLoadingStats(false);
+  // Fetch today's visits and staff directory for statistics
+  const fetchStats = async (signal?: AbortSignal) => {
+    try {
+      const [visits, staff] = await Promise.all([
+        visitsAPI.getTodayVisits(signal),
+        visitorsAPI.list(signal),
+      ]);
+      setTodayVisits(visits);
+      setPendingStaffCount(
+        staff.filter((v: any) => v.visitor_type === "regular" && v.approval_status === "pending")
+          .length
+      );
+    } catch (error: any) {
+      if (error.name === "AbortError" || error.message?.includes("canceled")) {
+        return; // Silent fail for aborted requests
       }
-    };
-
-    if (isAuthenticated && !isAuthLoading) {
-      fetchTodayVisits();
+      console.error("📡 [ORBIT] Failed to fetch dashboard statistics:", error);
+    } finally {
+      setIsLoadingStats(false);
     }
-  }, [isAuthenticated, isAuthLoading]);
+  };
+
+  useEffect(() => {
+    if (isAuthenticated && !isAuthLoading) {
+      const controller = new AbortController();
+      fetchStats(controller.signal);
+
+      // 🔥 HARDENED: Polling Fallback (10s) as per Spec
+      const interval = setInterval(() => fetchStats(controller.signal), 10000);
+
+      return () => {
+        controller.abort();
+        clearInterval(interval);
+      };
+    }
+  }, [isAuthenticated, isAuthLoading, refreshMap.dashboard]);
+
+  const totalPending = pendingVisits.length + pendingStaffCount;
 
   const handleLogout = () => {
     logout();
@@ -88,26 +109,26 @@ export default function DashboardPage() {
 
   const actionCards = [
     {
+      title: "Staff Directory",
+      description: "Maids, Cooks & Official Staff",
+      icon: Users,
+      href: "/staff",
+    },
+    {
+      title: "Register Regular",
+      description: "New staff registration",
+      icon: UserPlus,
+      href: "/new-regular-visitor",
+    },
+    {
       title: "Scan QR Code",
-      description: "Scan visitor QR for quick entry",
+      description: "Quick entry scan",
       icon: QrCode,
       href: "/scan",
     },
     {
-      title: "New Visitor",
-      description: "Register a new visitor",
-      icon: UserPlus,
-      href: "/new-visitor",
-    },
-    {
-      title: "Register Regular",
-      description: "Staff, Maid, Cook registration",
-      icon: Users,
-      href: "/new-regular-visitor",
-    },
-    {
       title: "Today's Log",
-      description: "View all visits today",
+      description: "View all activity",
       icon: ClipboardList,
       href: "/history",
     },
@@ -139,9 +160,15 @@ export default function DashboardPage() {
         {/* Pending Approvals Badge */}
         {/* Pending Approvals Badge - Always visible but different style if empty */}
         <div
-          onClick={() => router.push("/history?status=pending")}
+          onClick={() => {
+            if (pendingStaffCount > 0 && pendingVisits.length === 0) {
+              router.push("/staff?filter=pending");
+            } else {
+              router.push("/history?status=pending");
+            }
+          }}
           className={`mb-6 cursor-pointer rounded-lg border p-4 transition-colors ${
-            pendingVisits.length > 0
+            totalPending > 0
               ? "border-yellow-200 bg-yellow-50 hover:bg-yellow-100"
               : "border-gray-200 bg-gray-50 hover:bg-gray-100"
           }`}
@@ -149,7 +176,7 @@ export default function DashboardPage() {
           <div className="flex items-center">
             <div className="flex-shrink-0">
               <svg
-                className={`h-5 w-5 ${pendingVisits.length > 0 ? "text-yellow-400" : "text-gray-400"}`}
+                className={`h-5 w-5 ${totalPending > 0 ? "text-yellow-400" : "text-gray-400"}`}
                 fill="currentColor"
                 viewBox="0 0 20 20"
               >
@@ -162,15 +189,15 @@ export default function DashboardPage() {
             </div>
             <div className="ml-3">
               <p
-                className={`text-sm font-medium ${pendingVisits.length > 0 ? "text-yellow-800" : "text-gray-600"}`}
+                className={`text-sm font-medium ${totalPending > 0 ? "text-yellow-800" : "text-gray-600"}`}
               >
-                {pendingVisits.length} visitor{pendingVisits.length !== 1 ? "s" : ""} waiting for
-                approval
+                {totalPending} request{totalPending !== 1 ? "s" : ""} waiting for approval
               </p>
               <p
-                className={`text-xs mt-1 ${pendingVisits.length > 0 ? "text-yellow-600" : "text-gray-500"}`}
+                className={`text-xs mt-1 ${totalPending > 0 ? "text-yellow-600" : "text-gray-500"}`}
               >
-                Click to review and manage
+                {pendingStaffCount > 0 ? `${pendingStaffCount} staff + ` : ""}
+                {pendingVisits.length} guest{pendingVisits.length !== 1 ? "s" : ""}
               </p>
             </div>
           </div>
@@ -194,12 +221,13 @@ export default function DashboardPage() {
         {/* Quick Stats */}
         <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <StatCard
-            title="Pending Approvals"
-            value={
-              isLoadingStats ? "..." : todayVisits.filter((v) => v.status === "pending").length
-            }
+            title="Pending Actions"
+            value={isLoadingStats ? "..." : totalPending}
             icon={Clock}
-            onClick={() => router.push("/history?status=pending")}
+            onClick={() => {
+              if (pendingStaffCount > 0) router.push("/staff");
+              else router.push("/history?status=pending");
+            }}
           />
           <StatCard
             title="Today's Visits"
