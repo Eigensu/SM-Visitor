@@ -689,13 +689,20 @@ async def update_visitor(
 @router.delete("/{visitor_id}", status_code=status.HTTP_200_OK)
 async def delete_visitor(
     visitor_id: str,
-    current_user: dict = Depends(get_current_owner)
+    current_user: dict = Depends(get_current_user)
 ):
     """
-    Soft delete a visitor (deactivate)
-    
-    This invalidates the QR code and prevents future visits
+    Consolidated Delete:
+    - Guards/Admins: Can delete/deactivate any visitor
+    - Owners: Can deactivate their own visitors
     """
+    user_name = current_user.get("name", "Unknown")
+    user_role = str(current_user.get("role", "")).lower()
+    user_id = get_user_id(current_user)
+    
+    # CRITICAL: Diagnostic log (Must match FastAPI log for confirmation)
+    print(f"\n[UNIFIED DELETE] Visitor: {visitor_id} | User: {user_name} | Role: {user_role}")
+    
     visitors = get_visitors_collection()
     
     try:
@@ -711,21 +718,38 @@ async def delete_visitor(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Visitor not found"
         )
+
+    is_guard = (user_role == "guard")
+    is_admin = (user_role == "admin")
     
-    # Check ownership
-    if visitor["created_by"] != current_user["user_id"]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied"
+    # Permission logic
+    if not is_guard and not is_admin:
+        # If not guard/admin, must be owner of the visitor
+        owner_id = str(visitor.get("assigned_owner_id") or "")
+        creator_id = str(visitor.get("created_by") or "")
+        
+        if str(user_id) not in [owner_id, creator_id]:
+            print(f"[ACCESS DENOED] Owner check failed. UserID: {user_id} | OwnerID: {owner_id} | CreatorID: {creator_id}")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied"
+            )
+
+    # ACTION: 
+    # If pending or guard-initiated, we perform a HARD DELETE 
+    # If active/history, we perform a SOFT DELETE (deactivate)
+    
+    if visitor.get("approval_status") == "pending" or user_role == "guard":
+        print(f"[ACTION] HARD DELETE (Pending/Guard) for: {visitor_id}")
+        await visitors.delete_one({"_id": ObjectId(visitor_id)})
+        return {"status": "deleted", "id": visitor_id}
+    else:
+        print(f"[ACTION] SOFT DELETE (Deactivate) for: {visitor_id}")
+        await visitors.update_one(
+            {"_id": ObjectId(visitor_id)},
+            {"$set": {"is_active": False, "approval_status": "deleted"}}
         )
-    
-    # Soft delete (set is_active to False)
-    await visitors.update_one(
-        {"_id": ObjectId(visitor_id)},
-        {"$set": {"is_active": False}}
-    )
-    
-    return {"success": True, "message": "Visitor deactivated successfully"}
+        return {"status": "deactivated", "id": visitor_id}
 
 
 @router.get("/{visitor_id}/qr", response_model=dict)

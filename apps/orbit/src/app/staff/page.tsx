@@ -216,7 +216,6 @@ export default function StaffDirectoryPage() {
                           </div>
                         </div>
                       </div>
-
                       <div className="bg-muted/10 p-4 mt-auto border-t border-white/5">
                         {person.is_active && person.qr_token ? (
                           <Button
@@ -256,7 +255,6 @@ export default function StaffDirectoryPage() {
           </div>
         )}
       </main>
-
       {/* QR Modal */}
       {selectedQR && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
@@ -268,13 +266,23 @@ export default function StaffDirectoryPage() {
               </p>
             </div>
             <div className="p-8 flex flex-col items-center">
-              {/* 
-                  In a real app, we'd use a QR generator component or fetched image.
-                  The backend provides an image URL in the approve-regular endpoint, 
-                  but here we use the token to satisfy the "view qr" requirement.
-               */}
               <div className="mb-6 flex h-48 w-48 items-center justify-center rounded-2xl bg-white p-4 shadow-xl">
-                <QrCode className="h-32 w-32 text-primary" strokeWidth={1.5} />
+                <img
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(selectedQR.token || "invalid")}`}
+                  alt="Staff QR Code"
+                  className="h-40 w-40"
+                  onError={(e) => {
+                    const target = e.target as HTMLImageElement;
+                    target.style.display = "none";
+                    const parent = target.parentElement;
+                    if (parent) {
+                      const icon = document.createElement("div");
+                      icon.innerHTML = "⚠️";
+                      icon.className = "text-4xl";
+                      parent.appendChild(icon);
+                    }
+                  }}
+                />
               </div>
               <p className="mb-6 text-center text-sm text-muted-foreground">
                 Staff can use this QR for automatic entry scanner.

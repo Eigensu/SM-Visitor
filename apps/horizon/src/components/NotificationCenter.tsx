@@ -161,15 +161,7 @@ export function NotificationCenter() {
 
           {notifications.length > 0 && (
             <div className="border-t border-slate-100 bg-slate-50/50 p-2 text-center dark:border-slate-800 dark:bg-slate-900/50">
-              <button
-                onClick={() => {
-                  router.push("/notifications");
-                  setIsOpen(false);
-                }}
-                className="text-[11px] font-bold text-slate-500 transition-colors hover:text-slate-900 dark:hover:text-white"
-              >
-                VIEW ALL NOTIFICATIONS
-              </button>
+              <span className="text-[11px] font-bold text-slate-500">LATEST UPDATES</span>
             </div>
           )}
         </div>

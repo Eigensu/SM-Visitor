@@ -22,7 +22,6 @@ const navItems = [
   { icon: Users, label: "Visitors", path: "/visitors" },
   { icon: UserCheck, label: "Regular Visitors", path: "/regular-visitors" },
   { icon: QrCode, label: "QR Generator", path: "/qr-generator" },
-  { icon: Bell, label: "Notifications", path: "/notifications" },
 ];
 
 const bottomItems = [{ icon: Settings, label: "Settings", path: "/settings" }];

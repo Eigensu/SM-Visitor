@@ -1011,8 +1011,8 @@ async def get_today_count(
     return {"count": count}
 
 
-@router.get("/recent", response_model=List[VisitResponse])
-async def get_recent_visits(
+@router.get("/recent")
+async def get_recent_activity(
     limit: int = 10,
     current_user: dict = Depends(get_current_owner),
     db = Depends(get_database)
@@ -1024,8 +1024,8 @@ async def get_recent_visits(
     visits_collection = get_visits_collection()
     visitors_collection = get_visitors_collection()
     flat_id = await get_owner_flat_id(current_user["user_id"], db)
-    
     user_id = current_user["user_id"]
+    now = get_ist_now()
     
     # 1. Recent visits (Ad-hoc)
     visits_task = visits_collection.find({
@@ -1034,7 +1034,7 @@ async def get_recent_visits(
     
     # 2. Recent regular visitors assigned to this owner
     visitors_task = visitors_collection.find({
-        "assigned_owner_id": {"$in": [user_id, ObjectId(user_id)]},
+        "assigned_owner_id": {"$in": [user_id, str(user_id), ObjectId(user_id) if ObjectId.is_valid(user_id) else None]},
         "visitor_type": "regular"
     }).sort("created_at", -1).limit(limit).to_list(length=limit)
     
@@ -1044,39 +1044,52 @@ async def get_recent_visits(
     # Unified results
     merged = []
     
-    for v in visits:
-        merged.append({
-            "id": str(v["_id"]),
-            "visitor_id": v.get("visitor_id"),
-            "name_snapshot": v["name_snapshot"],
-            "phone_snapshot": v.get("phone_snapshot"),
-            "photo_snapshot_url": v["photo_snapshot_url"],
-            "purpose": v["purpose"],
-            "owner_id": v["owner_id"],
-            "guard_id": v["guard_id"],
-            "status": v["status"],
-            "created_at": v["created_at"],
-            "is_regular": False
-        })
+    for v in (visits or []):
+        try:
+            merged.append({
+                "id": str(v.get("_id", "unknown")),
+                "visitor_id": v.get("visitor_id"),
+                "name_snapshot": v.get("name_snapshot", "Unknown"),
+                "phone_snapshot": v.get("phone_snapshot"),
+                "photo_snapshot_url": v.get("photo_snapshot_url"),
+                "purpose": v.get("purpose", "Visit"),
+                "owner_id": v.get("owner_id", flat_id),
+                "guard_id": v.get("guard_id", "system"),
+                "status": v.get("status", "unknown"),
+                "created_at": v.get("created_at") or now,
+                "is_regular": False
+            })
+        except Exception as e:
+            print(f"Skipping malformed visit: {e}")
         
-    for r in visitors:
-        # Map regular visitor to visit format for the card
-        merged.append({
-            "id": str(r["_id"]),
-            "visitor_id": str(r["_id"]),
-            "name_snapshot": r["name"],
-            "phone_snapshot": r.get("phone"),
-            "photo_snapshot_url": r.get("photo_url"),
-            "purpose": f"Staff Registration: {r.get('category', 'Staff')}",
-            "owner_id": flat_id,
-            "guard_id": str(r.get("created_by", "system")),
-            "status": r.get("approval_status", "pending"),
-            "created_at": r["created_at"],
-            "is_regular": True
-        })
+    for r in (visitors or []):
+        try:
+            # Map regular visitor to visit format for the card
+            merged.append({
+                "id": str(r.get("_id", "unknown")),
+                "visitor_id": str(r.get("_id", "unknown")),
+                "name_snapshot": r.get("name", "Unknown"),
+                "phone_snapshot": r.get("phone"),
+                "photo_snapshot_url": r.get("photo_url"),
+                "purpose": f"Staff Registration: {r.get('category_label') or r.get('category') or 'Staff'}",
+                "owner_id": flat_id,
+                "guard_id": str(r.get("created_by", "system")),
+                "status": r.get("approval_status", "pending"),
+                "created_at": r.get("created_at") or now,
+                "is_regular": True
+            })
+        except Exception as e:
+            print(f"Skipping malformed visitor: {e}")
         
     # Sort by created_at descending and limit
-    merged.sort(key=lambda x: x["created_at"], reverse=True)
+    # CRITICAL: Ensure we are sorting by datetime objects, fallback to now if missing
+    def get_sort_key(x):
+        ts = x.get("created_at")
+        if isinstance(ts, datetime):
+            return ts
+        return now
+
+    merged.sort(key=get_sort_key, reverse=True)
     return merged[:limit]
 
 
@@ -1097,11 +1110,21 @@ async def get_dashboard_stats(
     today_start = get_ist_now().replace(hour=0, minute=0, second=0, microsecond=0)
     now = get_ist_now()
     
-    # 1. Today's Visitors (Created today)
-    today_count = await visits_collection.count_documents({
+    # Unified metrics (Ad-hoc + Staff)
+    visitors_collection = get_visitors_collection()
+    curr_uid = current_user["user_id"]
+    
+    # 1. Today's Arrivals (Ad-hoc + Staff created today)
+    today_count_visits = await visits_collection.count_documents({
         "owner_id": flat_id,
         "created_at": {"$gte": today_start}
     })
+    today_count_staff = await visitors_collection.count_documents({
+        "assigned_owner_id": {"$in": [curr_uid, str(curr_uid), ObjectId(curr_uid)]},
+        "visitor_type": "regular",
+        "created_at": {"$gte": today_start}
+    })
+    total_today = today_count_visits + today_count_staff
     
     # 2. Pending Approvals (Total: Ad-hoc + Staff)
     pending_count = await visits_collection.count_documents({
@@ -1109,37 +1132,49 @@ async def get_dashboard_stats(
         "status": "pending"
     })
     
-    # Add pending staff registrations (Relaxed filter for better count coverage)
-    visitors_collection = get_visitors_collection()
-    curr_uid = current_user["user_id"]
     pending_staff_count = await visitors_collection.count_documents({
         "assigned_owner_id": {"$in": [curr_uid, str(curr_uid), ObjectId(curr_uid)]},
         "approval_status": "pending"
     })
-    
     total_pending = pending_count + pending_staff_count
     
     # 3. Approved Today (Status approved/auto_approved and created today)
-    approved_count = await visits_collection.count_documents({
+    approved_visits_count = await visits_collection.count_documents({
         "owner_id": flat_id,
         "status": {"$in": ["approved", "auto_approved"]},
         "created_at": {"$gte": today_start}
     })
+    # NOTE: Staff approved today (We check both approval_status and recent creation or activity)
+    # Since we don't have an 'approved_at' field yet, we use updated_at if it exists or today's creation
+    # or just anyone who is active and created today
+    approved_staff_count = await visitors_collection.count_documents({
+        "assigned_owner_id": {"$in": [curr_uid, str(curr_uid), ObjectId(curr_uid)]},
+        "approval_status": "approved",
+        "created_at": {"$gte": today_start}
+    })
+    total_approved = approved_visits_count + approved_staff_count
     
-    # 4. Active QR Codes (Temporary QRs that are valid and not used)
-    active_qr_count = await temp_qr_collection.count_documents({
+    # 4. Active QR Codes (Temporary QRs + Active Staff QRs)
+    active_temp_qr_count = await temp_qr_collection.count_documents({
         "owner_id": flat_id,
         "expires_at": {"$gt": now},
         "used_at": None
     })
+    # All active staff have permanent QRs
+    active_staff_count = await visitors_collection.count_documents({
+        "assigned_owner_id": {"$in": [curr_uid, str(curr_uid), ObjectId(curr_uid)]},
+        "is_active": True,
+        "visitor_type": "regular"
+    })
+    total_active_qrs = active_temp_qr_count + active_staff_count
     
     return {
-        "today_count": today_count,
+        "today_count": total_today,
         "pending_count": total_pending,
         "pending_adhoc_count": pending_count,
         "pending_staff_count": pending_staff_count,
-        "approved_count": approved_count,
-        "active_qr_count": active_qr_count
+        "approved_count": total_approved,
+        "active_qr_count": total_active_qrs
     }
 
 
