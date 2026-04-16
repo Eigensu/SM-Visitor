@@ -144,6 +144,10 @@ export const visitorsAPI = {
     const response = await apiClient.get("/visitors/", { signal });
     return response.data;
   },
+  deleteRegular: async (visitorId: string) => {
+    const response = await apiClient.delete(`/visitors/${visitorId}`);
+    return response.data;
+  },
 };
 
 // Uploads API

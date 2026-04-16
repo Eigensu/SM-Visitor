@@ -14,6 +14,7 @@ from utils.time_utils import get_ist_now
 from models import VisitorModel, ApprovalStatus
 from services.serializers.visitor import serialize_visitor
 from utils.auth_helpers import get_user_id
+from services.identity_service import get_owner_by_flat
 
 router = APIRouter(prefix="/visitors", tags=["Visitors"])
 
@@ -99,7 +100,7 @@ class CreateRegularVisitorRequest(BaseModel):
     auto_approval_rule: str = Field(default="always", pattern="^(always|within_schedule|notify_only)$")
     
     # Assignment (for Guard-initiated requests)
-    assigned_owner_id: Optional[str] = None
+    flat_id: Optional[str] = None
 
 
 class UpdateVisitorRequest(BaseModel):
@@ -109,7 +110,7 @@ class UpdateVisitorRequest(BaseModel):
 
 
 class VisitorResponse(BaseModel):
-    _id: str
+    id: str  # serializer returns 'id' key, matching this field exactly
     name: str
     phone: Optional[str] = None
     photo_url: str
@@ -118,7 +119,7 @@ class VisitorResponse(BaseModel):
     default_purpose: Optional[str] = None
     qr_token: Optional[str] = None
     is_active: bool
-    approval_status: str
+    approval_status: ApprovalStatus
     assigned_owner_id: Optional[str] = None
     created_by_role: str
     created_at: datetime
@@ -148,7 +149,7 @@ async def create_regular_visitor(
     
     # Validate and save photo to GridFS
     photo_data = await photo.read()
-    is_valid, error_msg = photo_storage.validate_photo(photo_data)
+    is_valid, error_msg = await photo_storage.validate_photo(photo_data)
     
     if not is_valid:
         raise HTTPException(
@@ -253,7 +254,7 @@ async def get_visitor_request(
     name: str = Form(...),
     phone: Optional[str] = Form(None),
     category: str = Form("other"),
-    assigned_owner_id: Optional[str] = Form(None),
+    flat_id: Optional[str] = Form(None),
     default_purpose: Optional[str] = Form(None),
     schedule_enabled: bool = Form(False),
     schedule_start_time: Optional[str] = Form(None),
@@ -264,7 +265,7 @@ async def get_visitor_request(
     # Convert empty strings to None for optional fields
     # This prevents Pydantic min_length validation errors for blank form fields
     s_phone = phone if phone and phone.strip() else None
-    s_assigned_owner_id = assigned_owner_id if assigned_owner_id and assigned_owner_id.strip() else None
+    s_flat_id = flat_id if flat_id and flat_id.strip() else None
     s_default_purpose = default_purpose if default_purpose and default_purpose.strip() else None
     s_start_time = schedule_start_time if schedule_start_time and schedule_start_time.strip() else None
     s_end_time = schedule_end_time if schedule_end_time and schedule_end_time.strip() else None
@@ -273,7 +274,7 @@ async def get_visitor_request(
         name=name,
         phone=s_phone,
         category=category,
-        assigned_owner_id=s_assigned_owner_id,
+        flat_id=s_flat_id,
         default_purpose=s_default_purpose,
         schedule_enabled=schedule_enabled,
         schedule_start_time=s_start_time,
@@ -292,11 +293,29 @@ async def create_regular_visitor_by_guard(
     Initiate a regular visitor registration by a guard
     Requires owner approval before activation
     """
-    if not request.assigned_owner_id:
+    # Guard Authorization Check
+    if current_user.get("role") != "guard":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only guards can initiate regular visitor registration"
+        )
+
+    if not request.flat_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="assigned_owner_id is required for guard-initiated registrations"
+            detail="flat_id is required for guard-initiated registrations"
         )
+        
+    # Resolve ownership safely on backend
+    owner = await get_owner_by_flat(request.flat_id)
+    if not owner:
+        print(f"[OWNER RESOLUTION FAILED] flat_id={request.flat_id} has no valid owner.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid owner assignment. Flat not found or has no active owner."
+        )
+        
+    resolved_owner_id = str(owner["_id"])
 
     visitors = get_visitors_collection()
     
@@ -315,7 +334,8 @@ async def create_regular_visitor_by_guard(
         "visitor_type": "regular",
         "created_by": get_user_id(current_user),
         "created_by_role": "guard",
-        "assigned_owner_id": request.assigned_owner_id,
+        "assigned_owner_id": resolved_owner_id,
+        "flat_id": request.flat_id,  # Persist flat_id for flat-level queries
         "approval_status": "pending",
         "is_active": False,
         "default_purpose": request.default_purpose,
@@ -344,7 +364,7 @@ async def create_regular_visitor_by_guard(
     # Notify Owner via SSE (Hardened Name)
     from utils.sse_manager import sse_manager
     await sse_manager.send_event(
-        request.assigned_owner_id,
+        resolved_owner_id,
         "NEW_VISITOR_REQUEST",
         {
             "visitor_id": str(visitor_id),
@@ -366,15 +386,46 @@ async def get_pending_regular_visitors(
     """Get regular visitors pending approval for the current owner"""
     user_id = get_user_id(current_user)
     visitors = get_visitors_collection()
-    # FIX: Resilient query for legacy ObjectId and new String IDs
-    cursor = visitors.find({
+
+    query = {
         "assigned_owner_id": {"$in": [user_id, ObjectId(user_id)]},
-        "approval_status": "PENDING"
-    })
-    
+        "approval_status": "pending",
+        "visitor_type": "regular",
+    }
+
+    # ==== APPROVAL DEBUG ====
+    print(f"[APPROVAL QUERY] user_id={user_id}")
+    print(f"[APPROVAL QUERY] filter={query}")
+
     results = []
-    async for doc in cursor:
+    async for doc in visitors.find(query):
         results.append(serialize_visitor(doc))
+
+    print(f"[APPROVAL RESULT] count={len(results)}")
+    if not results:
+        print("[ALERT] Empty result where pending approval data expected — check DB write or query.")
+
+    return results
+
+
+@router.get("/history/regular", response_model=List[VisitorResponse])
+async def get_regular_history_visitors(
+    current_user: dict = Depends(get_current_owner)
+):
+    """Get regular visitors that were approved or rejected for the current owner"""
+    user_id = get_user_id(current_user)
+    visitors = get_visitors_collection()
+
+    query = {
+        "assigned_owner_id": {"$in": [user_id, ObjectId(user_id)]},
+        "approval_status": {"$in": ["approved", "rejected"]},
+        "visitor_type": "regular",
+    }
+
+    results = []
+    async for visitor in visitors.find(query).sort("created_at", -1).limit(50):
+        results.append(serialize_visitor(visitor))
+
     return results
 
 
@@ -450,6 +501,47 @@ async def approve_regular_visitor(
         }),
         qr_image_url=qr_image_url
     )
+
+
+@router.patch("/{visitor_id}/reject-regular")
+async def reject_regular_visitor(
+    visitor_id: str,
+    current_user: dict = Depends(get_current_owner)
+):
+    """Reject a guard-initiated regular visitor registration"""
+    user_id = get_user_id(current_user)
+    visitors = get_visitors_collection()
+
+    visitor = await visitors.find_one({
+        "_id": ObjectId(visitor_id),
+        "assigned_owner_id": {"$in": [user_id, ObjectId(user_id)]}
+    })
+
+    if not visitor:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Visitor request not found or not assigned to you"
+        )
+
+    await visitors.update_one(
+        {"_id": ObjectId(visitor_id)},
+        {"$set": {"approval_status": "rejected", "is_active": False}}
+    )
+
+    # Notify the guard who submitted this request
+    from utils.sse_manager import sse_manager
+    guard_id = str(visitor.get("created_by", ""))
+    if guard_id:
+        await sse_manager.send_event(
+            guard_id,
+            "VISITOR_REJECTED",
+            {
+                "visitor_id": visitor_id,
+                "visitor_name": visitor["name"],
+            }
+        )
+
+    return {"message": "Visitor registration rejected", "visitor_id": visitor_id}
 
 
 
@@ -676,14 +768,18 @@ async def get_visitor_qr(
         )
     
     # Generate QR image
-    qr_image_url = generate_qr_image_with_details({
-        "visitor_id": visitor_id,
-        "name": visitor["name"],
-        "phone": visitor.get("phone"),
-        "visitor_type": visitor["visitor_type"],
-        "token": visitor["qr_token"],
-        "created_at": visitor["created_at"].isoformat()
-    })
+    import asyncio
+    qr_image_url = await asyncio.to_thread(
+        generate_qr_image_with_details,
+        {
+            "visitor_id": visitor_id,
+            "name": visitor["name"],
+            "phone": visitor.get("phone"),
+            "visitor_type": visitor["visitor_type"],
+            "token": visitor["qr_token"],
+            "created_at": visitor["created_at"].isoformat()
+        }
+    )
     
     return {
         "visitor_id": visitor_id,
@@ -732,6 +828,59 @@ async def get_regular_count(
     })
     
     return {"count": count}
+
+
+@router.delete("/{visitor_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_regular_visitor(
+    visitor_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Delete a regular visitor record
+    """
+    # CRITICAL: Always log at start to confirm we entered the function
+    user_name = current_user.get("name", "Unknown")
+    user_role = str(current_user.get("role", "")).lower()
+    user_id = get_user_id(current_user)
+    
+    print(f"\n[STRICT DELETE] Visitor: {visitor_id} | User: {user_name} | Role: {user_role}")
+    
+    visitors_collection = get_visitors_collection()
+    
+    try:
+        obj_id = ObjectId(visitor_id)
+        visitor = await visitors_collection.find_one({"_id": obj_id})
+    except Exception as e:
+        print(f"[STRICT DELETE] Invalid ID format: {visitor_id}")
+        raise HTTPException(status_code=400, detail="Invalid ID")
+        
+    if not visitor:
+        print(f"[STRICT DELETE] Not Found in DB: {visitor_id}")
+        raise HTTPException(status_code=404, detail="Not Found")
+
+    # Permissions Logic
+    is_guard = user_role == "guard"
+    is_admin = user_role == "admin"
+    is_owner_assigned = str(visitor.get("assigned_owner_id")) == user_id
+    is_creator = str(visitor.get("created_by")) == user_id
+    
+    # LOG the decision matrix
+    print(f"[STRICT DELETE] Logic: guard={is_guard}, admin={is_admin}, creator={is_creator}, owner={is_owner_assigned}")
+
+    # GUARANTEED PASS FOR GUARDS AND ADMINS
+    if is_guard or is_admin:
+        print(f"[STRICT DELETE] Role match! Deleting...")
+        await visitors_collection.delete_one({"_id": obj_id})
+        return None
+
+    # Check ownership for others
+    if is_creator or is_owner_assigned:
+        print(f"[STRICT DELETE] Ownership match! Deleting...")
+        await visitors_collection.delete_one({"_id": obj_id})
+        return None
+
+    print(f"[STRICT DELETE] DENIED - User role '{user_role}' is not authorized")
+    raise HTTPException(status_code=403, detail="Access Denied")
 
 
 @router.get("/regular/{visitor_id}", response_model=VisitorResponse)

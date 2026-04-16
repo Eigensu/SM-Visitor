@@ -898,6 +898,50 @@ async def get_pending_visits(
         )
 
 
+@router.get("/history", response_model=List[VisitResponse])
+async def get_history_visits(
+    current_user: dict = Depends(get_current_owner),
+    db = Depends(get_database)
+):
+    """Get all approved and rejected visits for the current owner"""
+    try:
+        visits_collection = get_visits_collection()
+        user_id = current_user.get("user_id")
+        
+        # Get all visits that are NOT pending
+        query = {
+            "owner_id": user_id, # Simplified, adjust if flat_id mapping is needed
+            "status": {"$in": ["approved", "rejected"]}
+        }
+
+        visits = []
+        async for visit in visits_collection.find(query).sort("created_at", -1).limit(50):
+            visits.append(
+                VisitResponse(
+                    id=str(visit["_id"]),
+                    visitor_id=visit.get("visitor_id"),
+                    name_snapshot=visit["name_snapshot"],
+                    phone_snapshot=visit.get("phone_snapshot"),
+                    photo_snapshot_url=visit["photo_snapshot_url"],
+                    purpose=visit["purpose"],
+                    owner_id=visit["owner_id"],
+                    guard_id=visit["guard_id"],
+                    entry_time=visit.get("entry_time"),
+                    exit_time=visit.get("exit_time"),
+                    status=visit["status"],
+                    qr_token=visit.get("qr_token"),
+                    created_at=visit["created_at"]
+                )
+            )
+        return visits
+    except Exception as e:
+        print(f"[ERROR] Failed to get visit history: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch visit history: {str(e)}"
+        )
+
+
 
 async def get_owner_flat_id(user_id: str, db) -> str:
     """Helper to get flat_id for an owner"""
@@ -978,30 +1022,62 @@ async def get_recent_visits(
     Used by Horizon dashboard recent activity
     """
     visits_collection = get_visits_collection()
+    visitors_collection = get_visitors_collection()
     flat_id = await get_owner_flat_id(current_user["user_id"], db)
     
-    visits = await visits_collection.find({
+    user_id = current_user["user_id"]
+    
+    # 1. Recent visits (Ad-hoc)
+    visits_task = visits_collection.find({
         "owner_id": flat_id
     }).sort("created_at", -1).limit(limit).to_list(length=limit)
     
-    return [
-        VisitResponse(
-            id=str(visit["_id"]),
-            visitor_id=visit.get("visitor_id"),
-            name_snapshot=visit["name_snapshot"],
-            phone_snapshot=visit.get("phone_snapshot"),
-            photo_snapshot_url=visit["photo_snapshot_url"],
-            purpose=visit["purpose"],
-            owner_id=visit["owner_id"],
-            guard_id=visit["guard_id"],
-            entry_time=visit.get("entry_time"),
-            exit_time=visit.get("exit_time"),
-            status=visit["status"],
-            qr_token=visit.get("qr_token"),
-            created_at=visit["created_at"]
-        )
-        for visit in visits
-    ]
+    # 2. Recent regular visitors assigned to this owner
+    visitors_task = visitors_collection.find({
+        "assigned_owner_id": {"$in": [user_id, ObjectId(user_id)]},
+        "visitor_type": "regular"
+    }).sort("created_at", -1).limit(limit).to_list(length=limit)
+    
+    import asyncio
+    visits, visitors = await asyncio.gather(visits_task, visitors_task)
+    
+    # Unified results
+    merged = []
+    
+    for v in visits:
+        merged.append({
+            "id": str(v["_id"]),
+            "visitor_id": v.get("visitor_id"),
+            "name_snapshot": v["name_snapshot"],
+            "phone_snapshot": v.get("phone_snapshot"),
+            "photo_snapshot_url": v["photo_snapshot_url"],
+            "purpose": v["purpose"],
+            "owner_id": v["owner_id"],
+            "guard_id": v["guard_id"],
+            "status": v["status"],
+            "created_at": v["created_at"],
+            "is_regular": False
+        })
+        
+    for r in visitors:
+        # Map regular visitor to visit format for the card
+        merged.append({
+            "id": str(r["_id"]),
+            "visitor_id": str(r["_id"]),
+            "name_snapshot": r["name"],
+            "phone_snapshot": r.get("phone"),
+            "photo_snapshot_url": r.get("photo_url"),
+            "purpose": f"Staff Registration: {r.get('category', 'Staff')}",
+            "owner_id": flat_id,
+            "guard_id": str(r.get("created_by", "system")),
+            "status": r.get("approval_status", "pending"),
+            "created_at": r["created_at"],
+            "is_regular": True
+        })
+        
+    # Sort by created_at descending and limit
+    merged.sort(key=lambda x: x["created_at"], reverse=True)
+    return merged[:limit]
 
 
 @router.get("/stats/summary")
@@ -1027,11 +1103,21 @@ async def get_dashboard_stats(
         "created_at": {"$gte": today_start}
     })
     
-    # 2. Pending Approvals
+    # 2. Pending Approvals (Total: Ad-hoc + Staff)
     pending_count = await visits_collection.count_documents({
         "owner_id": flat_id,
         "status": "pending"
     })
+    
+    # Add pending staff registrations (Relaxed filter for better count coverage)
+    visitors_collection = get_visitors_collection()
+    curr_uid = current_user["user_id"]
+    pending_staff_count = await visitors_collection.count_documents({
+        "assigned_owner_id": {"$in": [curr_uid, str(curr_uid), ObjectId(curr_uid)]},
+        "approval_status": "pending"
+    })
+    
+    total_pending = pending_count + pending_staff_count
     
     # 3. Approved Today (Status approved/auto_approved and created today)
     approved_count = await visits_collection.count_documents({
@@ -1049,7 +1135,9 @@ async def get_dashboard_stats(
     
     return {
         "today_count": today_count,
-        "pending_count": pending_count,
+        "pending_count": total_pending,
+        "pending_adhoc_count": pending_count,
+        "pending_staff_count": pending_staff_count,
         "approved_count": approved_count,
         "active_qr_count": active_qr_count
     }

@@ -36,7 +36,7 @@ async def upload_regular_visitor_photo(
     photo_data = await photo.read()
     
     # Validate photo
-    is_valid, error_msg = photo_storage.validate_photo(photo_data)
+    is_valid, error_msg = await photo_storage.validate_photo(photo_data)
     if not is_valid:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -72,7 +72,7 @@ async def upload_new_visitor_photo(
     photo_data = await photo.read()
     
     # Validate photo
-    is_valid, error_msg = photo_storage.validate_photo(photo_data)
+    is_valid, error_msg = await photo_storage.validate_photo(photo_data)
     if not is_valid:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -80,7 +80,7 @@ async def upload_new_visitor_photo(
         )
     
     # Save to local buffer
-    filename = photo_storage.save_new_visitor_photo_buffer(
+    filename = await photo_storage.save_new_visitor_photo_buffer(
         photo_data,
         photo.filename or "new_visitor_photo.jpg"
     )

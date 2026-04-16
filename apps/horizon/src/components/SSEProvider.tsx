@@ -4,6 +4,7 @@
  */
 "use client";
 
+import { useEffect, useState } from "react";
 import { useSSE } from "@sm-visitor/hooks";
 import { useStore } from "@/lib/store";
 import { createSSEConnection } from "@/lib/api";
@@ -16,9 +17,21 @@ interface SSEProviderProps {
 
 export function SSEProvider({ children, onRefresh }: SSEProviderProps) {
   const { isAuthenticated, user, triggerRefresh } = useStore();
+  const [hasFetchedInitial, setHasFetchedInitial] = useState(false);
+
+  useEffect(() => {
+    // Safety Net: Always fetch UI state once at mount ensuring missed events
+    // do not create a stale UI.
+    if (isAuthenticated && !hasFetchedInitial) {
+      triggerRefresh("approvals");
+      triggerRefresh("dashboard");
+      triggerRefresh("visitors");
+      setHasFetchedInitial(true);
+    }
+  }, [isAuthenticated, hasFetchedInitial, triggerRefresh]);
 
   useSSE({
-    // Only connect when authenticated
+    // Only connect when authenticated AND user is fully hydrated (prevents race condition)
     isAuthenticated: isAuthenticated && !!user,
     createConnection: createSSEConnection,
     handlers: {

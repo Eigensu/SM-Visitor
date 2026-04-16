@@ -10,6 +10,7 @@ import { Button } from "@sm-visitor/ui";
 import { Spinner } from "@/components/shared/Spinner";
 import { cn } from "@/lib/utils";
 import { NotificationCenter } from "../NotificationCenter";
+import { visitsAPI, notificationsAPI } from "@/lib/api";
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -17,24 +18,23 @@ interface AppLayoutProps {
 
 export function AppLayout({ children }: AppLayoutProps) {
   const router = useRouter();
-  const { user, isAuthenticated } = useStore();
+  const user = useStore((state: any) => state.user);
+  const isAuthenticated = useStore((state: any) => state.isAuthenticated);
+  const setPendingCount = useStore((state: any) => state.setPendingCount);
+  const setUnreadCount = useStore((state: any) => state.setUnreadCount);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isChecking, setIsChecking] = useState(true);
 
   useEffect(() => {
     // Check authentication on mount
-    const token = localStorage.getItem("auth_token");
+    const token = typeof window !== "undefined" ? localStorage.getItem("auth_token") : null;
 
-    // If we have a token in storage but not in store yet, wait (hydration happens in Providers)
-    // If no token in storage, redirect immediately
     if (!token && !isAuthenticated) {
       router.push("/login");
     } else if (isAuthenticated) {
       setIsChecking(false);
     } else if (token) {
-      // We have a token, wait for hydration
-      // Set a timeout to avoid infinite loading if hydration fails
       const timer = setTimeout(() => {
         if (!useStore.getState().isAuthenticated) {
           router.push("/login");
@@ -45,6 +45,27 @@ export function AppLayout({ children }: AppLayoutProps) {
       return () => clearTimeout(timer);
     }
   }, [isAuthenticated, router]);
+
+  // Periodic data synchronization (Sync counts for sidebar badges)
+  useEffect(() => {
+    if (!isAuthenticated || !user) return;
+
+    const syncData = async () => {
+      try {
+        const stats = await visitsAPI.getDashboardStats();
+        const unreadData = await notificationsAPI.getUnreadCount();
+
+        setPendingCount(stats.pendingCount);
+        setUnreadCount(typeof unreadData === "object" ? unreadData.count : unreadData);
+      } catch (error) {
+        console.error("Layout sync failed:", error);
+      }
+    };
+
+    syncData();
+    const interval = setInterval(syncData, 30000); // Poll every 30s
+    return () => clearInterval(interval);
+  }, [isAuthenticated, user, setPendingCount, setUnreadCount]);
 
   // Show loading spinner while checking auth
   if (isChecking || !user) {

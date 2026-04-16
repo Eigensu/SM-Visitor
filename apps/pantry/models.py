@@ -5,9 +5,9 @@ from datetime import datetime
 from bson import ObjectId
 
 class ApprovalStatus(str, Enum):
-    PENDING = "PENDING"
-    APPROVED = "APPROVED"
-    REJECTED = "REJECTED"
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
 
 class PyObjectId(ObjectId):
     """Custom ObjectId type for Pydantic"""
@@ -77,7 +77,7 @@ class VisitorModel(BaseModel):
     qr_token: Optional[str] = None
     qr_expires_at: Optional[datetime] = None
     is_active: bool = True
-    approval_status: str = "approved"  # approved, pending, rejected
+    approval_status: ApprovalStatus = ApprovalStatus.PENDING
     assigned_owner_id: Optional[str] = None  # Original resident who needs to approve
     created_by_role: str = "owner"  # owner, guard, admin
     created_at: datetime = Field(default_factory=get_ist_now)

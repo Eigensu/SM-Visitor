@@ -204,22 +204,24 @@ export default function DashboardPage() {
         </div>
 
         {/* Action Cards */}
-        <div className="grid grid-cols-2 gap-6">
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           {actionCards.map((card) => (
             <GlassCard key={card.title} hover onClick={() => router.push(card.href)}>
-              <div className="p-8">
-                <div className="ocean-gradient mb-4 flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-2xl shadow-lg shadow-primary/20">
-                  <card.icon className="h-8 w-8 text-white" />
+              <div className="flex flex-col items-center p-5 text-center sm:flex-row sm:text-left sm:items-start min-h-[100px] h-full justify-center">
+                <div className="ocean-gradient mb-3 sm:mb-0 sm:mr-4 flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl shadow-md shadow-primary/20">
+                  <card.icon className="h-6 w-6 text-white" />
                 </div>
-                <h3 className="mb-2 text-xl font-semibold text-foreground">{card.title}</h3>
-                <p className="text-muted-foreground">{card.description}</p>
+                <div>
+                  <h3 className="mb-1 text-base font-semibold text-foreground">{card.title}</h3>
+                  <p className="text-xs text-muted-foreground">{card.description}</p>
+                </div>
               </div>
             </GlassCard>
           ))}
         </div>
 
         {/* Quick Stats */}
-        <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-3">
           <StatCard
             title="Pending Actions"
             value={isLoadingStats ? "..." : totalPending}

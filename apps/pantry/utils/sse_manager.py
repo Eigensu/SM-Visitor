@@ -48,7 +48,7 @@ class SSEManager:
         self.connections[user_id].add(queue)
         self.user_roles[user_id] = role
         
-        print(f"✅ SSE connected: user_id={user_id}, role={role}")
+        print(f"✅ [SSE CONNECT] user_id={user_id}, role={role}")
         return queue
     
     async def disconnect(self, user_id: str, queue: asyncio.Queue):
@@ -75,6 +75,10 @@ class SSEManager:
         Send an event to a specific user (all their connections)
         AND save it as a persistent notification in the DB
         """
+        # Guard: enforce strict identity contract
+        assert user_id is not None, "[SSE] user_id must not be None"
+        assert isinstance(user_id, str), f"[SSE] user_id must be str, got {type(user_id)}"
+        assert user_id.strip(), "[SSE] user_id must not be empty string"
         # 1. Prepare Persistent Notification
         try:
             from database import get_notifications_collection
@@ -87,15 +91,15 @@ class SSEManager:
             if event_type == "new_visit_pending":
                 title = "Entry Request"
                 message = f"New visitor {data.get('visitor_name', '')} is at the gate."
-            elif event_type == "visit_approved":
-                title = "Visit Approved"
-                message = f"Your visitor {data.get('visitor_name', '')} has been approved."
-            elif event_type == "visit_rejected":
+            elif event_type in ("visit_approved", "VISITOR_APPROVED"):
+                title = "Visitor Approved"
+                message = f"Visitor {data.get('visitor_name', 'a visitor')} has been approved."
+            elif event_type in ("visit_rejected", "VISITOR_REJECTED"):
                 title = "Visit Rejected"
-                message = f"Your visitor {data.get('visitor_name', '')} was rejected."
-            elif event_type == "new_regular_visitor_pending":
-                title = "Staff Registration"
-                message = f"Guard has registered a new staff: {data.get('visitor_name', '')}."
+                message = f"Visitor {data.get('visitor_name', '')} was rejected."
+            elif event_type in ("new_regular_visitor_pending", "NEW_VISITOR_REQUEST"):
+                title = "New Staff Registration"
+                message = f"Guard registered: {data.get('name', 'a visitor')}. Approval needed."
             
             notif_doc = NotificationModel(
                 title=title,
@@ -115,8 +119,18 @@ class SSEManager:
             print(f"⚠️  Failed to save persistent notification: {e}")
 
         # 2. Push to Active Connections (Real-time)
-        if user_id not in self.connections:
-            print(f"ℹ️  No active SSE connections for user_id={user_id}, event cached in DB only.")
+        active_connections = len(self.connections.get(user_id, []))
+        
+        print(f"""
+[SSE EVENT TRACE]
+type={event_type}
+target_user_id={user_id}
+connections={active_connections}
+payload={data}
+""")
+
+        if active_connections == 0:
+            print(f"⚠️  [WARNING] No active SSE connections for target_user_id={user_id}. Event delivered to DB only.")
             return
         
         self.event_count += 1
@@ -127,15 +141,11 @@ class SSEManager:
             "timestamp": get_ist_now().isoformat() 
         }
         
-        # Send to all connections for this user
-        connection_count = len(self.connections[user_id])
-        print(f"📤 [SSE {self.event_count}] Sending '{event_type}' (id={event['id']}) to {connection_count} connection(s)")
-        
         for queue in list(self.connections[user_id]):
             try:
                 queue.put_nowait(event)
             except asyncio.QueueFull:
-                print(f"⚠️  SSE Queue full for user_id={user_id}")
+                print(f"⚠️  SSE Queue full for target_user_id={user_id}")
             except Exception as e:
                 print(f"❌ Error sending SSE event: {e}")
 

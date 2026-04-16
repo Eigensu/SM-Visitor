@@ -41,6 +41,17 @@ export function SSEProvider({ children, onRefresh }: SSEProviderProps) {
         if (onRefresh) onRefresh();
       },
 
+      VISITOR_REJECTED: (data: any) => {
+        console.log("❌ [ORBIT] Visitor registration rejected:", data);
+        toast.error(`Rejected: ${data.visitor_name || "Staff Registration"}`, {
+          icon: "❌",
+          duration: 5000,
+        });
+        triggerRefresh("visitors");
+        triggerRefresh("dashboard");
+        if (onRefresh) onRefresh();
+      },
+
       // Legacy support for ad-hoc visits
       visit_approved: (data: any) => {
         updateVisitStatus(data.visit_id || data._id, "approved");

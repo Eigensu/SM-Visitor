@@ -35,6 +35,9 @@ interface AppSidebarProps {
 export function AppSidebar({ collapsed = false, onToggle }: AppSidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const pendingCount = useStore((state: any) => state.pendingCount);
+  const unreadCount = useStore((state: any) => state.unreadCount);
+
   const logout = useStore((state: any) => state.logout);
 
   const handleLogout = () => {
@@ -78,20 +81,48 @@ export function AppSidebar({ collapsed = false, onToggle }: AppSidebarProps) {
       <nav className="flex-1 space-y-1 overflow-y-auto p-3">
         {navItems.map((item) => {
           const isActive = pathname === item.path;
+          const hasBadge =
+            (item.label === "Approvals" && pendingCount > 0) ||
+            (item.label === "Notifications" && unreadCount > 0);
+          const badgeValue = item.label === "Approvals" ? pendingCount : unreadCount;
+
           return (
             <Link
               key={item.path}
               href={item.path}
               className={cn(
-                "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                "group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
                 isActive
-                  ? "bg-sidebar-accent text-sidebar-primary"
+                  ? "bg-sidebar-accent text-sidebar-primary shadow-sm"
                   : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
                 collapsed && "justify-center px-2"
               )}
             >
-              <item.icon className="h-5 w-5 flex-shrink-0" strokeWidth={1.5} />
-              {!collapsed && <span>{item.label}</span>}
+              <item.icon
+                className={cn(
+                  "h-5 w-5 flex-shrink-0 transition-colors",
+                  isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground"
+                )}
+                strokeWidth={1.5}
+              />
+
+              {!collapsed && (
+                <div className="flex flex-1 items-center justify-between">
+                  <span>{item.label}</span>
+                  {hasBadge && (
+                    <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold text-white shadow-sm ring-2 ring-sidebar">
+                      {badgeValue > 99 ? "99+" : badgeValue}
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {collapsed && hasBadge && (
+                <div className="absolute right-1 top-1 flex h-2.5 w-2.5">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75"></span>
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-primary"></span>
+                </div>
+              )}
             </Link>
           );
         })}

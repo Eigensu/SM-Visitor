@@ -63,7 +63,7 @@ export default function NewRegularVisitorPage() {
       data.append("name", formData.name);
       data.append("phone", formData.phone);
       data.append("category", formData.category);
-      data.append("assigned_owner_id", formData.owner_id);
+      data.append("flat_id", formData.owner_id);
       data.append("default_purpose", formData.default_purpose || formData.category);
       if (photoBlob) {
         data.append("photo", photoBlob, "visitor.jpg");

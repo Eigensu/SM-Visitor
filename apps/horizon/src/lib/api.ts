@@ -28,6 +28,11 @@ apiClient.interceptors.request.use(
 apiClient.interceptors.response.use(
   (response) => response,
   (error: AxiosError) => {
+    // Silently ignore canceled requests (AbortController)
+    if (error.code === "ERR_CANCELED" || axios.isCancel(error)) {
+      return Promise.reject(error);
+    }
+
     console.error("API Error Interceptor:", error.message, error.response?.status);
 
     // Only redirect to login for 401 errors that are NOT from the login endpoint
@@ -93,18 +98,18 @@ export const visitsAPI = {
     return response.data;
   },
 
-  getRecent: async (limit: number = 10, signal?: AbortSignal) => {
-    const response = await apiClient.get(`/visits/recent?limit=${limit}`, { signal });
-    return response.data;
-  },
-
   getRecentActivity: async (limit: number = 10, signal?: AbortSignal) => {
     const response = await apiClient.get(`/visits/recent?limit=${limit}`, { signal });
     return response.data;
   },
 
-  getHistory: async (limit: number = 100, signal?: AbortSignal) => {
-    const response = await apiClient.get(`/visits/recent?limit=${limit}`, { signal });
+  getVisitDetails: async (visitId: string, signal?: AbortSignal) => {
+    const response = await apiClient.get(`/visits/${visitId}`, { signal });
+    return response.data;
+  },
+
+  getHistory: async (signal?: AbortSignal) => {
+    const response = await apiClient.get("/visits/history", { signal });
     return response.data;
   },
 
@@ -119,6 +124,8 @@ export const visitsAPI = {
     return {
       todayCount: data.today_count,
       pendingCount: data.pending_count,
+      pendingAdhocCount: data.pending_adhoc_count,
+      pendingStaffCount: data.pending_staff_count,
       approvedCount: data.approved_count,
       activeQrCount: data.active_qr_count,
     };
@@ -126,11 +133,6 @@ export const visitsAPI = {
 
   getWeeklyStats: async (signal?: AbortSignal) => {
     const response = await apiClient.get("/visits/stats/weekly", { signal });
-    return response.data;
-  },
-
-  getVisitDetails: async (visitId: string, signal?: AbortSignal) => {
-    const response = await apiClient.get(`/visits/${visitId}`, { signal });
     return response.data;
   },
 };
@@ -147,16 +149,18 @@ export const visitorsAPI = {
     return response.data;
   },
 
+  getHistoryRegular: async (signal?: AbortSignal) => {
+    const response = await apiClient.get("/visitors/history/regular", { signal });
+    return response.data;
+  },
+
   approveRegular: async (visitorId: string) => {
     const response = await apiClient.patch(`/visitors/${visitorId}/approve-regular`);
     return response.data;
   },
 
   rejectRegular: async (visitorId: string) => {
-    // Current backend doesn't have a specific reject-regular, but we can use delete or add it.
-    // Let's assume for now we use the regular delete or add a reject endpoint if needed.
-    // For now I'll just use delete as 'rejection' of a pending request.
-    const response = await apiClient.delete(`/visitors/regular/${visitorId}`);
+    const response = await apiClient.patch(`/visitors/${visitorId}/reject-regular`);
     return response.data;
   },
 
@@ -235,10 +239,13 @@ export const uploadsAPI = {
 // SSE Connection
 export const createSSEConnection = () => {
   const token = localStorage.getItem("auth_token");
+  console.log("Initializing SSE... checking token:", !!token);
   if (!token) return null;
 
   try {
-    return new EventSource(`${API_URL}/events/stream?token=${token}`, {
+    const url = `${API_URL}/events/stream?token=${token}`;
+    console.log("Creating EventSource to:", url.split("?")[0]);
+    return new EventSource(url, {
       withCredentials: false,
     });
   } catch (error) {

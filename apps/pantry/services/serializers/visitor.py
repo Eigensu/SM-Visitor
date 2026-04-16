@@ -3,9 +3,9 @@ from typing import Any, Optional
 from datetime import datetime
 
 class ApprovalStatus(str, Enum):
-    PENDING = "PENDING"
-    APPROVED = "APPROVED"
-    REJECTED = "REJECTED"
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
 
 def serialize_visitor(visitor: dict) -> dict:
     """
@@ -16,10 +16,10 @@ def serialize_visitor(visitor: dict) -> dict:
     if "approval_status" not in visitor:
         visitor["approval_status"] = ApprovalStatus.APPROVED if visitor.get("is_active") else ApprovalStatus.PENDING
     
-    # 2. Normalize status to uppercase enum
+    # 2. Normalize status to lowercase enum
     status = visitor["approval_status"]
     if isinstance(status, str):
-        status = status.upper()
+        status = status.lower()
     
     # 3. Construct response object following strict contract
     # Backfill missing role (Production Hardening)
@@ -30,7 +30,7 @@ def serialize_visitor(visitor: dict) -> dict:
         created_by_role = "guard"
 
     return {
-        "_id": str(visitor["_id"]),
+        "id": str(visitor["_id"]),  # 'id' matches VisitorResponse field + frontend req.id
         "name": visitor.get("name"),
         "phone": visitor.get("phone"),
         "photo_url": visitor.get("photo_url"),
@@ -40,7 +40,10 @@ def serialize_visitor(visitor: dict) -> dict:
         "default_purpose": visitor.get("default_purpose"),
         "qr_token": visitor.get("qr_token"),
         "is_active": visitor.get("is_active", True),
-        "approval_status": str(visitor.get("approval_status", "approved")).upper(),
+        "approval_status": str(visitor.get("approval_status", "approved")).lower(),
         "assigned_owner_id": str(visitor.get("assigned_owner_id")) if visitor.get("assigned_owner_id") else None,
+        "flat_id": visitor.get("flat_id"),
+        "category": visitor.get("category"),
+        "category_label": visitor.get("category_label"),
         "created_at": visitor.get("created_at")
     }
