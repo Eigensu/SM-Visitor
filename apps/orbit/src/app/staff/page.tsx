@@ -16,6 +16,7 @@ import {
   Trash2,
   Home,
   Briefcase,
+  ShieldCheck,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { motion, AnimatePresence } from "framer-motion";
@@ -178,9 +179,17 @@ export default function StaffDirectoryPage() {
                                 Review
                               </span>
                             ) : (
-                              <span className="flex items-center gap-1 rounded-lg bg-emerald-100 px-2 py-0.5 text-[9px] font-black text-emerald-700 uppercase tracking-tight">
-                                <CheckCircle2 className="h-3 w-3" />
-                                Active
+                              <span
+                                className={`flex items-center gap-1 rounded-lg px-2 py-0.5 text-[9px] font-black uppercase tracking-tight ${person.qr_validity_hours ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}`}
+                              >
+                                {person.qr_validity_hours ? (
+                                  <Clock className="h-3 w-3" />
+                                ) : (
+                                  <ShieldCheck className="h-3 w-3" />
+                                )}
+                                {person.qr_validity_hours
+                                  ? `${person.qr_validity_hours}h Pass`
+                                  : "Permanent"}
                               </span>
                             )}
 
@@ -262,7 +271,9 @@ export default function StaffDirectoryPage() {
             <div className="ocean-gradient p-6 text-center text-white">
               <h2 className="text-xl font-bold">{selectedQR.name}</h2>
               <p className="text-sm opacity-80 underline underline-offset-4">
-                Permanent Entry Pass
+                {staff.find((s) => s.qr_token === selectedQR.token)?.qr_validity_hours
+                  ? `Temporary ${staff.find((s) => s.qr_token === selectedQR.token)?.qr_validity_hours}h Pass`
+                  : "Permanent Entry Pass"}
               </p>
             </div>
             <div className="p-8 flex flex-col items-center">

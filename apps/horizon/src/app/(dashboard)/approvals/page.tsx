@@ -36,6 +36,7 @@ export default function Approvals() {
       timestamp: item.created_at,
       photo: isRegular ? item.photo_url : item.photo_snapshot_url,
       isRegular,
+      qr_validity_hours: isRegular ? item.qr_validity_hours : undefined,
     };
   };
 

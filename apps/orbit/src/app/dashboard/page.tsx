@@ -9,7 +9,7 @@ import { useStore } from "@/lib/store";
 import { visitsAPI, visitorsAPI } from "@/lib/api";
 import { Button } from "@sm-visitor/ui";
 import { Spinner } from "@sm-visitor/ui";
-import { LogOut, QrCode, UserPlus, ClipboardList, Clock, CheckCircle2, Users } from "lucide-react";
+import { LogOut, QrCode, UserCheck, ClipboardList, Clock, CheckCircle2, Users } from "lucide-react";
 import { StatCard } from "@/components/StatCard";
 import { GlassCard } from "@/components/GlassCard";
 import { NotificationCenter } from "@/components/NotificationCenter";
@@ -115,10 +115,16 @@ export default function DashboardPage() {
       href: "/staff",
     },
     {
-      title: "Register Regular",
-      description: "New staff registration",
-      icon: UserPlus,
-      href: "/new-regular-visitor",
+      title: "Register Staff",
+      description: "Permanent (Maid, Cook, etc.)",
+      icon: UserCheck,
+      href: "/new-regular-visitor?mode=staff",
+    },
+    {
+      title: "Register Guest",
+      description: "Temporary 24h entry pass",
+      icon: Clock,
+      href: "/new-regular-visitor?mode=guest",
     },
     {
       title: "Scan QR Code",

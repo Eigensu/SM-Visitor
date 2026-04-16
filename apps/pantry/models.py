@@ -75,7 +75,8 @@ class VisitorModel(BaseModel):
     created_by: str  # User ID
     default_purpose: Optional[str] = None
     qr_token: Optional[str] = None
-    qr_expires_at: Optional[datetime] = None
+    qr_expires_at: Optional[datetime] = None  # NEW: For temporary visitors
+    qr_validity_hours: Optional[int] = None   # NEW: 6, 12, 18, 24
     is_active: bool = True
     approval_status: ApprovalStatus = ApprovalStatus.PENDING
     assigned_owner_id: Optional[str] = None  # Original resident who needs to approve

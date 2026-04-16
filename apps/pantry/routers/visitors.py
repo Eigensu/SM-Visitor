@@ -99,6 +99,9 @@ class CreateRegularVisitorRequest(BaseModel):
     auto_approval_enabled: bool = True
     auto_approval_rule: str = Field(default="always", pattern="^(always|within_schedule|notify_only)$")
     
+    # Expiration (Permanent vs Temporary)
+    qr_validity_hours: Optional[int] = Field(None, description="6, 12, 18, or 24 hours. None means permanent.")
+    
     # Assignment (for Guard-initiated requests)
     flat_id: Optional[str] = None
 
@@ -123,6 +126,8 @@ class VisitorResponse(BaseModel):
     assigned_owner_id: Optional[str] = None
     created_by_role: str
     created_at: datetime
+    qr_validity_hours: Optional[int] = None
+    qr_expires_at: Optional[datetime] = None
 
 
 class VisitorWithQRResponse(VisitorResponse):
@@ -305,6 +310,14 @@ async def create_regular_visitor_by_guard(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="flat_id is required for guard-initiated registrations"
         )
+    
+    # Validate validity hours if provided
+    if request.qr_validity_hours:
+        if request.qr_validity_hours not in [6, 12, 18, 24]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid validity duration. Must be 6, 12, 18 or 24 hours."
+            )
         
     # Resolve ownership safely on backend
     owner = await get_owner_by_flat(request.flat_id)
@@ -372,7 +385,8 @@ async def create_regular_visitor_by_guard(
             "phone": request.phone,
             "category": request.category,
             "photo_url": photo_file_id,
-            "guard_id": get_user_id(current_user)
+            "guard_id": get_user_id(current_user),
+            "qr_validity_hours": request.qr_validity_hours
         }
     )
     
@@ -447,6 +461,12 @@ async def approve_regular_visitor(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Visitor request not found"
         )
+        
+    # Compute expiration for temporary visitors at approval time
+    from datetime import timedelta
+    expires_at = None
+    if visitor.get("qr_validity_hours"):
+        expires_at = get_ist_now() + timedelta(hours=int(visitor["qr_validity_hours"]))
     
     # Generate QR
     qr_token = create_qr_token({
@@ -462,7 +482,8 @@ async def approve_regular_visitor(
             "$set": {
                 "approval_status": "approved",
                 "is_active": True,
-                "qr_token": qr_token
+                "qr_token": qr_token,
+                "qr_expires_at": expires_at
             }
         }
     )

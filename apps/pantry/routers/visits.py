@@ -101,8 +101,32 @@ async def scan_qr_code(
             return QRScanResponse(
                 valid=False,
                 auto_approve=False,
-                error="Visitor not found"
+                error="Visitor record not found"
             )
+        
+        # Defensive Expiration Check (For Temporary Visitors)
+        expires_at = visitor.get("qr_expires_at")
+        if expires_at:
+            try:
+                # Ensure expires_at is datetime (might be string from DB)
+                if isinstance(expires_at, str):
+                    from dateutil import parser
+                    expires_at = parser.isoparse(expires_at)
+                
+                if get_ist_now() > expires_at:
+                    return QRScanResponse(
+                        valid=False,
+                        auto_approve=False,
+                        error="This temporary entry pass has expired"
+                    )
+            except Exception:
+                # Log error internally and treat as invalid to be safe
+                print(f"[SECURITY] Malformed qr_expires_at for visitor {visitor.get('_id')}")
+                return QRScanResponse(
+                    valid=False,
+                    auto_approve=False,
+                    error="Invalid pass data (expiration)"
+                )
         
         if not visitor["is_active"]:
             return QRScanResponse(

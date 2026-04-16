@@ -6,7 +6,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@sm-visitor/ui";
 import { Input } from "@sm-visitor/ui";
 import { PhotoCapture } from "@/components/PhotoCapture";
@@ -14,7 +14,7 @@ import { OwnerSelect } from "@/components/OwnerSelect";
 import { GlassCard } from "@/components/GlassCard";
 import { visitorsAPI } from "@/lib/api";
 import toast from "react-hot-toast";
-import { ArrowLeft, UserPlus } from "lucide-react";
+import { ArrowLeft, UserCheck, Clock, ShieldCheck } from "lucide-react";
 
 const CATEGORIES = [
   { id: "maid", label: "Maid" },
@@ -26,6 +26,10 @@ const CATEGORIES = [
 
 export default function NewRegularVisitorPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const mode = searchParams.get("mode") || "staff"; // default to staff
+  const isGuestMode = mode === "guest";
+
   const [step, setStep] = useState<"form" | "pending">("form");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [photoBlob, setPhotoBlob] = useState<Blob | null>(null);
@@ -33,9 +37,10 @@ export default function NewRegularVisitorPage() {
   const [formData, setFormData] = useState({
     name: "",
     phone: "",
-    category: "other",
+    category: isGuestMode ? "other" : "maid",
     owner_id: "",
     default_purpose: "",
+    validity_hours: "24", // Default to 24 for guests
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -64,7 +69,16 @@ export default function NewRegularVisitorPage() {
       data.append("phone", formData.phone);
       data.append("category", formData.category);
       data.append("flat_id", formData.owner_id);
-      data.append("default_purpose", formData.default_purpose || formData.category);
+      data.append(
+        "default_purpose",
+        formData.default_purpose || (isGuestMode ? "Guest Visit" : formData.category)
+      );
+
+      // Only append qr_validity_hours if in guest mode to avoid sending empty strings
+      if (isGuestMode) {
+        data.append("qr_validity_hours", formData.validity_hours);
+      }
+
       if (photoBlob) {
         data.append("photo", photoBlob, "visitor.jpg");
       }
@@ -95,10 +109,14 @@ export default function NewRegularVisitorPage() {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-background px-4 text-center">
         <GlassCard className="max-w-md p-8">
-          <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-pending/10 text-pending mx-auto">
-            <UserPlus className="h-10 w-10" />
+          <div
+            className={`mb-6 flex h-20 w-20 items-center justify-center rounded-full mx-auto ${isGuestMode ? "bg-orange-500/10 text-orange-500" : "bg-pending/10 text-pending"}`}
+          >
+            {isGuestMode ? <Clock className="h-10 w-10" /> : <UserCheck className="h-10 w-10" />}
           </div>
-          <h2 className="text-2xl font-bold text-foreground mb-2">Request Sent</h2>
+          <h2 className="text-2xl font-bold text-foreground mb-2">
+            {isGuestMode ? "Pass Requested" : "Registration Sent"}
+          </h2>
           <p className="text-muted-foreground mb-8">
             The registration request for <strong>{formData.name}</strong> has been sent to the owner
             for approval. Once approved, the visitor will be active.
@@ -121,7 +139,9 @@ export default function NewRegularVisitorPage() {
                 <ArrowLeft className="mr-2 h-4 w-4" />
                 Back
               </Button>
-              <h1 className="ml-4 text-xl font-bold text-foreground">Register Regular</h1>
+              <h1 className="ml-4 text-xl font-bold text-foreground">
+                {isGuestMode ? "Issue Temporary Pass" : "Register Staff Member"}
+              </h1>
             </div>
           </div>
         </div>
@@ -175,6 +195,30 @@ export default function NewRegularVisitorPage() {
                   ))}
                 </div>
               </div>
+
+              {isGuestMode && (
+                <div className="space-y-1.5 pt-2">
+                  <label className="text-sm font-medium text-muted-foreground">
+                    Validity Period <span className="text-red-500">*</span>
+                  </label>
+                  <div className="grid grid-cols-4 gap-2">
+                    {["6", "12", "18", "24"].map((hours) => (
+                      <button
+                        key={hours}
+                        type="button"
+                        onClick={() => setFormData({ ...formData, validity_hours: hours })}
+                        className={`rounded-lg border px-3 py-2 text-sm font-medium transition-all ${
+                          formData.validity_hours === hours
+                            ? "border-orange-500 bg-orange-500/10 text-orange-500 shadow-sm"
+                            : "border-border bg-card text-muted-foreground hover:bg-muted"
+                        }`}
+                      >
+                        {hours}h
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </GlassCard>
 
@@ -202,10 +246,10 @@ export default function NewRegularVisitorPage() {
 
           <Button
             type="submit"
-            className="w-full ocean-gradient h-12 text-lg font-semibold"
+            className={`w-full h-12 text-lg font-semibold ${isGuestMode ? "bg-orange-600 hover:bg-orange-700" : "ocean-gradient"}`}
             disabled={isSubmitting}
           >
-            {isSubmitting ? "Submitting..." : "Send for Approval"}
+            {isSubmitting ? "Submitting..." : isGuestMode ? "Issue 24h Pass" : "Send for Approval"}
           </Button>
         </form>
       </main>
