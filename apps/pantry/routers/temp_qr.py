@@ -1,13 +1,15 @@
 """
 Temporary QR Router - Generate and validate one-time guest passes
 """
+
 from fastapi import APIRouter, HTTPException, status, Depends
 from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import datetime, timedelta
 from bson import ObjectId
+from bson.errors import InvalidId
 
-from database import get_temporary_qr_collection
+from database import get_temporary_qr_collection, get_database
 from middleware.auth import get_current_owner, get_current_guard
 from utils.jwt_utils import create_qr_token, decode_qr_token
 from utils.qr_utils import generate_qr_image_with_details
@@ -20,7 +22,9 @@ router = APIRouter(prefix="/temp-qr", tags=["Temporary QR"])
 # Request/Response Models
 class GenerateTemporaryQRRequest(BaseModel):
     guest_name: Optional[str] = Field(None, max_length=100)
-    validity_hours: int = Field(..., ge=1, le=72, description="Validity period in hours (1-72)")
+    validity_hours: int = Field(
+        ..., ge=1, le=72, description="Validity period in hours (1-72)"
+    )
     is_all_flats: bool = False
     valid_flats: Optional[List[str]] = None
 
@@ -44,34 +48,44 @@ class ValidateTemporaryQRResponse(BaseModel):
     error: Optional[str] = None
 
 
-@router.post("/generate", response_model=TemporaryQRResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/generate", response_model=TemporaryQRResponse, status_code=status.HTTP_201_CREATED
+)
 async def generate_temporary_qr(
-    request: GenerateTemporaryQRRequest,
-    current_user: dict = Depends(get_current_owner)
+    request: GenerateTemporaryQRRequest, current_user: dict = Depends(get_current_owner)
 ):
     """
     Generate a temporary one-time QR code for a guest
-    
+
     - **guest_name**: Name of the guest (optional)
     - **validity_hours**: How long the QR code is valid (1-72 hours)
-    
+
     Returns QR code image and token
     """
     temp_qr_collection = get_temporary_qr_collection()
-    
+
     # Calculate expiry
     expires_at = get_utc_now() + timedelta(hours=request.validity_hours)
 
     # 1. Fetch flat_id for the owner
-    from database import get_database
-    db = await get_database()
-    owner_doc = await db.users.find_one({"_id": ObjectId(current_user["user_id"])})
+    db = get_database()
+    try:
+        owner_object_id = ObjectId(current_user["user_id"])
+    except (InvalidId, KeyError, TypeError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid owner user_id in token",
+        ) from exc
+    owner_doc = await db.residents.find_one({"_id": owner_object_id})
+    if not owner_doc:
+        # Backward compatibility for legacy environments.
+        owner_doc = await db.users.find_one({"_id": owner_object_id})
     flat_id = owner_doc.get("flat_id") if owner_doc else None
-    
+
     if not flat_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Owner profile must have a flat_id to generate QR codes."
+            detail="Owner profile must have a flat_id to generate QR codes.",
         )
 
     # 2. Create temporary QR document
@@ -81,39 +95,40 @@ async def generate_temporary_qr(
         "expires_at": expires_at,
         "one_time": True,
         "used_at": None,
-        "created_at": get_utc_now()
+        "created_at": get_utc_now(),
     }
-    
+
     # Insert document
     result = await temp_qr_collection.insert_one(temp_qr_doc)
     temp_qr_id = str(result.inserted_id)
-    
+
     # Generate JWT token with expiry
     qr_token = create_qr_token(
         {
             "type": "temporary",
             "temp_qr_id": temp_qr_id,
             "owner_id": current_user["user_id"],
-            "guest_name": request.guest_name
+            "guest_name": request.guest_name,
         },
-        expires_delta=timedelta(hours=request.validity_hours)
+        expires_delta=timedelta(hours=request.validity_hours),
     )
-    
+
     # Update document with token
     await temp_qr_collection.update_one(
-        {"_id": result.inserted_id},
-        {"$set": {"token": qr_token}}
+        {"_id": result.inserted_id}, {"$set": {"token": qr_token}}
     )
-    
+
     # Generate QR image with all details
-    qr_image_url = generate_qr_image_with_details({
-        "visitor_id": temp_qr_id,
-        "name": request.guest_name or "Guest",
-        "visitor_type": "temporary",
-        "token": qr_token,
-        "created_at": get_ist_now().isoformat()
-    })
-    
+    qr_image_url = generate_qr_image_with_details(
+        {
+            "visitor_id": temp_qr_id,
+            "name": request.guest_name or "Guest",
+            "visitor_type": "temporary",
+            "token": qr_token,
+            "created_at": get_ist_now().isoformat(),
+        }
+    )
+
     return TemporaryQRResponse(
         id=temp_qr_id,
         owner_id=current_user["user_id"],
@@ -122,7 +137,7 @@ async def generate_temporary_qr(
         qr_image_url=qr_image_url,
         expires_at=expires_at,
         one_time=True,
-        created_at=temp_qr_doc["created_at"]
+        created_at=temp_qr_doc["created_at"],
     )
 
 
@@ -130,119 +145,104 @@ async def generate_temporary_qr(
 async def validate_temporary_qr(token: str):
     """
     Validate a temporary QR token
-    
+
     Can be called by guards or publicly (token validation is sufficient)
     """
     temp_qr_collection = get_temporary_qr_collection()
-    
+
     # Decode token
     payload = decode_qr_token(token)
-    
+
     if not payload:
         return ValidateTemporaryQRResponse(
-            valid=False,
-            error="Invalid or expired token"
+            valid=False, error="Invalid or expired token"
         )
-    
+
     # Check token type
     if payload.get("type") != "temporary":
-        return ValidateTemporaryQRResponse(
-            valid=False,
-            error="Invalid token type"
-        )
-    
+        return ValidateTemporaryQRResponse(valid=False, error="Invalid token type")
+
     # Find temp QR record
     try:
-        temp_qr = await temp_qr_collection.find_one({
-            "_id": ObjectId(payload["temp_qr_id"])
-        })
-    except Exception:
-        return ValidateTemporaryQRResponse(
-            valid=False,
-            error="Invalid QR ID"
+        temp_qr = await temp_qr_collection.find_one(
+            {"_id": ObjectId(payload["temp_qr_id"])}
         )
-    
+    except (InvalidId, KeyError, TypeError):
+        return ValidateTemporaryQRResponse(valid=False, error="Invalid QR ID")
+
     if not temp_qr:
-        return ValidateTemporaryQRResponse(
-            valid=False,
-            error="QR code not found"
-        )
-    
+        return ValidateTemporaryQRResponse(valid=False, error="QR code not found")
+
     # Check if already used
     if temp_qr.get("used_at"):
-        return ValidateTemporaryQRResponse(
-            valid=False,
-            error="QR code already used"
-        )
-    
+        return ValidateTemporaryQRResponse(valid=False, error="QR code already used")
+
     # Check expiry
     if get_utc_now() > temp_qr["expires_at"]:
-        return ValidateTemporaryQRResponse(
-            valid=False,
-            error="QR code expired"
-        )
-    
+        return ValidateTemporaryQRResponse(valid=False, error="QR code expired")
+
     return ValidateTemporaryQRResponse(
         valid=True,
         owner_id=temp_qr["owner_id"],
         guest_name=temp_qr.get("guest_name"),
-        expires_at=temp_qr["expires_at"]
+        expires_at=temp_qr["expires_at"],
     )
 
 
 @router.post("/{token}/mark-used", status_code=status.HTTP_200_OK)
 async def mark_temporary_qr_used(
-    token: str,
-    current_user: dict = Depends(get_current_guard)
+    token: str, _current_user: dict = Depends(get_current_guard)
 ):
     """
     Mark a temporary QR as used
-    
+
     Called by guard after successful entry
     """
     temp_qr_collection = get_temporary_qr_collection()
-    
+
     # Decode token
     payload = decode_qr_token(token)
-    
+
     if not payload or payload.get("type") != "temporary":
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid token"
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid token"
         )
-    
+
     # Mark as used
     result = await temp_qr_collection.update_one(
-        {"_id": ObjectId(payload["temp_qr_id"])},
-        {"$set": {"used_at": get_utc_now()}}
+        {"_id": ObjectId(payload["temp_qr_id"])}, {"$set": {"used_at": get_utc_now()}}
     )
-    
+
     if result.modified_count == 0:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="QR code not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="QR code not found"
         )
-    
+
     return {"success": True, "message": "QR code marked as used"}
 
 
 @router.get("/", response_model=list)
-async def list_temporary_qrs(
-    current_user: dict = Depends(get_current_owner)
-):
+async def list_temporary_qrs(current_user: dict = Depends(get_current_owner)):
     """
     List all temporary QR codes created by the current owner
-    
+
     Shows both active and used QR codes
     """
     temp_qr_collection = get_temporary_qr_collection()
-    
-    cursor = temp_qr_collection.find({
-        "owner_id": current_user["user_id"]
-    }).sort("created_at", -1).limit(50)
-    
+    db = get_database()
+    owner_doc = await db.residents.find_one({"_id": ObjectId(current_user["user_id"])})
+    if not owner_doc:
+        owner_doc = await db.users.find_one({"_id": ObjectId(current_user["user_id"])})
+    owner_flat_id = owner_doc.get("flat_id") if owner_doc else current_user["user_id"]
+
+    cursor = (
+        temp_qr_collection.find({"owner_id": owner_flat_id})
+        .sort("created_at", -1)
+        .limit(50)
+    )
+
     temp_qrs = await cursor.to_list(length=50)
-    
+
     return [
         {
             "id": str(qr["_id"]),
@@ -250,7 +250,7 @@ async def list_temporary_qrs(
             "expires_at": qr["expires_at"],
             "used_at": qr.get("used_at"),
             "is_active": qr.get("used_at") is None and get_utc_now() < qr["expires_at"],
-            "created_at": qr["created_at"]
+            "created_at": qr["created_at"],
         }
         for qr in temp_qrs
     ]
@@ -258,45 +258,55 @@ async def list_temporary_qrs(
 
 # ===== GET ENDPOINTS FOR HORIZON QR MANAGEMENT =====
 
+
 @router.get("/active", response_model=List[TemporaryQRResponse])
-async def get_active_qr_codes(
-    current_user: dict = Depends(get_current_owner)
-):
+async def get_active_qr_codes(current_user: dict = Depends(get_current_owner)):
     """
     Get all active (non-expired, unused) temporary QR codes for the current owner
     Used by Horizon QR generator history
     """
     temp_qr_collection = get_temporary_qr_collection()
-    
+    db = get_database()
+    owner_doc = await db.residents.find_one({"_id": ObjectId(current_user["user_id"])})
+    if not owner_doc:
+        owner_doc = await db.users.find_one({"_id": ObjectId(current_user["user_id"])})
+    owner_flat_id = owner_doc.get("flat_id") if owner_doc else current_user["user_id"]
+
     # Get all QR codes that haven't expired and haven't been used
     now = get_utc_now()
-    
-    qr_codes = await temp_qr_collection.find({
-        "owner_id": str(current_user["user_id"]),
-        "expires_at": {"$gt": now},
-        "used_at": None
-    }).sort("created_at", -1).to_list(length=100)
-    
+
+    qr_codes = (
+        await temp_qr_collection.find(
+            {"owner_id": owner_flat_id, "expires_at": {"$gt": now}, "used_at": None}
+        )
+        .sort("created_at", -1)
+        .to_list(length=100)
+    )
+
     result = []
     for qr in qr_codes:
         # Regenerate QR image with all details
-        qr_image_url = generate_qr_image_with_details({
-            "visitor_id": str(qr["_id"]),
-            "name": qr.get("guest_name") or "Guest",
-            "visitor_type": "temporary",
-            "token": qr["token"],
-            "created_at": qr["created_at"].isoformat()
-        })
-        
-        result.append(TemporaryQRResponse(
-            id=str(qr["_id"]),
-            owner_id=qr["owner_id"],
-            guest_name=qr.get("guest_name"),
-            token=qr["token"],
-            qr_image_url=qr_image_url,
-            expires_at=qr["expires_at"],
-            one_time=qr.get("one_time", True),
-            created_at=qr["created_at"]
-        ))
-    
+        qr_image_url = generate_qr_image_with_details(
+            {
+                "visitor_id": str(qr["_id"]),
+                "name": qr.get("guest_name") or "Guest",
+                "visitor_type": "temporary",
+                "token": qr["token"],
+                "created_at": qr["created_at"].isoformat(),
+            }
+        )
+
+        result.append(
+            TemporaryQRResponse(
+                id=str(qr["_id"]),
+                owner_id=qr["owner_id"],
+                guest_name=qr.get("guest_name"),
+                token=qr["token"],
+                qr_image_url=qr_image_url,
+                expires_at=qr["expires_at"],
+                one_time=qr.get("one_time", True),
+                created_at=qr["created_at"],
+            )
+        )
+
     return result

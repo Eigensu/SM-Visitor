@@ -12,7 +12,6 @@ import { toast } from "sonner";
 import { AnimatePresence } from "framer-motion";
 import { visitsAPI, visitorsAPI } from "@/lib/api";
 import { useStore } from "@/lib/store";
-import DebugOverlay from "@/components/DebugOverlay";
 
 export default function Approvals() {
   const [pendingItems, setPendingItems] = useState<any[]>([]);
@@ -20,6 +19,13 @@ export default function Approvals() {
   const [activeTab, setActiveTab] = useState("pending");
   const [isLoading, setIsLoading] = useState(true);
   const { pendingVisits, removePendingVisit, refreshMap } = useStore();
+
+  const parseAsUtcMs = (value?: string) => {
+    if (!value) return 0;
+    const normalized = /[zZ]|[+\-]\d{2}:\d{2}$/.test(value) ? value : `${value}Z`;
+    const ts = Date.parse(normalized);
+    return Number.isNaN(ts) ? 0 : ts;
+  };
 
   // Helper to unify visitor data for the card component
   const unifyItem = (item: any) => {
@@ -55,12 +61,12 @@ export default function Approvals() {
         const mergedPending = [
           ...pVisits.map((v: any) => ({ ...v, visitor_type: "adhoc" })),
           ...pRegular.map((r: any) => ({ ...r, visitor_type: "regular" })),
-        ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        ].sort((a, b) => parseAsUtcMs(b.created_at) - parseAsUtcMs(a.created_at));
 
         const mergedCompleted = [
           ...hVisits.map((v: any) => ({ ...v, visitor_type: "adhoc" })),
           ...hRegular.map((r: any) => ({ ...r, visitor_type: "regular" })),
-        ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        ].sort((a, b) => parseAsUtcMs(b.created_at) - parseAsUtcMs(a.created_at));
 
         setPendingItems(mergedPending);
         setCompletedItems(mergedCompleted);
@@ -144,7 +150,6 @@ export default function Approvals() {
       description="Manage visitor entry and staff registration requests"
       action={<SSEIndicator connected={true} />}
     >
-      {process.env.NODE_ENV !== "production" && <DebugOverlay refreshMap={refreshMap} />}
       {isLoading ? (
         <div className="flex items-center justify-center py-12">
           <Spinner size="lg" />

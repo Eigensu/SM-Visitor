@@ -5,8 +5,9 @@ Visit Lifecycle Router - Handle QR scanning, visit creation, approval/rejection,
 from fastapi import APIRouter, HTTPException, status, Depends, Body
 from pydantic import BaseModel, Field
 from typing import Optional, List
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from bson import ObjectId
+from bson.errors import InvalidId
 import random
 
 from database import (
@@ -17,13 +18,26 @@ from database import (
 )
 from middleware.auth import get_current_guard, get_current_owner, get_current_user
 from utils.jwt_utils import decode_qr_token
-from utils.qr_utils import parse_qr_data
 from utils.sse_manager import sse_manager
-from utils.time_utils import get_ist_now, get_utc_now, IST, is_within_schedule
-import pytz
+from utils.time_utils import get_ist_now, get_utc_now, is_within_schedule
 
 
 router = APIRouter(prefix="/visits", tags=["Visits"])
+
+
+async def get_owner_profile(user_id: str, db) -> Optional[dict]:
+    """Resolve owner profile from residents (primary) with users fallback for legacy data."""
+    if not ObjectId.is_valid(user_id):
+        return None
+
+    owner_object_id = ObjectId(user_id)
+
+    resident = await db.residents.find_one({"_id": owner_object_id})
+    if resident:
+        return resident
+
+    # Backward compatibility for environments where owners may still exist in users.
+    return await db.users.find_one({"_id": owner_object_id})
 
 
 # Request/Response Models
@@ -92,13 +106,13 @@ def map_visit_to_response(v: dict) -> VisitResponse:
         is_all_flats=v.get("is_all_flats", False),
         valid_flats=v.get("valid_flats"),
         target_flat_ids=v.get("target_flat_ids"),
-        created_at=v["created_at"]
+        created_at=v["created_at"],
     )
 
 
 @router.post("/qr-scan", response_model=QRScanResponse)
 async def scan_qr_code(
-    request: QRScanRequest, current_user: dict = Depends(get_current_guard)
+    request: QRScanRequest, _current_user: dict = Depends(get_current_guard)
 ):
     """
     Scan and validate a QR code
@@ -121,18 +135,16 @@ async def scan_qr_code(
 
         try:
             visitor = await visitors.find_one({"_id": ObjectId(payload["visitor_id"])})
-        except Exception:
+        except (InvalidId, KeyError, TypeError):
             return QRScanResponse(
                 valid=False, auto_approve=False, error="Invalid visitor ID"
             )
 
         if not visitor:
             return QRScanResponse(
-                valid=False,
-                auto_approve=False,
-                error="Visitor record not found"
+                valid=False, auto_approve=False, error="Visitor record not found"
             )
-        
+
         # Defensive Expiration Check (For Temporary Visitors)
         expires_at = visitor.get("qr_expires_at")
         if expires_at:
@@ -140,27 +152,34 @@ async def scan_qr_code(
                 # Ensure expires_at is datetime (might be string from DB)
                 if isinstance(expires_at, str):
                     from dateutil import parser
+
                     expires_at = parser.isoparse(expires_at)
-                
+
                 # Normalize both to aware UTC for comparison
-                now_aware = get_ist_now().astimezone(pytz.utc)
-                expires_aware = expires_at if expires_at.tzinfo else pytz.utc.localize(expires_at)
-                
+                now_aware = get_ist_now().astimezone(timezone.utc)
+                expires_aware = (
+                    expires_at
+                    if expires_at.tzinfo
+                    else expires_at.replace(tzinfo=timezone.utc)
+                )
+
                 if now_aware > expires_aware:
                     return QRScanResponse(
                         valid=False,
                         auto_approve=False,
-                        error="This temporary entry pass has expired"
+                        error="This temporary entry pass has expired",
                     )
-            except Exception:
+            except (TypeError, ValueError, OverflowError):
                 # Log error internally and treat as invalid to be safe
-                print(f"[SECURITY] Malformed qr_expires_at for visitor {visitor.get('_id')}")
+                print(
+                    f"[SECURITY] Malformed qr_expires_at for visitor {visitor.get('_id')}"
+                )
                 return QRScanResponse(
                     valid=False,
                     auto_approve=False,
-                    error="Invalid pass data (expiration)"
+                    error="Invalid pass data (expiration)",
                 )
-        
+
         if not visitor["is_active"]:
             return QRScanResponse(
                 valid=False, auto_approve=False, error="Visitor has been deactivated"
@@ -208,7 +227,7 @@ async def scan_qr_code(
             temp_qr = await temp_qr_collection.find_one(
                 {"_id": ObjectId(payload["temp_qr_id"])}
             )
-        except Exception:
+        except (InvalidId, KeyError, TypeError):
             return QRScanResponse(
                 valid=False, auto_approve=False, error="Invalid temporary QR ID"
             )
@@ -222,10 +241,14 @@ async def scan_qr_code(
             return QRScanResponse(
                 valid=False, auto_approve=False, error="QR code already used"
             )
-        
-        now_aware = get_ist_now().astimezone(pytz.utc)
-        expires_aware = temp_qr["expires_at"] if temp_qr["expires_at"].tzinfo else pytz.utc.localize(temp_qr["expires_at"])
-        
+
+        now_aware = get_ist_now().astimezone(timezone.utc)
+        expires_aware = (
+            temp_qr["expires_at"]
+            if temp_qr["expires_at"].tzinfo
+            else temp_qr["expires_at"].replace(tzinfo=timezone.utc)
+        )
+
         if now_aware > expires_aware:
             return QRScanResponse(
                 valid=False, auto_approve=False, error="QR code expired"
@@ -345,14 +368,20 @@ async def start_visit(
                 "status": status_val,
                 "qr_token": qr_request.qr_token,
                 "created_at": get_utc_now(),
-                "updated_at": get_utc_now()
+                "updated_at": get_utc_now(),
             }
 
         elif token_type == "temporary":
             temp_qr_collection = get_temporary_qr_collection()
-            temp_qr = await temp_qr_collection.find_one({"_id": ObjectId(payload["temp_qr_id"])})
-            
-            if not temp_qr or temp_qr.get("used_at") or get_utc_now() > temp_qr["expires_at"]:
+            temp_qr = await temp_qr_collection.find_one(
+                {"_id": ObjectId(payload["temp_qr_id"])}
+            )
+
+            if (
+                not temp_qr
+                or temp_qr.get("used_at")
+                or get_utc_now() > temp_qr["expires_at"]
+            ):
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Invalid or expired temporary QR",
@@ -378,7 +407,7 @@ async def start_visit(
             # Mark temp QR as used
             await temp_qr_collection.update_one(
                 {"_id": ObjectId(payload["temp_qr_id"])},
-                {"$set": {"used_at": get_utc_now()}}
+                {"$set": {"used_at": get_utc_now()}},
             )
 
             visit_doc = {
@@ -397,7 +426,7 @@ async def start_visit(
                 "status": "auto_approved",
                 "qr_token": qr_request.qr_token,
                 "created_at": get_utc_now(),
-                "updated_at": get_utc_now()
+                "updated_at": get_utc_now(),
             }
         else:
             raise HTTPException(
@@ -491,6 +520,7 @@ async def start_visit(
 
     # Handle new visitor flow
     else:
+        assert new_request is not None
         # Determine target owners/flats for New Visitor
         target_flat_ids = []
         if new_request.owner_id == "all":
@@ -515,7 +545,7 @@ async def start_visit(
             "status": "pending",
             "qr_token": None,
             "created_at": get_utc_now(),
-            "updated_at": get_utc_now()
+            "updated_at": get_utc_now(),
         }
 
         # Insert visit
@@ -559,6 +589,11 @@ async def start_visit(
 
     # Fetch and return created visit
     created_visit = await visits.find_one({"_id": result.inserted_id})
+    if created_visit is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch created visit",
+        )
 
     return map_visit_to_response(created_visit)
 
@@ -578,10 +613,10 @@ async def approve_visit(
 
     try:
         visit = await visits.find_one({"_id": ObjectId(visit_id)})
-    except Exception:
+    except InvalidId as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid visit ID"
-        )
+        ) from exc
 
     if not visit:
         raise HTTPException(
@@ -593,9 +628,7 @@ async def approve_visit(
 
     # If not direct match, check flat_id
     if not is_owner:
-        resident = await db.users.find_one(
-            {"_id": ObjectId(current_user["user_id"])}
-        )
+        resident = await get_owner_profile(current_user["user_id"], db)
         if resident:
             flat_id = resident.get("flat_id")
             if flat_id == visit["owner_id"] or flat_id in visit.get(
@@ -625,7 +658,7 @@ async def approve_visit(
             "$set": {
                 "status": "approved",
                 "entry_time": get_utc_now(),
-                "updated_at": get_utc_now()
+                "updated_at": get_utc_now(),
             }
         },
     )
@@ -637,12 +670,17 @@ async def approve_visit(
         {
             "visit_id": visit_id,
             "visitor_name": visit["name_snapshot"],
-            "approved_at": get_ist_now().isoformat()
-        }
+            "approved_at": get_ist_now().isoformat(),
+        },
     )
 
     # Fetch updated visit
     updated_visit = await visits.find_one({"_id": ObjectId(visit_id)})
+    if updated_visit is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Visit not found",
+        )
 
     return VisitResponse(
         id=str(updated_visit["_id"]),
@@ -676,10 +714,10 @@ async def reject_visit(
 
     try:
         visit = await visits.find_one({"_id": ObjectId(visit_id)})
-    except Exception:
+    except InvalidId as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid visit ID"
-        )
+        ) from exc
 
     if not visit:
         raise HTTPException(
@@ -691,9 +729,7 @@ async def reject_visit(
 
     # If not direct match, check flat_id
     if not is_owner:
-        resident = await db.users.find_one(
-            {"_id": ObjectId(current_user["user_id"])}
-        )
+        resident = await get_owner_profile(current_user["user_id"], db)
         if resident and resident.get("flat_id") == visit["owner_id"]:
             is_owner = True
 
@@ -711,12 +747,7 @@ async def reject_visit(
     # Update visit
     await visits.update_one(
         {"_id": ObjectId(visit_id)},
-        {
-            "$set": {
-                "status": "rejected",
-                "updated_at": get_utc_now()
-            }
-        }
+        {"$set": {"status": "rejected", "updated_at": get_utc_now()}},
     )
 
     # Send SSE notification to guard
@@ -726,12 +757,17 @@ async def reject_visit(
         {
             "visit_id": visit_id,
             "visitor_name": visit["name_snapshot"],
-            "rejected_at": get_ist_now().isoformat()
-        }
+            "rejected_at": get_ist_now().isoformat(),
+        },
     )
 
     # Fetch updated visit
     updated_visit = await visits.find_one({"_id": ObjectId(visit_id)})
+    if updated_visit is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Visit not found",
+        )
 
     return VisitResponse(
         id=str(updated_visit["_id"]),
@@ -764,13 +800,13 @@ async def get_todays_visits(
     - Admins can filter by guard_id or owner_id
     """
     visits = get_visits_collection()
-    
+
     # Build query for today in IST
     # Get today start in IST and convert to UTC for MongoDB query
     today_start_ist = get_ist_now().replace(hour=0, minute=0, second=0, microsecond=0)
-    today_start_utc = today_start_ist.astimezone(pytz.utc).replace(tzinfo=None)
-    query = {"created_at": {"$gte": today_start_utc}}
-    
+    today_start_utc = today_start_ist.astimezone(timezone.utc).replace(tzinfo=None)
+    query: dict[str, object] = {"created_at": {"$gte": today_start_utc}}
+
     # Apply filters based on role
     if current_user["role"] == "guard":
         query["guard_id"] = current_user["user_id"]
@@ -790,7 +826,7 @@ async def get_todays_visits(
 
 @router.patch("/{visit_id}/checkout", response_model=VisitResponse)
 async def checkout_visit(
-    visit_id: str, current_user: dict = Depends(get_current_guard)
+    visit_id: str, _current_user: dict = Depends(get_current_guard)
 ):
     """
     Checkout a visit (set exit time)
@@ -801,10 +837,10 @@ async def checkout_visit(
 
     try:
         visit = await visits.find_one({"_id": ObjectId(visit_id)})
-    except Exception:
+    except InvalidId as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid visit ID"
-        )
+        ) from exc
 
     if not visit:
         raise HTTPException(
@@ -819,16 +855,16 @@ async def checkout_visit(
     # Update visit
     await visits.update_one(
         {"_id": ObjectId(visit_id)},
-        {
-            "$set": {
-                "exit_time": get_utc_now(),
-                "updated_at": get_utc_now()
-            }
-        }
+        {"$set": {"exit_time": get_utc_now(), "updated_at": get_utc_now()}},
     )
 
     # Fetch updated visit
     updated_visit = await visits.find_one({"_id": ObjectId(visit_id)})
+    if updated_visit is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Visit not found",
+        )
 
     return VisitResponse(
         id=str(updated_visit["_id"]),
@@ -858,10 +894,10 @@ async def delete_visit(visit_id: str, current_user: dict = Depends(get_current_g
 
     try:
         visit = await visits.find_one({"_id": ObjectId(visit_id)})
-    except Exception:
+    except InvalidId as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid visit ID"
-        )
+        ) from exc
 
     if not visit:
         raise HTTPException(
@@ -905,87 +941,84 @@ async def get_notifications(
     """
     Get notifications for the current owner based on recent activity
     """
-    try:
-        visits_collection = get_visits_collection()
+    visits_collection = get_visits_collection()
 
-        # Get owner's flat_id
-        user_id = current_user.get("user_id")
-        resident = await db.users.find_one({"_id": ObjectId(user_id)})
-        if not resident:
-            return []
+    # Get owner's flat_id
+    user_id = current_user.get("user_id")
+    if not isinstance(user_id, str) or not user_id:
+        return []
+    resident = await get_owner_profile(user_id, db)
+    if not resident:
+        return []
 
-        flat_id = resident.get("flat_id")
-        if not flat_id:
-            return []
+    flat_id = resident.get("flat_id")
+    if not flat_id:
+        return []
 
-        # Fetch recent visits (last 50) where specifically for this flat or broadcast to this flat
-        cursor = (
-            visits_collection.find(
-                {
-                    "$or": [{"owner_id": flat_id}, {"target_flat_ids": flat_id}],
-                    "status": {"$in": ["approved", "rejected", "auto_approved"]},
-                }
-            )
-            .sort("updated_at", -1)
-            .limit(50)
+    # Fetch recent visits (last 50) where specifically for this flat or broadcast to this flat
+    cursor = (
+        visits_collection.find(
+            {
+                "$or": [{"owner_id": flat_id}, {"target_flat_ids": flat_id}],
+                "status": {"$in": ["approved", "rejected", "auto_approved"]},
+            }
+        )
+        .sort("updated_at", -1)
+        .limit(50)
+    )
+
+    visits = await cursor.to_list(length=50)
+
+    notifications = []
+    for visit in visits:
+        # Determine type and message based on status
+        notif_type = "general"
+        title = "Visit Update"
+        message = f"Update for {visit['name_snapshot']}"
+
+        if visit["status"] == "approved":
+            notif_type = "approval"
+            title = "Visitor Approved"
+            message = f"{visit['name_snapshot']} has been approved for entry."
+        elif visit["status"] == "rejected":
+            notif_type = "rejection"
+            title = "Visitor Rejected"
+            message = f"Entry denied for {visit['name_snapshot']}."
+        elif visit["status"] == "auto_approved":
+            notif_type = "qr"
+            title = "QR Code Used"
+            message = f"{visit['name_snapshot']} entered using QR code."
+
+        # Calculate relative time
+        updated_at = visit.get("updated_at", visit["created_at"])
+        diff = get_ist_now() - updated_at
+
+        if diff.days > 0:
+            timestamp = f"{diff.days}d ago"
+        elif diff.seconds >= 3600:
+            timestamp = f"{diff.seconds // 3600}h ago"
+        elif diff.seconds >= 60:
+            timestamp = f"{diff.seconds // 60}m ago"
+        else:
+            timestamp = "Just now"
+
+        is_broadcast = visit.get("is_all_flats") or (
+            visit.get("target_flat_ids") and len(visit["target_flat_ids"]) > 1
         )
 
-        visits = await cursor.to_list(length=50)
+        notifications.append(
+            {
+                "id": str(visit["_id"]),
+                "type": notif_type,
+                "title": title,
+                "message": message,
+                "timestamp": timestamp,
+                "read": True,  # For now, mark all as read since we don't track read status
+                "is_broadcast": is_broadcast,
+            }
+        )
 
-        notifications = []
-        for visit in visits:
-            # Determine type and message based on status
-            notif_type = "general"
-            title = "Visit Update"
-            message = f"Update for {visit['name_snapshot']}"
-
-            if visit["status"] == "approved":
-                notif_type = "approval"
-                title = "Visitor Approved"
-                message = f"{visit['name_snapshot']} has been approved for entry."
-            elif visit["status"] == "rejected":
-                notif_type = "rejection"
-                title = "Visitor Rejected"
-                message = f"Entry denied for {visit['name_snapshot']}."
-            elif visit["status"] == "auto_approved":
-                notif_type = "qr"
-                title = "QR Code Used"
-                message = f"{visit['name_snapshot']} entered using QR code."
-
-            # Calculate relative time
-            updated_at = visit.get("updated_at", visit["created_at"])
-            diff = get_ist_now() - updated_at
-            
-            if diff.days > 0:
-                timestamp = f"{diff.days}d ago"
-            elif diff.seconds >= 3600:
-                timestamp = f"{diff.seconds // 3600}h ago"
-            elif diff.seconds >= 60:
-                timestamp = f"{diff.seconds // 60}m ago"
-            else:
-                timestamp = "Just now"
-
-            is_broadcast = visit.get("is_all_flats") or (
-                visit.get("target_flat_ids") and len(visit["target_flat_ids"]) > 1
-            )
-
-            notifications.append(
-                {
-                    "id": str(visit["_id"]),
-                    "type": notif_type,
-                    "title": title,
-                    "message": message,
-                    "timestamp": timestamp,
-                    "read": True,  # For now, mark all as read since we don't track read status
-                    "is_broadcast": is_broadcast,
-                }
-            )
-
-        return notifications
-
-    except Exception as e:
-        print(f"[ERROR] Failed to get notifications: {str(e)}")
-        return []
+    return notifications
 
 
 @router.get("/pending", response_model=List[VisitResponse])
@@ -996,96 +1029,71 @@ async def get_pending_visits(
     Get all pending visits for the current owner
     Used by Horizon approvals page
     """
-    try:
-        visits_collection = get_visits_collection()
+    visits_collection = get_visits_collection()
 
-        # Log current user for debugging
-        print(f"[DEBUG] Current user: {current_user}")
-
-        # Look up owner's flat_id from database (JWT doesn't have it)
-        user_id = current_user.get("user_id")
-        if not user_id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="user_id missing from JWT",
-            )
-
-        print(f"[DEBUG] Looking up resident with _id: {user_id}")
-        resident = await db.users.find_one({"_id": ObjectId(user_id)})
-        print(f"[DEBUG] Resident found: {resident}")
-
-        if not resident:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Owner not found with user_id: {user_id}",
-            )
-
-        flat_id = resident.get("flat_id")
-        if not flat_id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Owner {resident.get('name')} missing flat_id",
-            )
-
-        print(f"[DEBUG] Querying visits for flat_id: {flat_id}")
-        visits = (
-            await visits_collection.find(
-                {
-                    "$or": [{"owner_id": flat_id}, {"target_flat_ids": flat_id}],
-                    "status": "pending",
-                }
-            )
-            .sort("created_at", -1)
-            .to_list(length=100)
-        )
-
-        print(f"[DEBUG] Found {len(visits)} pending visits")
-
-        return [map_visit_to_response(visit) for visit in visits]
-    except Exception as e:
-        print(f"[ERROR] Failed to get pending visits: {str(e)}")
-        import traceback
-
-        traceback.print_exc()
+    # Look up owner's flat_id from database (JWT doesn't have it)
+    user_id = current_user.get("user_id")
+    if not user_id:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch pending visits: {str(e)}",
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="user_id missing from JWT",
         )
+
+    resident = await get_owner_profile(user_id, db)
+
+    if not resident:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Owner not found with user_id: {user_id}",
+        )
+
+    flat_id = resident.get("flat_id")
+    if not flat_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Owner {resident.get('name')} missing flat_id",
+        )
+
+    visits = (
+        await visits_collection.find(
+            {
+                "$or": [{"owner_id": flat_id}, {"target_flat_ids": flat_id}],
+                "status": "pending",
+            }
+        )
+        .sort("created_at", -1)
+        .to_list(length=100)
+    )
+
+    return [map_visit_to_response(visit) for visit in visits]
 
 
 @router.get("/history", response_model=List[VisitResponse])
 async def get_history_visits(
-    current_user: dict = Depends(get_current_owner),
-    db = Depends(get_database)
+    current_user: dict = Depends(get_current_owner), db=Depends(get_database)
 ):
     """Get all approved and rejected visits for the current owner"""
-    try:
-        visits_collection = get_visits_collection()
-        user_id = current_user.get("user_id")
-        flat_id = await get_owner_flat_id(user_id, db)
-        
-        # Get all visits that are NOT pending
-        query = {
-            "owner_id": flat_id,
-            "status": {"$in": ["approved", "rejected"]}
-        }
-
-        visits = []
-        async for visit in visits_collection.find(query).sort("created_at", -1).limit(50):
-            visits.append(map_visit_to_response(visit))
-        return visits
-    except Exception as e:
-        print(f"[ERROR] Failed to get visit history: {str(e)}")
+    visits_collection = get_visits_collection()
+    user_id = current_user.get("user_id")
+    if not isinstance(user_id, str) or not user_id:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch visit history: {str(e)}"
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="user_id missing from JWT",
         )
+    flat_id = await get_owner_flat_id(user_id, db)
 
+    # Get all visits that are NOT pending
+    query = {"owner_id": flat_id, "status": {"$in": ["approved", "rejected"]}}
+
+    visits = []
+    async for visit in visits_collection.find(query).sort("created_at", -1).limit(50):
+        visits.append(map_visit_to_response(visit))
+    return visits
 
 
 async def get_owner_flat_id(user_id: str, db) -> str:
     """Helper to get flat_id for an owner"""
-    resident = await db.users.find_one({"_id": ObjectId(user_id)})
+    resident = await get_owner_profile(user_id, db)
     if not resident or not resident.get("flat_id"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -1102,7 +1110,7 @@ async def enrich_visit_with_guard_info(visit: dict, db) -> dict:
             visit["guard_name"] = (
                 guard.get("name", "Unknown Guard") if guard else "Unknown Guard"
             )
-        except Exception:
+        except (InvalidId, TypeError, ValueError):
             visit["guard_name"] = "Unknown Guard"
     else:
         visit["guard_name"] = "Unknown Guard"
@@ -1140,16 +1148,15 @@ async def get_today_count(
     """
     visits_collection = get_visits_collection()
     flat_id = await get_owner_flat_id(current_user["user_id"], db)
-    
+
     # Get start of today (midnight) in IST and convert to UTC
     today_start_ist = get_ist_now().replace(hour=0, minute=0, second=0, microsecond=0)
-    today_start_utc = today_start_ist.astimezone(pytz.utc).replace(tzinfo=None)
-    
-    count = await visits_collection.count_documents({
-        "owner_id": flat_id,
-        "created_at": {"$gte": today_start_utc}
-    })
-    
+    today_start_utc = today_start_ist.astimezone(timezone.utc).replace(tzinfo=None)
+
+    count = await visits_collection.count_documents(
+        {"owner_id": flat_id, "created_at": {"$gte": today_start_utc}}
+    )
+
     return {"count": count}
 
 
@@ -1168,31 +1175,39 @@ async def get_recent_activity(
     flat_id = await get_owner_flat_id(current_user["user_id"], db)
     user_id = current_user["user_id"]
     now = get_ist_now()
-    
+
     # 1. Recent visits (Ad-hoc)
-    visits_task = visits_collection.find({
-        "owner_id": flat_id
-    }).sort("created_at", -1).limit(limit).to_list(length=limit)
-    
+    visits_task = (
+        visits_collection.find({"owner_id": flat_id})
+        .sort("created_at", -1)
+        .limit(limit)
+        .to_list(length=limit)
+    )
+
     owner_ids = [user_id, str(user_id)]
     if ObjectId.is_valid(user_id):
         owner_ids.append(ObjectId(user_id))
-        
+
     # 2. Recent regular visitors assigned to this owner
-    visitors_task = visitors_collection.find({
-        "assigned_owner_id": {"$in": owner_ids},
-        "visitor_type": "regular"
-    }).sort("created_at", -1).limit(limit).to_list(length=limit)
-    
+    visitors_task = (
+        visitors_collection.find(
+            {"assigned_owner_id": {"$in": owner_ids}, "visitor_type": "regular"}
+        )
+        .sort("created_at", -1)
+        .limit(limit)
+        .to_list(length=limit)
+    )
+
     import asyncio
+
     visits, visitors = await asyncio.gather(visits_task, visitors_task)
-    
+
     # Unified results
     merged = []
-    
-    for v in (visits or []):
-        try:
-            merged.append({
+
+    for v in visits or []:
+        merged.append(
+            {
                 "id": str(v.get("_id", "unknown")),
                 "visitor_id": v.get("visitor_id"),
                 "name_snapshot": v.get("name_snapshot", "Unknown"),
@@ -1203,15 +1218,14 @@ async def get_recent_activity(
                 "guard_id": v.get("guard_id", "system"),
                 "status": v.get("status", "unknown"),
                 "created_at": v.get("created_at") or now,
-                "is_regular": False
-            })
-        except Exception as e:
-            print(f"Skipping malformed visit: {e}")
-        
-    for r in (visitors or []):
-        try:
-            # Map regular visitor to visit format for the card
-            merged.append({
+                "is_regular": False,
+            }
+        )
+
+    for r in visitors or []:
+        # Map regular visitor to visit format for the card
+        merged.append(
+            {
                 "id": str(r.get("_id", "unknown")),
                 "visitor_id": str(r.get("_id", "unknown")),
                 "name_snapshot": r.get("name", "Unknown"),
@@ -1222,11 +1236,10 @@ async def get_recent_activity(
                 "guard_id": str(r.get("created_by", "system")),
                 "status": r.get("approval_status", "pending"),
                 "created_at": r.get("created_at") or now,
-                "is_regular": True
-            })
-        except Exception as e:
-            print(f"Skipping malformed visitor: {e}")
-        
+                "is_regular": True,
+            }
+        )
+
     # Sort by created_at descending and limit
     # CRITICAL: Ensure we are sorting by datetime objects, fallback to now if missing
     def get_sort_key(x):
@@ -1251,78 +1264,92 @@ async def get_dashboard_stats(
     temp_qr_collection = get_temporary_qr_collection()
     flat_id = await get_owner_flat_id(current_user["user_id"], db)
 
-    query_target = {"$or": [{"owner_id": flat_id}, {"target_flat_ids": flat_id}]}
-
     # Time ranges
     today_start_ist = get_ist_now().replace(hour=0, minute=0, second=0, microsecond=0)
-    today_start_utc = today_start_ist.astimezone(pytz.utc).replace(tzinfo=None)
+    today_start_utc = today_start_ist.astimezone(timezone.utc).replace(tzinfo=None)
     now = get_utc_now()
-    
+
     # Unified metrics (Ad-hoc + Staff)
     visitors_collection = get_visitors_collection()
     curr_uid = current_user["user_id"]
-    
+    owner_id_candidates = [curr_uid, str(curr_uid)]
+    if ObjectId.is_valid(curr_uid):
+        owner_id_candidates.append(ObjectId(curr_uid))
+
     # 1. Today's Arrivals (Ad-hoc + Staff created today)
-    today_count_visits = await visits_collection.count_documents({
-        "owner_id": flat_id,
-        "created_at": {"$gte": today_start_utc}
-    })
-    today_count_staff = await visitors_collection.count_documents({
-        "assigned_owner_id": {"$in": [curr_uid, str(curr_uid), ObjectId(curr_uid)]},
-        "visitor_type": "regular",
-        "created_at": {"$gte": today_start_utc}
-    })
+    today_count_visits = await visits_collection.count_documents(
+        {"owner_id": flat_id, "created_at": {"$gte": today_start_utc}}
+    )
+    today_count_staff = await visitors_collection.count_documents(
+        {
+            "assigned_owner_id": {"$in": owner_id_candidates},
+            "visitor_type": "regular",
+            "created_at": {"$gte": today_start_utc},
+        }
+    )
     total_today = today_count_visits + today_count_staff
-    
+
     # 2. Pending Approvals (Total: Ad-hoc + Staff)
-    pending_count = await visits_collection.count_documents({
-        "owner_id": flat_id,
-        "status": "pending"
-    })
-    
-    pending_staff_count = await visitors_collection.count_documents({
-        "assigned_owner_id": {"$in": [curr_uid, str(curr_uid), ObjectId(curr_uid)]},
-        "approval_status": "pending"
-    })
+    pending_count = await visits_collection.count_documents(
+        {
+            "$or": [{"owner_id": flat_id}, {"target_flat_ids": flat_id}],
+            "status": "pending",
+        }
+    )
+
+    pending_staff_count = await visitors_collection.count_documents(
+        {
+            "$or": [
+                {"assigned_owner_id": {"$in": owner_id_candidates}},
+                {"is_all_flats": True, "valid_flats": flat_id},
+            ],
+            "visitor_type": "regular",
+            "approval_status": "pending",
+        }
+    )
     total_pending = pending_count + pending_staff_count
-    
+
     # 3. Approved Today (Status approved/auto_approved and created today)
-    approved_visits_count = await visits_collection.count_documents({
-        "owner_id": flat_id,
-        "status": {"$in": ["approved", "auto_approved"]},
-        "created_at": {"$gte": today_start_utc}
-    })
+    approved_visits_count = await visits_collection.count_documents(
+        {
+            "owner_id": flat_id,
+            "status": {"$in": ["approved", "auto_approved"]},
+            "created_at": {"$gte": today_start_utc},
+        }
+    )
     # NOTE: Staff approved today (We check both approval_status and recent creation or activity)
     # Since we don't have an 'approved_at' field yet, we use updated_at if it exists or today's creation
     # or just anyone who is active and created today
-    approved_staff_count = await visitors_collection.count_documents({
-        "assigned_owner_id": {"$in": [curr_uid, str(curr_uid), ObjectId(curr_uid)]},
-        "approval_status": "approved",
-        "created_at": {"$gte": today_start_utc}
-    })
+    approved_staff_count = await visitors_collection.count_documents(
+        {
+            "assigned_owner_id": {"$in": owner_id_candidates},
+            "approval_status": "approved",
+            "created_at": {"$gte": today_start_utc},
+        }
+    )
     total_approved = approved_visits_count + approved_staff_count
-    
+
     # 4. Active QR Codes (Temporary QRs + Active Staff QRs)
-    active_temp_qr_count = await temp_qr_collection.count_documents({
-        "owner_id": flat_id,
-        "expires_at": {"$gt": now},
-        "used_at": None
-    })
+    active_temp_qr_count = await temp_qr_collection.count_documents(
+        {"owner_id": flat_id, "expires_at": {"$gt": now}, "used_at": None}
+    )
     # All active staff have permanent QRs
-    active_staff_count = await visitors_collection.count_documents({
-        "assigned_owner_id": {"$in": [curr_uid, str(curr_uid), ObjectId(curr_uid)]},
-        "is_active": True,
-        "visitor_type": "regular"
-    })
+    active_staff_count = await visitors_collection.count_documents(
+        {
+            "assigned_owner_id": {"$in": owner_id_candidates},
+            "is_active": True,
+            "visitor_type": "regular",
+        }
+    )
     total_active_qrs = active_temp_qr_count + active_staff_count
-    
+
     return {
         "today_count": total_today,
         "pending_count": total_pending,
         "pending_adhoc_count": pending_count,
         "pending_staff_count": pending_staff_count,
         "approved_count": total_approved,
-        "active_qr_count": total_active_qrs
+        "active_qr_count": total_active_qrs,
     }
 
 
@@ -1346,7 +1373,7 @@ async def get_weekly_stats(
     pipeline = [
         {
             "$match": {
-                "owner_id": str(current_user["user_id"]),
+                "owner_id": flat_id,
                 "created_at": {"$gte": week_ago},
             }
         },
@@ -1396,10 +1423,10 @@ async def get_visit_details(
 
     try:
         visit = await visits_collection.find_one({"_id": ObjectId(visit_id)})
-    except Exception:
+    except InvalidId as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid visit ID"
-        )
+        ) from exc
 
     if not visit:
         raise HTTPException(
@@ -1423,6 +1450,10 @@ async def get_visit_details(
     # Enrich with guard name
     visit = await enrich_visit_with_guard_info(visit, db)
 
+    entry_time = visit.get("entry_time")
+    exit_time = visit.get("exit_time")
+    updated_at = visit.get("updated_at")
+
     return {
         "id": str(visit["_id"]),
         "visitor_id": visit.get("visitor_id"),
@@ -1433,21 +1464,15 @@ async def get_visit_details(
         "owner_id": visit["owner_id"],
         "guard_id": visit["guard_id"],
         "guard_name": visit.get("guard_name", "Unknown Guard"),
-        "entry_time": (
-            visit.get("entry_time").isoformat() if visit.get("entry_time") else None
-        ),
-        "exit_time": (
-            visit.get("exit_time").isoformat() if visit.get("exit_time") else None
-        ),
+        "entry_time": entry_time.isoformat() if isinstance(entry_time, datetime) else None,
+        "exit_time": exit_time.isoformat() if isinstance(exit_time, datetime) else None,
         "status": visit["status"],
         "qr_token": visit.get("qr_token"),
         "id_type": visit.get("id_type"),
         "id_number": visit.get("id_number"),
         "id_photo_url": visit.get("id_photo_url"),
         "created_at": visit["created_at"].isoformat(),
-        "updated_at": (
-            visit.get("updated_at").isoformat()
-            if visit.get("updated_at")
-            else visit["created_at"].isoformat()
-        ),
+        "updated_at": updated_at.isoformat()
+        if isinstance(updated_at, datetime)
+        else visit["created_at"].isoformat(),
     }

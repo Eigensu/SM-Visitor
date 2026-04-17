@@ -5,9 +5,8 @@ Saves regular visitor photos to GridFS and new visitor photos to local buffer
 
 from fastapi import APIRouter, HTTPException, status, Depends, UploadFile, File
 from pydantic import BaseModel
-from typing import Optional
 
-from middleware.auth import get_current_guard, get_current_user
+from middleware.auth import get_current_guard
 from utils.storage import photo_storage
 
 
@@ -24,7 +23,7 @@ class PhotoUploadResponse(BaseModel):
 @router.post("/photo/regular-visitor", response_model=PhotoUploadResponse)
 async def upload_regular_visitor_photo(
     photo: UploadFile = File(...),
-    current_user: dict = Depends(get_current_guard),
+    _current_user: dict = Depends(get_current_guard),
 ):
     """
     Upload photo for regular visitor (saved to MongoDB GridFS)
@@ -59,7 +58,7 @@ async def upload_regular_visitor_photo(
 
 @router.post("/photo/new-visitor", response_model=PhotoUploadResponse)
 async def upload_new_visitor_photo(
-    photo: UploadFile = File(...), current_user: dict = Depends(get_current_guard)
+    photo: UploadFile = File(...), _current_user: dict = Depends(get_current_guard)
 ):
     """
     Upload photo for new visitor (saved to Cloudinary cloud storage)
@@ -96,7 +95,6 @@ async def upload_new_visitor_photo(
 @router.get("/regular/{file_id}")
 async def get_regular_visitor_photo(
     file_id: str,
-    current_user: dict = Depends(get_current_user)
 ):
     """
     Retrieve regular visitor photo from GridFS
@@ -119,7 +117,6 @@ async def get_regular_visitor_photo(
 @router.get("/buffer/{filename}")
 async def get_buffer_photo(
     filename: str,
-    current_user: dict = Depends(get_current_user)
 ):
     """
     Retrieve new visitor photo from local buffer
@@ -140,7 +137,7 @@ async def get_buffer_photo(
 
 @router.post("/photo/id-card", response_model=PhotoUploadResponse)
 async def upload_id_card_photo(
-    photo: UploadFile = File(...), current_user: dict = Depends(get_current_guard)
+    photo: UploadFile = File(...), _current_user: dict = Depends(get_current_guard)
 ):
     """
     Upload ID card photo (Aadhar/PAN) to Cloudinary

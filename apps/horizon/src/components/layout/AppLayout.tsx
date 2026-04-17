@@ -22,6 +22,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   const isAuthenticated = useStore((state: any) => state.isAuthenticated);
   const setPendingCount = useStore((state: any) => state.setPendingCount);
   const setUnreadCount = useStore((state: any) => state.setUnreadCount);
+  const setNotifications = useStore((state: any) => state.setNotifications);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isChecking, setIsChecking] = useState(true);
@@ -54,9 +55,11 @@ export function AppLayout({ children }: AppLayoutProps) {
       try {
         const stats = await visitsAPI.getDashboardStats();
         const unreadData = await notificationsAPI.getUnreadCount();
+        const notifications = await notificationsAPI.getNotifications(false);
 
         setPendingCount(stats.pendingCount);
         setUnreadCount(typeof unreadData === "object" ? unreadData.count : unreadData);
+        setNotifications(notifications);
       } catch (error) {
         console.error("Layout sync failed:", error);
       }

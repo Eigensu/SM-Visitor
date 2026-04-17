@@ -96,7 +96,7 @@ export function NotificationCenter() {
 
       {/* Dropdown */}
       {isOpen && (
-        <div className="absolute right-0 z-[100] mt-2 w-80 origin-top-right overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl ring-1 ring-black ring-opacity-5 focus:outline-none dark:border-slate-800 dark:bg-slate-950 lg:w-96">
+        <div className="fixed left-2 right-2 top-16 z-[100] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl ring-1 ring-black ring-opacity-5 focus:outline-none dark:border-slate-800 dark:bg-slate-950 sm:left-auto sm:right-4 sm:w-80 md:absolute md:left-full md:right-auto md:top-0 md:ml-3 md:mt-0 md:w-96 md:max-w-[calc(100vw-5rem)] md:origin-top-left lg:right-6 lg:w-96">
           <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/50 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/50">
             <h3 className="text-sm font-bold text-slate-900 dark:text-white">Notifications</h3>
             {unreadCount > 0 && (

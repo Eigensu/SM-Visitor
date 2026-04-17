@@ -80,12 +80,10 @@ export default function QRGenerator() {
   };
 
   const handleDownload = (qrData: any) => {
-    console.log("Download QR Data:", qrData); // Debug log
     const filename = qrData.guest_name || "Guest";
 
     // Use the base64 image from the backend if available
     if (qrData.qr_image_url) {
-      console.log("Using backend qr_image_url"); // Debug log
       downloadQRCode(
         qrData.qr_image_url,
         filename,
@@ -96,7 +94,6 @@ export default function QRGenerator() {
     }
 
     // Fallback: Generate from QR component
-    console.log("Fallback to SVG conversion"); // Debug log
     const qrElement = document.querySelector('[data-testid="qr-code"]') as SVGElement;
     if (!qrElement) {
       toast.error("QR code not found");
@@ -119,9 +116,7 @@ export default function QRGenerator() {
           text: `Entry pass for ${qrData.guest_name || "Guest"}. Valid until ${new Date(qrData.expires_at).toLocaleString()}`,
           url: window.location.href, // Ideally this would be a public link
         });
-      } catch (error) {
-        console.log("Error sharing:", error);
-      }
+      } catch (_error) {}
     } else {
       // Fallback
       navigator.clipboard.writeText(qrData.token);

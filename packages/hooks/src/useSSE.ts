@@ -71,7 +71,6 @@ export function useSSE(config: SSEConfig) {
 
       if (eventId) {
         if (seenEventIds.current.has(eventId)) {
-          console.debug(`♻️ SSE: Skipping duplicate event [${type}] (id=${eventId})`);
           return;
         }
         seenEventIds.current.add(eventId);
@@ -83,11 +82,8 @@ export function useSSE(config: SSEConfig) {
         }
       }
 
-      console.log(`📡 SSE: Received event [${type}]`, data);
       handler(data);
-    } catch (error) {
-      console.error(`❌ SSE: Parse error in [${type}] listener`, error);
-    }
+    } catch (_error) {}
   };
 
   const connect = () => {
@@ -96,53 +92,51 @@ export function useSSE(config: SSEConfig) {
     isConnecting.current = true;
     try {
       const es = createConnection();
+
+      if (!es) {
+        // Prevent getting stuck in a permanent "connecting" state.
+        isConnecting.current = false;
+        reconnect();
+        return;
+      }
+
       eventSourceRef.current = es;
 
-      if (es) {
-        es.onopen = () => {
-          console.log("✅ SSE: Connection established");
-          reconnectAttempts.current = 0;
-          isConnecting.current = false;
-        };
+      es.onopen = () => {
+        reconnectAttempts.current = 0;
+        isConnecting.current = false;
+      };
 
-        es.onerror = (error) => {
-          console.warn("⚠️ SSE: Connection lost, attempting reconnection...");
-          isConnecting.current = false;
-          reconnect();
-        };
+      es.onerror = (_error) => {
+        isConnecting.current = false;
+        reconnect();
+      };
 
-        // Default message listener
-        es.onmessage = (event) => {
-          if (!onMessage) return;
-          handleEvent(onMessage, event, "message");
-        };
+      // Default message listener
+      es.onmessage = (event) => {
+        if (!onMessage) return;
+        handleEvent(onMessage, event, "message");
+      };
 
-        // Named listeners
-        Object.entries(handlers).forEach(([eventType, handler]) => {
-          es.addEventListener(eventType, (event: any) => {
-            handleEvent(handler, event, eventType);
-          });
+      // Named listeners
+      Object.entries(handlers).forEach(([eventType, handler]) => {
+        es.addEventListener(eventType, (event: any) => {
+          handleEvent(handler, event, eventType);
         });
-      }
-    } catch (error) {
-      console.error("❌ SSE: Failed to create connection", error);
+      });
+    } catch (_error) {
       isConnecting.current = false;
     }
   };
 
   const reconnect = () => {
     if (reconnectAttempts.current >= maxReconnectAttempts) {
-      console.error("❌ SSE: Maximum reconnection attempts reached.");
       toast.error("Lost real-time connection to server.", { duration: 6000 });
       return;
     }
 
     const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), maxReconnectDelay);
     reconnectAttempts.current++;
-
-    console.log(
-      `Reconnecting SSE in ${delay}ms (attempt ${reconnectAttempts.current}/${maxReconnectAttempts})...`
-    );
 
     reconnectTimeoutRef.current = setTimeout(() => {
       connect();

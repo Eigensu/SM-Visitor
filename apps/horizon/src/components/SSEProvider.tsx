@@ -5,12 +5,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useSSE } from "@sm-visitor/hooks";
 import { useStore } from "@/lib/store";
-import { createSSEConnection } from "@/lib/api";
+import { createSSEConnection, notificationsAPI } from "@/lib/api";
 import { sendNotification } from "@/lib/notifications";
 import toast from "react-hot-toast";
-import { useRouter } from "next/navigation";
 
 interface SSEProviderProps {
   children: React.ReactNode;
@@ -18,8 +18,23 @@ interface SSEProviderProps {
 }
 
 export function SSEProvider({ children, onRefresh }: SSEProviderProps) {
-  const { isAuthenticated, user, triggerRefresh } = useStore();
+  const { isAuthenticated, user, triggerRefresh, setNotifications, setUnreadCount } = useStore();
+  const router = useRouter();
   const [hasFetchedInitial, setHasFetchedInitial] = useState(false);
+
+  const refreshNotifications = async () => {
+    try {
+      const [notifications, unreadData] = await Promise.all([
+        notificationsAPI.getNotifications(false),
+        notificationsAPI.getUnreadCount(),
+      ]);
+
+      setNotifications(notifications);
+      setUnreadCount(typeof unreadData === "object" ? unreadData.count : unreadData);
+    } catch (error) {
+      console.error("Failed to refresh notifications:", error);
+    }
+  };
 
   useEffect(() => {
     // Safety Net: Always fetch UI state once at mount ensuring missed events
@@ -38,30 +53,42 @@ export function SSEProvider({ children, onRefresh }: SSEProviderProps) {
     createConnection: createSSEConnection,
     handlers: {
       NEW_VISITOR_REQUEST: (data: any) => {
-        console.log("🔔 [HORIZON] New visitor request received:", data);
         toast.success(`New Request: ${data.name || "Visitor"}`, {
           icon: "👤",
           duration: 5000,
         });
 
+        sendNotification("New user is at the gate", {
+          body: `${data.name || "A visitor"} is waiting for approval.`,
+          tag: data.visit_id || data.id || data.name || "new-visitor-request",
+          onClick: () => router.push("/approvals"),
+        });
+
         // 🔥 SCOPED REFRESH
         triggerRefresh("approvals");
         triggerRefresh("dashboard");
+        refreshNotifications();
         if (onRefresh) onRefresh();
       },
 
       VISITOR_APPROVED: (data: any) => {
-        console.log("✅ [HORIZON] Visitor approved confirmation:", data);
         triggerRefresh("visitors");
         triggerRefresh("approvals");
         triggerRefresh("dashboard");
+        refreshNotifications();
         if (onRefresh) onRefresh();
       },
 
       // Legacy or other event support
       visit_request: (data: any) => {
         toast.success(`Entry Request: ${data.name_snapshot || "Guest"}`, { icon: "🚗" });
+        sendNotification("New user is at the gate", {
+          body: `${data.name_snapshot || "A visitor"} is waiting for approval.`,
+          tag: data.visit_id || data.id || data.name_snapshot || "visit-request",
+          onClick: () => router.push("/approvals"),
+        });
         triggerRefresh("dashboard");
+        refreshNotifications();
         if (onRefresh) onRefresh();
       },
     },

@@ -142,12 +142,6 @@ export default function DashboardPage() {
       icon: QrCode,
       href: "/scan",
     },
-    {
-      title: "Today's Log",
-      description: "View all activity",
-      icon: ClipboardList,
-      href: "/history",
-    },
   ];
 
   return (

@@ -1,11 +1,10 @@
-from datetime import datetime
-from typing import Dict, Any, List, Optional
-from zoneinfo import ZoneInfo
+from datetime import datetime, timezone
+from typing import Dict, Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import logging
-import pytz
 
 logger = logging.getLogger(__name__)
-IST = pytz.timezone('Asia/Kolkata')
+IST = ZoneInfo("Asia/Kolkata")
 
 def get_utc_now() -> datetime:
     """
@@ -18,7 +17,7 @@ def get_ist_now() -> datetime:
     """
     Returns the current IST-aware datetime.
     """
-    return datetime.now(pytz.utc).astimezone(IST)
+    return datetime.now(timezone.utc).astimezone(IST)
 
 def format_ist(dt: datetime) -> str:
     """
@@ -26,7 +25,7 @@ def format_ist(dt: datetime) -> str:
     """
     if dt.tzinfo is None:
         # Assume UTC if no timezone info
-        dt = pytz.utc.localize(dt)
+        dt = dt.replace(tzinfo=timezone.utc)
     
     return dt.astimezone(IST).isoformat()
 
@@ -37,9 +36,9 @@ def parse_to_ist(iso_string: str) -> datetime:
     try:
         dt = datetime.fromisoformat(iso_string.replace('Z', '+00:00'))
         if dt.tzinfo is None:
-            dt = pytz.utc.localize(dt)
+            dt = dt.replace(tzinfo=timezone.utc)
         return dt.astimezone(IST)
-    except Exception:
+    except ValueError:
         return get_ist_now()
 
 def is_within_schedule(schedule: Dict[str, Any]) -> bool:
@@ -67,8 +66,8 @@ def is_within_schedule(schedule: Dict[str, Any]) -> bool:
         tz_name = schedule.get("timezone", "UTC")
         try:
             tz = ZoneInfo(tz_name)
-        except Exception:
-            logger.warning(f"Invalid timezone {tz_name}, falling back to UTC")
+        except ZoneInfoNotFoundError:
+            logger.warning("Invalid timezone %s, falling back to UTC", tz_name)
             tz = ZoneInfo("UTC")
             
         # Get current time in target timezone
@@ -107,6 +106,6 @@ def is_within_schedule(schedule: Dict[str, Any]) -> bool:
                     
         return False
         
-    except Exception as e:
-        logger.error(f"Error checking schedule: {e}")
+    except (TypeError, ValueError, AttributeError) as exc:
+        logger.error("Error checking schedule: %s", exc)
         return False

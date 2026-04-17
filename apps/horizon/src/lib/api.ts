@@ -256,12 +256,10 @@ export const uploadsAPI = {
 // SSE Connection
 export const createSSEConnection = () => {
   const token = localStorage.getItem("auth_token");
-  console.log("Initializing SSE... checking token:", !!token);
   if (!token) return null;
 
   try {
     const url = `${API_URL}/events/stream?token=${token}`;
-    console.log("Creating EventSource to:", url.split("?")[0]);
     return new EventSource(url, {
       withCredentials: false,
     });
