@@ -20,6 +20,9 @@ export default function QRGenerator() {
   // Form state
   const [guestName, setGuestName] = useState("");
   const [validityHours, setValidityHours] = useState(24);
+  const [isAllFlats, setIsAllFlats] = useState(false);
+  const [selectedFlats, setSelectedFlats] = useState<string[]>([]);
+  const [availableFlats, setAvailableFlats] = useState<string[]>([]);
 
   const fetchHistory = async () => {
     try {
@@ -36,6 +39,19 @@ export default function QRGenerator() {
 
   useEffect(() => {
     fetchHistory();
+    const fetchFlats = async () => {
+      try {
+        const owners = (await tempQRAPI.getAvailableFlats?.()) || [];
+        // fallback if API doesn't have it explicitly
+        const flats = Array.from(
+          new Set(owners.map((o: any) => o.flat_id).filter(Boolean))
+        ) as string[];
+        setAvailableFlats(flats.sort());
+      } catch (error) {
+        console.error("Failed to fetch flats:", error);
+      }
+    };
+    fetchFlats();
   }, []);
 
   const handleGenerate = async () => {
@@ -44,6 +60,8 @@ export default function QRGenerator() {
       const data = await tempQRAPI.generate({
         guest_name: guestName || undefined,
         validity_hours: validityHours,
+        is_all_flats: isAllFlats,
+        valid_flats: isAllFlats ? [] : selectedFlats,
       });
 
       setActiveQR(data);
@@ -180,6 +198,51 @@ export default function QRGenerator() {
                     </button>
                   ))}
                 </div>
+              </div>
+
+              <div className="space-y-4 rounded-lg border border-border bg-muted/10 p-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-foreground">Valid for All Flats</span>
+                  <input
+                    type="checkbox"
+                    checked={isAllFlats}
+                    onChange={(e) => setIsAllFlats(e.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                  />
+                </div>
+
+                {!isAllFlats && (
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                      Specific Flats
+                    </label>
+                    <div className="grid grid-cols-4 gap-2">
+                      {availableFlats.map((flat) => (
+                        <button
+                          key={flat}
+                          type="button"
+                          onClick={() => {
+                            setSelectedFlats((prev) =>
+                              prev.includes(flat) ? prev.filter((f) => f !== flat) : [...prev, flat]
+                            );
+                          }}
+                          className={`rounded border px-1 py-1 text-[10px] font-medium transition-all sm:text-xs ${
+                            selectedFlats.includes(flat)
+                              ? "border-primary bg-primary text-white shadow-sm"
+                              : "border-border bg-background text-muted-foreground hover:border-primary/50"
+                          }`}
+                        >
+                          {flat}
+                        </button>
+                      ))}
+                    </div>
+                    {selectedFlats.length === 0 && (
+                      <p className="text-[10px] font-medium italic text-amber-600">
+                        Defaults to your flat only
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
 
               <Button

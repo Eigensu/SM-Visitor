@@ -121,6 +121,8 @@ class TemporaryQRModel(BaseModel):
     token: str
     expires_at: datetime
     one_time: bool = True
+    is_all_flats: bool = False
+    valid_flats: Optional[List[str]] = None
     used_at: Optional[datetime] = None
     created_at: datetime = Field(default_factory=get_utc_now)
 

@@ -181,6 +181,8 @@ export const visitorsAPI = {
     schedule_end_time?: string;
     auto_approval_enabled?: boolean;
     auto_approval_rule?: string;
+    is_all_flats?: boolean;
+    valid_flats?: string[];
   }) => {
     const response = await apiClient.post("/visitors/regular", data);
     return response.data;
@@ -194,7 +196,12 @@ export const visitorsAPI = {
 
 // Temporary QR API
 export const tempQRAPI = {
-  generate: async (data: { guest_name?: string; validity_hours: number }) => {
+  generate: async (data: {
+    guest_name?: string;
+    validity_hours: number;
+    is_all_flats?: boolean;
+    valid_flats?: string[];
+  }) => {
     const response = await apiClient.post("/temp-qr/generate", data);
     return response.data;
   },

@@ -19,64 +19,8 @@ from services.identity_service import get_owner_by_flat
 router = APIRouter(prefix="/visitors", tags=["Visitors"])
 
 
-# Helper Functions
-def get_category_label(category: str) -> str:
-    """Get display label for visitor category"""
-    labels = {
-        "maid": "Maid",
-        "cook": "Cook",
-        "driver": "Driver",
-        "delivery": "Delivery",
-        "other": "Other"
-    }
-    return labels.get(category, "Other")
 
 
-def get_auto_approval_label(rule: str) -> str:
-    """Get display label for auto-approval rule"""
-    labels = {
-        "always": "Always auto-approve",
-        "within_schedule": "Auto-approve if within schedule",
-        "notify_only": "Notify but don't block"
-    }
-    return labels.get(rule, "Always auto-approve")
-
-
-def is_within_schedule(schedule: dict) -> bool:
-    """Check if current time is within visitor's schedule"""
-    if not schedule.get("enabled"):
-        return True  # No schedule = always allowed
-    
-    try:
-        import pytz
-        from datetime import datetime
-        
-        # Get current day and time in IST
-        ist = pytz.timezone("Asia/Kolkata")
-        now = datetime.now(ist)
-        current_day = now.isoweekday()  # 1=Monday, 7=Sunday
-        current_time = now.strftime("%H:%M")
-        
-        # Check day of week
-        days_of_week = schedule.get("days_of_week", [])
-        if days_of_week and current_day not in days_of_week:
-            return False
-        
-        # Check time windows
-        time_windows = schedule.get("time_windows", [])
-        if not time_windows:
-            return True  # No time restriction
-        
-        for window in time_windows:
-            start_time = window.get("start_time", "00:00")
-            end_time = window.get("end_time", "23:59")
-            if start_time <= current_time <= end_time:
-                return True
-        
-        return False
-    except Exception as e:
-        print(f"[ERROR] Schedule validation failed: {str(e)}")
-        return True  # Default to allowing if validation fails
 
 
 
@@ -85,6 +29,7 @@ class CreateRegularVisitorRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     phone: Optional[str] = Field(None, min_length=10, max_length=15)
     default_purpose: Optional[str] = Field(None, max_length=200)
+    photo_id: str = Field(..., description="ID of the uploaded photo (GridFS file ID)")
     
     # Category
     category: str = Field(default="other", pattern="^(maid|cook|driver|delivery|other)$")
@@ -110,6 +55,8 @@ class UpdateVisitorRequest(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     phone: Optional[str] = Field(None, min_length=10, max_length=15)
     default_purpose: Optional[str] = Field(None, max_length=200)
+    is_all_flats: Optional[bool] = None
+    valid_flats: Optional[List[str]] = None
 
 
 class VisitorResponse(BaseModel):
@@ -132,11 +79,13 @@ class VisitorResponse(BaseModel):
 
 class VisitorWithQRResponse(VisitorResponse):
     qr_image_url: str
+    is_all_flats: bool = False
+    valid_flats: Optional[List[str]] = None
 
 
 @router.post("/regular", response_model=VisitorWithQRResponse, status_code=status.HTTP_201_CREATED)
 async def create_regular_visitor(
-    request: CreateRegularVisitorRequest,
+    request: CreateRegularVisitorRequest = Depends(get_visitor_request),
     photo: UploadFile = File(...),
     current_user: dict = Depends(get_current_owner)
 ):
@@ -198,6 +147,10 @@ async def create_regular_visitor(
             "rule": request.auto_approval_rule,
             "rule_label": get_auto_approval_label(request.auto_approval_rule)
         },
+        
+        # Flat targeting
+        "is_all_flats": request.is_all_flats,
+        "valid_flats": request.valid_flats or [],
         
         "is_active": True,
         "approval_status": "approved",
@@ -708,6 +661,7 @@ async def update_visitor(
 
 
 @router.delete("/{visitor_id}", status_code=status.HTTP_200_OK)
+@router.delete("/regular/{visitor_id}", status_code=status.HTTP_200_OK)
 async def delete_visitor(
     visitor_id: str,
     current_user: dict = Depends(get_current_user)

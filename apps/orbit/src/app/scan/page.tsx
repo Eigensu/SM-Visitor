@@ -25,11 +25,23 @@ export default function ScanPage() {
 
   const handleScanSuccess = async (decodedText: string) => {
     try {
-      // Parse QR data (it's a JSON string)
-      const qrData = JSON.parse(decodedText);
-      const token = qrData.token;
+      let token: string | null = null;
+      let visitorInfo: any = null;
+
+      try {
+        // Try to parse as JSON first (new format)
+        const qrData = JSON.parse(decodedText);
+        token = qrData.token;
+        visitorInfo = qrData; // Store other details if needed
+      } catch (e) {
+        // Fallback: Treat the whole text as the token (legacy format)
+        console.log("Failed to parse QR JSON, using raw text as token");
+        token = decodedText;
+      }
 
       if (!token) {
+        setErrorMessage("Invalid QR code format");
+        setScanState("error");
         toast.error("Invalid QR code format");
         return;
       }
@@ -64,6 +76,7 @@ export default function ScanPage() {
       }
 
       // Show visitor preview
+      // Use backend response data, or merge with QR data if useful
       setVisitorData(response.visitor_data);
       setQRToken(token);
       setScanState("preview");
@@ -86,13 +99,17 @@ export default function ScanPage() {
     setScanState("submitting");
 
     try {
-      await visitsAPI.startVisit({
+      const visit = await visitsAPI.startVisit({
         qr_token: qrToken,
         owner_id: visitorData.owner_id,
         purpose: visitorData.purpose || "Visit",
       });
 
-      toast.success("Entry recorded successfully!");
+      if (visit.status === "pending") {
+        toast.success("Entry requested! Waiting for owner approval.");
+      } else {
+        toast.success("Entry recorded successfully!");
+      }
       router.push("/dashboard");
     } catch (error: any) {
       console.error("Submit entry error:", error);
@@ -187,7 +204,7 @@ export default function ScanPage() {
                     />
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    If the QR code won't scan, you can manually copy and paste its content here.
+                    If the QR code won\'t scan, you can manually copy and paste its content here.
                   </p>
                 </div>
               </details>
@@ -235,9 +252,9 @@ export default function ScanPage() {
                   />
                 </svg>
               </div>
-              <h3 className="mt-4 text-lg font-semibold text-red-800">QR Code Already Used</h3>
+              <h3 className="mt-4 text-lg font-semibold text-red-800">QR Code Error</h3>
               <p className="mt-2 text-sm text-red-700">
-                {errorMessage || "This QR code has already been scanned and used for entry."}
+                {errorMessage || "This QR code could not be validated."}
               </p>
             </div>
 
@@ -246,7 +263,7 @@ export default function ScanPage() {
                 onClick={handleViewTodaysVisits}
                 className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
               >
-                View Today's Visits
+                View Today\'s Visits
               </Button>
               <Button onClick={handleTryAgain} variant="outline" className="flex-1">
                 Scan New QR Code

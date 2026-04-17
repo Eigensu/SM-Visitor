@@ -54,6 +54,7 @@ interface AppState {
   setPendingVisits: (visits: Visit[]) => void;
   setTodayVisits: (visits: Visit[]) => void;
   addPendingVisit: (visit: Visit) => void;
+  addVisit: (visit: Visit) => void;
   updateVisitStatus: (visitId: string, status: Visit["status"]) => void;
   setNotifications: (notifications: any[]) => void;
   addNotification: (notification: any) => void;
@@ -128,18 +129,60 @@ export const useStore = create<AppState>((set, get) => ({
 
   setPendingVisits: (visits) => set({ pendingVisits: visits }),
 
-  setTodayVisits: (visits) => set({ todayVisits: visits }),
+  // Sync pending visits when setting today's visits
+  setTodayVisits: (visits) =>
+    set({
+      todayVisits: visits,
+      pendingVisits: visits.filter((v) => v.status === "pending"),
+    }),
 
   addPendingVisit: (visit) =>
     set((state) => ({
       pendingVisits: [...state.pendingVisits, visit],
+      todayVisits: [...state.todayVisits, visit],
     })),
 
+  addVisit: (visit: Visit) =>
+    set((state) => {
+      // Avoid duplicates
+      if (state.todayVisits.some((v) => v.id === visit.id)) {
+        return state;
+      }
+
+      const newPending =
+        visit.status === "pending" ? [...state.pendingVisits, visit] : state.pendingVisits;
+
+      return {
+        todayVisits: [visit, ...state.todayVisits], // Add to top
+        pendingVisits: newPending,
+      };
+    }),
+
   updateVisitStatus: (visitId, status) =>
-    set((state) => ({
-      pendingVisits: state.pendingVisits.map((v) => (v.id === visitId ? { ...v, status } : v)),
-      todayVisits: state.todayVisits.map((v) => (v.id === visitId ? { ...v, status } : v)),
-    })),
+    set((state) => {
+      console.log("🔄 Updating visit status:", {
+        visitId,
+        status,
+        currentTodayVisits: state.todayVisits.length,
+      });
+
+      const updatedPending = state.pendingVisits.map((v) =>
+        v.id === visitId ? { ...v, status } : v
+      );
+
+      const updatedToday = state.todayVisits.map((v) => (v.id === visitId ? { ...v, status } : v));
+
+      console.log("✅ Updated arrays:", {
+        pendingChanged: updatedPending !== state.pendingVisits,
+        todayChanged: updatedToday !== state.todayVisits,
+        updatedTodayCount: updatedToday.length,
+      });
+
+      return {
+        pendingVisits: updatedPending,
+        todayVisits: updatedToday,
+      };
+    }),
 
   setNotifications: (notifications) => set({ notifications }),
   addNotification: (notification) =>

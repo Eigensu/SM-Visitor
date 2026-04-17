@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 from middleware.auth import get_current_user
 from utils.sse_manager import sse_manager
+from config import ALLOWED_ORIGINS
 
 
 router = APIRouter(prefix="/events", tags=["Events"])
@@ -33,6 +34,11 @@ async def event_stream(request: Request, current_user: dict = Depends(get_curren
         finally:
             # Clean up on disconnect
             await sse_manager.disconnect(user_id, queue)
+    
+    # Resolve the correct CORS origin — the middleware doesn't reliably
+    # inject Access-Control-Allow-Origin on StreamingResponse.
+    origin = request.headers.get("origin", "")
+    allow_origin = origin if origin in ALLOWED_ORIGINS else (ALLOWED_ORIGINS[0] if ALLOWED_ORIGINS else "*")
     
     return StreamingResponse(
         event_generator(),

@@ -9,7 +9,16 @@ import { useStore } from "@/lib/store";
 import { visitsAPI, visitorsAPI } from "@/lib/api";
 import { Button } from "@sm-visitor/ui";
 import { Spinner } from "@sm-visitor/ui";
-import { LogOut, QrCode, UserCheck, ClipboardList, Clock, CheckCircle2, Users } from "lucide-react";
+import {
+  LogOut,
+  QrCode,
+  UserCheck,
+  ClipboardList,
+  Clock,
+  CheckCircle2,
+  Users,
+  UserPlus,
+} from "lucide-react";
 import { StatCard } from "@/components/StatCard";
 import { GlassCard } from "@/components/GlassCard";
 import { NotificationCenter } from "@/components/NotificationCenter";
@@ -17,6 +26,7 @@ import toast from "react-hot-toast";
 
 interface Visit {
   id: string;
+  visitor_id?: string;
   entry_time?: string;
   exit_time?: string;
   status: string;
@@ -164,7 +174,6 @@ export default function DashboardPage() {
       {/* Main Content */}
       <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         {/* Pending Approvals Badge */}
-        {/* Pending Approvals Badge - Always visible but different style if empty */}
         <div
           onClick={() => {
             if (pendingStaffCount > 0 && pendingVisits.length === 0) {
@@ -226,6 +235,18 @@ export default function DashboardPage() {
           ))}
         </div>
 
+        {/* Unified History Link */}
+        <div className="mt-6">
+          <Button
+            variant="outline"
+            className="w-full h-12 text-muted-foreground hover:text-foreground"
+            onClick={() => router.push("/history")}
+          >
+            <ClipboardList className="mr-2 h-4 w-4" />
+            View Complete Today's Log
+          </Button>
+        </div>
+
         {/* Quick Stats */}
         <div className="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-3">
           <StatCard
@@ -251,7 +272,19 @@ export default function DashboardPage() {
                 : todayVisits.filter((v) => v.entry_time && !v.exit_time).length
             }
             icon={Users}
-            onClick={() => router.push("/history?status=active")} // Note: History page needs to handle 'active' status or we filter manually
+            onClick={() => router.push("/history?status=active")}
+          />
+          <StatCard
+            title="Total Guests"
+            value={isLoadingStats ? "..." : todayVisits.filter((v) => !v.visitor_id).length}
+            icon={UserPlus}
+            onClick={() => router.push("/history")}
+          />
+          <StatCard
+            title="Total Daily Staff"
+            value={isLoadingStats ? "..." : todayVisits.filter((v) => v.visitor_id).length}
+            icon={Users}
+            onClick={() => router.push("/history")}
           />
         </div>
       </main>

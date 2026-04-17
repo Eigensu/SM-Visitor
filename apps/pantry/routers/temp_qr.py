@@ -21,6 +21,8 @@ router = APIRouter(prefix="/temp-qr", tags=["Temporary QR"])
 class GenerateTemporaryQRRequest(BaseModel):
     guest_name: Optional[str] = Field(None, max_length=100)
     validity_hours: int = Field(..., ge=1, le=72, description="Validity period in hours (1-72)")
+    is_all_flats: bool = False
+    valid_flats: Optional[List[str]] = None
 
 
 class TemporaryQRResponse(BaseModel):
@@ -279,7 +281,7 @@ async def get_active_qr_codes(
             owner_id=qr["owner_id"],
             guest_name=qr.get("guest_name"),
             token=qr["token"],
-            qr_image_url=qr_image_url,  # Now using actual base64 data URL
+            qr_image_url=qr_image_url,
             expires_at=qr["expires_at"],
             one_time=qr.get("one_time", True),
             created_at=qr["created_at"]

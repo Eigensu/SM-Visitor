@@ -68,7 +68,7 @@ class SSEManager:
                 if user_id in self.user_roles:
                     del self.user_roles[user_id]
         
-        print(f"🔌 SSE disconnected: user_id={user_id}")
+        print(f"[SSE] Disconnected: user_id={user_id}")
     
     async def send_event(self, user_id: str, event_type: str, data: dict):
         """

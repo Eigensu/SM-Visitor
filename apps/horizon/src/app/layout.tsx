@@ -11,6 +11,9 @@ const font = Plus_Jakarta_Sans({ subsets: ["latin"] });
 export const metadata: Metadata = {
   title: "Horizon - Owner Interface",
   description: "Visitor management system for property owners",
+  icons: {
+    icon: "/logo.png",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

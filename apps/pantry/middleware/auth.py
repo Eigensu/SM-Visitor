@@ -1,14 +1,14 @@
 """
 Authentication middleware for protecting routes and extracting user context
 """
-from fastapi import Header, HTTPException, status
+from fastapi import Header, HTTPException, Query, status
 from typing import Optional, Dict, Any
 from utils.jwt_utils import decode_access_token
 
 
 async def get_current_user(
     authorization: Optional[str] = Header(None),
-    token: Optional[str] = None
+    token: Optional[str] = Query(None)
 ) -> Dict[str, Any]:
     """
     Dependency to get current authenticated user from JWT token

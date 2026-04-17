@@ -89,8 +89,10 @@ export const visitsAPI = {
     name?: string;
     phone?: string;
     photo_url?: string;
+    id_type?: string;
+    id_number?: string;
+    id_photo_url?: string;
   }) => {
-    // Construct payload based on whether it's a QR scan or new visitor
     const payload = data.qr_token
       ? {
           qr_request: {
@@ -106,6 +108,9 @@ export const visitsAPI = {
             photo_url: data.photo_url,
             owner_id: data.owner_id,
             purpose: data.purpose,
+            id_type: data.id_type,
+            id_number: data.id_number,
+            id_photo_url: data.id_photo_url,
           },
         };
 

@@ -61,7 +61,7 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
       <span
         className={cn(
           "h-1.5 w-1.5 rounded-full",
-          status === "approved" && "bg-success",
+          (status === "approved" || status === "auto_approved") && "bg-success",
           status === "pending" && "animate-pulse bg-pending",
           status === "rejected" && "bg-destructive",
           status === "expired" && "bg-muted-foreground",

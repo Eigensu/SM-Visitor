@@ -8,7 +8,9 @@ import { useEffect, useState } from "react";
 import { useSSE } from "@sm-visitor/hooks";
 import { useStore } from "@/lib/store";
 import { createSSEConnection } from "@/lib/api";
+import { sendNotification } from "@/lib/notifications";
 import toast from "react-hot-toast";
+import { useRouter } from "next/navigation";
 
 interface SSEProviderProps {
   children: React.ReactNode;
