@@ -41,8 +41,12 @@ const statusConfig: Record<StatusType, { label: string; className: string }> = {
 };
 
 export function StatusBadge({ status, className }: StatusBadgeProps) {
-  const config = statusConfig[status] || {
-    label: (status || "Unknown").replace("_", " "),
+  const safeStatus = status || "pending";
+  const config = statusConfig[safeStatus as StatusType] || {
+    label:
+      typeof safeStatus === "string"
+        ? safeStatus.charAt(0).toUpperCase() + safeStatus.slice(1).replace("_", " ")
+        : "Unknown",
     className: "bg-muted text-muted-foreground border-border",
   };
 
@@ -61,7 +65,7 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
           status === "pending" && "animate-pulse bg-pending",
           status === "rejected" && "bg-destructive",
           status === "expired" && "bg-muted-foreground",
-          status === "active" && "bg-primary"
+          (status === "active" || status === "auto_approved") && "bg-primary"
         )}
       />
       {config.label}

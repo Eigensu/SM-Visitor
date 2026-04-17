@@ -9,12 +9,6 @@ export const downloadQRCode = (
   onError?: (error: string) => void
 ) => {
   try {
-    console.log("Downloading QR code:", {
-      filename,
-      isDataUrl: dataUrl.startsWith("data:image/"),
-      dataUrlType: dataUrl.split(",")[0],
-    });
-
     // Validate data URL
     if (!dataUrl.startsWith("data:image/")) {
       console.error("Invalid data URL format:", dataUrl.substring(0, 50));
@@ -26,7 +20,6 @@ export const downloadQRCode = (
     fetch(dataUrl)
       .then((res) => res.blob())
       .then((blob) => {
-        console.log("Converted to blob:", blob.size, "bytes");
         const url = URL.createObjectURL(blob);
 
         const downloadLink = document.createElement("a");
@@ -45,7 +38,6 @@ export const downloadQRCode = (
           URL.revokeObjectURL(url);
         }, 100);
 
-        console.log("Download triggered successfully");
         onSuccess?.();
       })
       .catch((error) => {
@@ -65,7 +57,6 @@ export const downloadQRFromSVG = (
   onError?: (error: string) => void
 ) => {
   try {
-    console.log("Converting SVG to download:", { filename });
     const svgData = new XMLSerializer().serializeToString(svgElement);
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d");
@@ -90,7 +81,6 @@ export const downloadQRFromSVG = (
         ctx.drawImage(img, 0, 0, 300, 300);
 
         const pngFile = canvas.toDataURL("image/png");
-        console.log("SVG converted to PNG, starting download");
         downloadQRCode(pngFile, filename, onSuccess, onError);
       } catch (error) {
         console.error("Canvas conversion error:", error);

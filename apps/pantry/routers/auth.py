@@ -9,11 +9,19 @@ from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime, timedelta
 import jwt
-import bcrypt  # Added bcrypt
+from passlib.context import CryptContext
+import bcrypt
 import os
+
+# Fix for passlib/bcrypt incompatibility (AttributeError: module 'bcrypt' has no attribute '__about__')
+if not hasattr(bcrypt, "__about__"):
+    class BcryptAbout:
+        __version__ = bcrypt.__version__
+    bcrypt.__about__ = BcryptAbout()
 
 from database import get_database
 from bson import ObjectId
+from utils.time_utils import get_ist_now, get_utc_now
 from utils.sse_manager import sse_manager
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -75,11 +83,12 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def create_access_token(user_id: str, role: str) -> str:
     """Create JWT access token"""
+    now = get_utc_now()
     payload = {
         "user_id": user_id,
         "role": role,
-        "exp": datetime.utcnow() + timedelta(hours=JWT_EXPIRATION_HOURS),
-        "iat": datetime.utcnow()
+        "exp": now + timedelta(hours=JWT_EXPIRATION_HOURS),
+        "iat": now
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
@@ -147,7 +156,7 @@ async def get_current_user(
     # Update last seen
     await collection.update_one(
         {"_id": user["_id"]},
-        {"$set": {"last_seen": datetime.utcnow()}}
+        {"$set": {"last_seen": get_utc_now()}}
     )
     
     return user
@@ -213,7 +222,7 @@ async def signup(request: SignupRequest, background_tasks: BackgroundTasks, db =
         "role": request.role,
         "flat_id": request.flat_id,
         "last_seen": None,
-        "created_at": datetime.utcnow(),
+        "created_at": get_utc_now(),
         "metadata": {}
     }
     
@@ -303,7 +312,7 @@ async def login(request: LoginRequest, db = Depends(get_database)):
     # Update last seen
     await collection.update_one(
         {"_id": user["_id"]},
-        {"$set": {"last_seen": datetime.utcnow()}}
+        {"$set": {"last_seen": get_utc_now()}}
     )
     
     # Prepare response

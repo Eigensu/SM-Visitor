@@ -1,4 +1,4 @@
-import { cn } from "@/lib/utils";
+import { cn, getPhotoUrl } from "@/lib/utils";
 import { User, Clock, MapPin, Phone } from "lucide-react";
 import { StatusBadge, StatusType } from "./StatusBadge";
 import { GlassCard } from "./GlassCard";
@@ -15,6 +15,7 @@ interface VisitorCardProps {
     status: StatusType;
     timestamp: string;
     photo?: string;
+    qr_validity_hours?: number;
   };
   onApprove?: () => void;
   onReject?: () => void;
@@ -40,17 +41,30 @@ export function VisitorCard({
         <div className="flex items-start gap-4">
           <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl bg-primary/10">
             {visitor.photo ? (
-              <img src={visitor.photo} alt={visitor.name} className="h-full w-full object-cover" />
+              <img
+                src={getPhotoUrl(visitor.photo)}
+                alt={visitor.name}
+                className="h-full w-full object-cover"
+              />
             ) : (
               <User className="h-6 w-6 text-primary" strokeWidth={1.5} />
             )}
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-start justify-between gap-2">
-              <h3 className="truncate font-semibold text-foreground">{visitor.name}</h3>
+              <div>
+                <h3 className="truncate font-semibold text-foreground">{visitor.name}</h3>
+                {visitor.hasOwnProperty("qr_validity_hours") && (
+                  <span
+                    className={`mt-1 inline-flex items-center rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${visitor.qr_validity_hours ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}`}
+                  >
+                    {visitor.qr_validity_hours ? `${visitor.qr_validity_hours}h Pass` : "Permanent"}
+                  </span>
+                )}
+              </div>
               <StatusBadge status={visitor.status} />
             </div>
-            <p className="mt-0.5 text-sm text-muted-foreground">{visitor.purpose}</p>
+            <p className="mt-1 text-sm text-muted-foreground">{visitor.purpose}</p>
           </div>
         </div>
 

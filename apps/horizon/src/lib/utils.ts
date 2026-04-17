@@ -2,26 +2,49 @@
  * Utility functions
  */
 
-// Format date/time
+/**
+ * Parse a backend datetime string as UTC.
+ * The backend stores naive ISO strings (no 'Z' / no offset).
+ * Without this, browsers treat them as LOCAL time, showing times 5h 30m earlier.
+ */
+const parseUTCDate = (dateString: string): Date => {
+  if (!dateString) return new Date();
+  // Append 'Z' if the string has no timezone info
+  const normalized =
+    dateString.endsWith("Z") ||
+    dateString.includes("+") ||
+    /\d{2}:\d{2}$/.test(dateString.slice(-6)) // e.g. +05:30
+      ? dateString
+      : dateString + "Z";
+  return new Date(normalized);
+};
+
+// Format date/time — all use parseUTCDate for correct IST display
 export const formatTime = (dateString: string): string => {
-  const date = new Date(dateString);
-  return date.toLocaleTimeString("en-US", {
+  return parseUTCDate(dateString).toLocaleTimeString("en-IN", {
     hour: "2-digit",
     minute: "2-digit",
+    timeZone: "Asia/Kolkata",
   });
 };
 
 export const formatDate = (dateString: string): string => {
-  const date = new Date(dateString);
-  return date.toLocaleDateString("en-US", {
+  return parseUTCDate(dateString).toLocaleDateString("en-IN", {
     month: "short",
     day: "numeric",
     year: "numeric",
+    timeZone: "Asia/Kolkata",
   });
 };
 
 export const formatDateTime = (dateString: string): string => {
-  return `${formatDate(dateString)} ${formatTime(dateString)}`;
+  return parseUTCDate(dateString).toLocaleString("en-IN", {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Asia/Kolkata",
+  });
 };
 
 // Phone number validation
@@ -106,4 +129,33 @@ export const capturePhoto = async (): Promise<File | null> => {
     console.error("Error capturing photo:", error);
     return null;
   }
+};
+// Get full photo URL
+export const getPhotoUrl = (photoPath?: string): string | undefined => {
+  if (!photoPath) return undefined;
+
+  // Already a full URL or data URI — return as-is
+  if (photoPath.startsWith("http") || photoPath.startsWith("data:")) {
+    return photoPath;
+  }
+
+  const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+
+  // Absolute path starting with /uploads — prepend base only
+  if (photoPath.startsWith("/uploads/")) {
+    return `${baseUrl}${photoPath}`;
+  }
+
+  // Buffer path (relative)
+  if (photoPath.startsWith("uploads/photo/buffer/") || photoPath.includes("/buffer/")) {
+    return `${baseUrl}/${photoPath}`;
+  }
+
+  // Bare GridFS ObjectId (24-char hex) — route to /uploads/photo/regular/{id}
+  if (/^[a-f0-9]{24}$/i.test(photoPath)) {
+    return `${baseUrl}/uploads/photo/regular/${photoPath}`;
+  }
+
+  // Fallback
+  return `${baseUrl}/${photoPath}`;
 };

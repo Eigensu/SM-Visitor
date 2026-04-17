@@ -46,7 +46,7 @@ export default function ScanPage() {
         return;
       }
 
-      // Prevent duplicate scans of the same QR token
+      // Prevent duplicate scans of the same QR token (not the full text)
       if (qrToken === token) {
         console.log("Duplicate QR token ignored");
         return;
@@ -62,11 +62,15 @@ export default function ScanPage() {
           response.error?.includes("already scanned")
         ) {
           setErrorMessage("This QR code has already been used");
-        } else {
-          setErrorMessage(response.error || "Invalid or expired QR code");
+          setScanState("error");
+
+          toast.error("QR code already used. Check today's visits or scan a new code.", {
+            duration: 4000,
+          });
+
+          return;
         }
 
-        setScanState("error");
         toast.error(response.error || "Invalid or expired QR code");
         return;
       }
@@ -80,10 +84,12 @@ export default function ScanPage() {
       toast.success("QR code validated successfully!");
     } catch (error: any) {
       console.error("QR scan error:", error);
-      const msg = error.response?.data?.detail || "Failed to validate QR code";
-      setErrorMessage(msg);
-      setScanState("error");
-      toast.error(msg);
+
+      if (error.message?.includes("JSON")) {
+        toast.error("Invalid QR code format");
+      } else {
+        toast.error(error.response?.data?.detail || "Failed to validate QR code");
+      }
     }
   };
 
@@ -198,7 +204,7 @@ export default function ScanPage() {
                     />
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    If the QR code won't scan, you can manually copy and paste its content here.
+                    If the QR code won\'t scan, you can manually copy and paste its content here.
                   </p>
                 </div>
               </details>
@@ -246,9 +252,9 @@ export default function ScanPage() {
                   />
                 </svg>
               </div>
-              <h3 className="mt-4 text-lg font-semibold text-red-800">QR Code Already Used</h3>
+              <h3 className="mt-4 text-lg font-semibold text-red-800">QR Code Error</h3>
               <p className="mt-2 text-sm text-red-700">
-                {errorMessage || "This QR code has already been scanned and used for entry."}
+                {errorMessage || "This QR code could not be validated."}
               </p>
             </div>
 
@@ -257,7 +263,7 @@ export default function ScanPage() {
                 onClick={handleViewTodaysVisits}
                 className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
               >
-                View Today's Visits
+                View Today\'s Visits
               </Button>
               <Button onClick={handleTryAgain} variant="outline" className="flex-1">
                 Scan New QR Code

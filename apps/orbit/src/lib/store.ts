@@ -41,6 +41,10 @@ interface AppState {
   isLoading: boolean;
   error: string | null;
 
+  // Notifications
+  notifications: any[];
+  unreadCount: number;
+
   // Actions
   setUser: (user: User | null) => void;
   setToken: (token: string | null) => void;
@@ -52,8 +56,18 @@ interface AppState {
   addPendingVisit: (visit: Visit) => void;
   addVisit: (visit: Visit) => void;
   updateVisitStatus: (visitId: string, status: Visit["status"]) => void;
+  setNotifications: (notifications: any[]) => void;
+  addNotification: (notification: any) => void;
+  setUnreadCount: (count: number) => void;
+  clearUnreadCount: () => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
+  // Refresh Trigger (Scoped for performance)
+  refreshMap: {
+    visitors: number;
+    dashboard: number;
+  };
+  triggerRefresh: (scope: "visitors" | "dashboard") => void;
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -64,8 +78,21 @@ export const useStore = create<AppState>((set, get) => ({
   isAuthLoading: true, // Start with loading true
   pendingVisits: [],
   todayVisits: [],
+  notifications: [],
+  unreadCount: 0,
   isLoading: false,
   error: null,
+  refreshMap: {
+    visitors: 0,
+    dashboard: 0,
+  },
+  triggerRefresh: (scope) =>
+    set((state) => ({
+      refreshMap: {
+        ...state.refreshMap,
+        [scope]: state.refreshMap[scope] + 1,
+      },
+    })),
 
   // Actions
   setUser: (user) => set({ user, isAuthenticated: !!user }),
@@ -88,7 +115,14 @@ export const useStore = create<AppState>((set, get) => ({
   logout: () => {
     localStorage.removeItem("auth_token");
     localStorage.removeItem("user");
-    set({ user: null, token: null, isAuthenticated: false, isAuthLoading: false });
+    set({
+      user: null,
+      token: null,
+      isAuthenticated: false,
+      isAuthLoading: false,
+      notifications: [],
+      unreadCount: 0,
+    });
   },
 
   setAuthLoading: (loading) => set({ isAuthLoading: loading }),
@@ -149,6 +183,15 @@ export const useStore = create<AppState>((set, get) => ({
         todayVisits: updatedToday,
       };
     }),
+
+  setNotifications: (notifications) => set({ notifications }),
+  addNotification: (notification) =>
+    set((state) => ({
+      notifications: [notification, ...state.notifications],
+      unreadCount: state.unreadCount + 1,
+    })),
+  setUnreadCount: (count) => set({ unreadCount: count }),
+  clearUnreadCount: () => set({ unreadCount: 0 }),
 
   setLoading: (loading) => set({ isLoading: loading }),
 

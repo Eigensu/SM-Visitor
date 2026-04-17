@@ -78,6 +78,10 @@ interface AppState {
   isLoading: boolean;
   error: string | null;
 
+  // Notifications
+  notifications: any[];
+  unreadCount: number;
+
   // Actions
   setUser: (user: User | null) => void;
   setToken: (token: string | null) => void;
@@ -105,9 +109,23 @@ interface AppState {
   addTempQR: (qr: TempQR) => void;
   removeTempQR: (qrId: string) => void;
 
+  // Notification actions
+  setNotifications: (notifications: any[]) => void;
+  addNotification: (notification: any) => void;
+  setUnreadCount: (count: number) => void;
+  clearUnreadCount: () => void;
+
   // UI actions
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
+
+  // Refresh Trigger (Scoped for performance)
+  refreshMap: {
+    visitors: number;
+    approvals: number;
+    dashboard: number;
+  };
+  triggerRefresh: (scope: "visitors" | "approvals" | "dashboard") => void;
 }
 
 export const useStore = create<AppState>((set) => ({
@@ -122,8 +140,22 @@ export const useStore = create<AppState>((set) => ({
   regularVisitors: [],
   regularCount: 0,
   tempQRs: [],
+  notifications: [],
+  unreadCount: 0,
   isLoading: false,
   error: null,
+  refreshMap: {
+    visitors: 0,
+    approvals: 0,
+    dashboard: 0,
+  },
+  triggerRefresh: (scope) =>
+    set((state) => ({
+      refreshMap: {
+        ...state.refreshMap,
+        [scope]: state.refreshMap[scope] + 1,
+      },
+    })),
 
   // Auth actions
   setUser: (user) => set({ user, isAuthenticated: !!user }),
@@ -146,7 +178,13 @@ export const useStore = create<AppState>((set) => ({
   logout: () => {
     localStorage.removeItem("auth_token");
     localStorage.removeItem("user");
-    set({ user: null, token: null, isAuthenticated: false });
+    set({
+      user: null,
+      token: null,
+      isAuthenticated: false,
+      notifications: [],
+      unreadCount: 0,
+    });
   },
 
   // Visit actions
@@ -172,12 +210,6 @@ export const useStore = create<AppState>((set) => ({
 
   updateVisitStatus: (visitId, status) =>
     set((state) => {
-      console.log("🔄 [Horizon] Updating visit status:", {
-        visitId,
-        status,
-        currentPending: state.pendingVisits.length,
-      });
-
       const updatedPending = state.pendingVisits.map((v) =>
         v.id === visitId ? { ...v, status } : v
       );
@@ -185,11 +217,6 @@ export const useStore = create<AppState>((set) => ({
       const updatedRecent = state.recentActivity.map((v) =>
         v.id === visitId ? { ...v, status } : v
       );
-
-      console.log("✅ [Horizon] Updated arrays:", {
-        pendingChanged: updatedPending !== state.pendingVisits,
-        recentChanged: updatedRecent !== state.recentActivity,
-      });
 
       return {
         pendingVisits: updatedPending,
@@ -233,6 +260,16 @@ export const useStore = create<AppState>((set) => ({
     set((state) => ({
       tempQRs: state.tempQRs.filter((q) => q._id !== qrId),
     })),
+
+  // Notification actions
+  setNotifications: (notifications) => set({ notifications }),
+  addNotification: (notification) =>
+    set((state) => ({
+      notifications: [notification, ...state.notifications],
+      unreadCount: state.unreadCount + 1,
+    })),
+  setUnreadCount: (count) => set({ unreadCount: count }),
+  clearUnreadCount: () => set({ unreadCount: 0 }),
 
   // UI actions
   setLoading: (loading) => set({ isLoading: loading }),

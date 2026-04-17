@@ -1,6 +1,7 @@
 """
 Database configuration and connection management using Motor (async MongoDB driver)
 """
+
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 from typing import Optional
 import os
@@ -12,28 +13,33 @@ load_dotenv()
 MONGODB_URL = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
 DATABASE_NAME = os.getenv("DATABASE_NAME", "sm_visitor")
 
-# Global database client
-_client: Optional[AsyncIOMotorClient] = None
-_database: Optional[AsyncIOMotorDatabase] = None
+
+class _MongoState:
+    """Shared mutable state for MongoDB client and database handles."""
+
+    def __init__(self):
+        self.client: Optional[AsyncIOMotorClient] = None
+        self.database: Optional[AsyncIOMotorDatabase] = None
+
+
+_state = _MongoState()
 
 
 async def connect_to_mongo():
     """
     Establish connection to MongoDB
     """
-    global _client, _database
-    
     try:
-        _client = AsyncIOMotorClient(MONGODB_URL)
-        _database = _client[DATABASE_NAME]
-        
+        _state.client = AsyncIOMotorClient(MONGODB_URL)
+        _state.database = _state.client[DATABASE_NAME]
+
         # Test connection
-        await _client.admin.command('ping')
+        await _state.client.admin.command("ping")
         print(f"[+] Connected to MongoDB: {DATABASE_NAME}")
-        
+
         # Create indexes
         await create_indexes()
-        
+
     except Exception as e:
         print(f"[X] Failed to connect to MongoDB: {e}")
         raise
@@ -43,10 +49,10 @@ async def close_mongo_connection():
     """
     Close MongoDB connection
     """
-    global _client
-    
-    if _client:
-        _client.close()
+    if _state.client:
+        _state.client.close()
+        _state.client = None
+        _state.database = None
         print("[-] Closed MongoDB connection")
 
 
@@ -54,50 +60,58 @@ def get_database() -> AsyncIOMotorDatabase:
     """
     Get database instance
     """
-    if _database is None:
-        raise Exception("Database not initialized. Call connect_to_mongo() first.")
-    return _database
+    if _state.database is None:
+        raise RuntimeError("Database not initialized. Call connect_to_mongo() first.")
+    return _state.database
 
 
 async def create_indexes():
     """
     Create database indexes for optimal query performance
     """
-    db = get_database()
-    
+    database = get_database()
+
     # Users collection indexes (for admins)
-    await db.users.create_index("phone", unique=True)
-    await db.users.create_index("role")
-    
+    await database.users.create_index("phone", unique=True)
+    await database.users.create_index("role")
+
     # Residents collection indexes (for owners from Horizon)
-    await db.residents.create_index("phone", unique=True)
-    await db.residents.create_index("flat_id")
-    await db.residents.create_index("created_at")
-    
+    await database.residents.create_index("phone", unique=True)
+    await database.residents.create_index("flat_id")
+    await database.residents.create_index("created_at")
+
     # Guards collection indexes (for guards from Orbit)
-    await db.guards.create_index("phone", unique=True)
-    await db.guards.create_index("created_at")
-    
+    await database.guards.create_index("phone", unique=True)
+    await database.guards.create_index("created_at")
+
     # Visitors collection indexes
-    await db.visitors.create_index("phone")
-    await db.visitors.create_index("created_by")
-    await db.visitors.create_index("qr_token", unique=True, sparse=True)
-    await db.visitors.create_index("is_active")
-    
+    await database.visitors.create_index("phone")
+    await database.visitors.create_index("created_by")
+    await database.visitors.create_index("qr_token", unique=True, sparse=True)
+    await database.visitors.create_index("is_active")
+
     # Visits collection indexes
-    await db.visits.create_index("visitor_id")
-    await db.visits.create_index("owner_id")
-    await db.visits.create_index("guard_id")
-    await db.visits.create_index("status")
-    await db.visits.create_index("entry_time")
-    await db.visits.create_index([("owner_id", 1), ("entry_time", -1)])  # Compound index
-    
+    await database.visits.create_index("visitor_id")
+    await database.visits.create_index("owner_id")
+    await database.visits.create_index("guard_id")
+    await database.visits.create_index("status")
+    await database.visits.create_index("entry_time")
+    await database.visits.create_index(
+        [("owner_id", 1), ("entry_time", -1)]
+    )  # Compound index
+
     # Temporary QR collection indexes
-    await db.temporary_qr.create_index("token", unique=True)
-    await db.temporary_qr.create_index("owner_id")
-    await db.temporary_qr.create_index("expires_at")
-    await db.temporary_qr.create_index("used_at")
-    
+    await database.temporary_qr.create_index("token", unique=True)
+    await database.temporary_qr.create_index("owner_id")
+    await database.temporary_qr.create_index("expires_at")
+    await database.temporary_qr.create_index("used_at")
+
+    # Notifications collection indexes
+    await database.notifications.create_index("recipient_id")
+    await database.notifications.create_index("is_read")
+    await database.notifications.create_index([("recipient_id", 1), ("is_read", 1)])
+    await database.notifications.create_index("created_at")
+
     print("[+] Database indexes created")
 
 
@@ -122,37 +136,47 @@ def get_temporary_qr_collection():
     return get_database().temporary_qr
 
 
+def get_notifications_collection():
+    """Get notifications collection"""
+    return get_database().notifications
+
+
 # Backward compatibility: db object that proxies to get_database()
 class DatabaseProxy:
     """Proxy object that provides access to database collections"""
-    
+
     @property
     def users(self):
         return get_database().users
-    
+
     @property
     def residents(self):
         return get_database().residents
-    
+
     @property
     def guards(self):
         return get_database().guards
-    
+
     @property
     def visitors(self):
         return get_database().visitors
-    
+
     @property
     def visits(self):
         return get_database().visits
-    
+
     @property
     def temporary_qr(self):
         return get_database().temporary_qr
-    
+
     @property
     def events(self):
         return get_database().events
+
+    @property
+    def notifications(self):
+        return get_database().notifications
+
 
 db = DatabaseProxy()
 

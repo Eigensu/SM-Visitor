@@ -4,14 +4,12 @@
  */
 import axios, { AxiosInstance, AxiosError } from "axios";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 // Create axios instance
 const apiClient: AxiosInstance = axios.create({
   baseURL: API_URL,
-  headers: {
-    "Content-Type": "application/json",
-  },
+  headers: {},
 });
 
 // Request interceptor - Add JWT token
@@ -30,6 +28,11 @@ apiClient.interceptors.request.use(
 apiClient.interceptors.response.use(
   (response) => response,
   (error: AxiosError) => {
+    // Silently ignore canceled requests (AbortController)
+    if (error.code === "ERR_CANCELED" || axios.isCancel(error)) {
+      return Promise.reject(error);
+    }
+
     console.error("API Error Interceptor:", error.message, error.response?.status);
 
     // Only redirect to login for 401 errors that are NOT from the login endpoint
@@ -70,18 +73,18 @@ export const authAPI = {
 
 // Visits API
 export const visitsAPI = {
-  getPending: async () => {
-    const response = await apiClient.get("/visits/pending");
+  getPending: async (signal?: AbortSignal) => {
+    const response = await apiClient.get("/visits/pending", { signal });
     return response.data;
   },
 
-  getPendingCount: async () => {
-    const response = await apiClient.get("/visits/pending/count");
+  getPendingCount: async (signal?: AbortSignal) => {
+    const response = await apiClient.get("/visits/pending/count", { signal });
     return response.data.count;
   },
 
-  getTodayCount: async () => {
-    const response = await apiClient.get("/visits/today/count");
+  getTodayCount: async (signal?: AbortSignal) => {
+    const response = await apiClient.get("/visits/today/count", { signal });
     return response.data.count;
   },
 
@@ -95,57 +98,74 @@ export const visitsAPI = {
     return response.data;
   },
 
-  getRecent: async (limit: number = 10) => {
-    const response = await apiClient.get(`/visits/recent?limit=${limit}`);
+  getRecentActivity: async (limit: number = 10, signal?: AbortSignal) => {
+    const response = await apiClient.get(`/visits/recent?limit=${limit}`, { signal });
     return response.data;
   },
 
-  getRecentActivity: async (limit: number = 10) => {
-    const response = await apiClient.get(`/visits/recent?limit=${limit}`);
+  getVisitDetails: async (visitId: string, signal?: AbortSignal) => {
+    const response = await apiClient.get(`/visits/${visitId}`, { signal });
     return response.data;
   },
 
-  getHistory: async (limit: number = 100) => {
-    const response = await apiClient.get(`/visits/recent?limit=${limit}`);
+  getHistory: async (signal?: AbortSignal) => {
+    const response = await apiClient.get("/visits/history", { signal });
     return response.data;
   },
 
   exportAll: async () => {
-    const response = await apiClient.get("/visits/recent?limit=10000");
+    const response = await apiClient.get("/visits/history");
     return response.data;
   },
 
-  getNotifications: async () => {
-    const response = await apiClient.get("/visits/notifications");
+  getNotifications: async (signal?: AbortSignal) => {
+    const response = await apiClient.get("/visits/notifications", { signal });
     return response.data;
   },
 
-  getDashboardStats: async () => {
-    const response = await apiClient.get("/visits/stats/summary");
+  getDashboardStats: async (signal?: AbortSignal) => {
+    const response = await apiClient.get("/visits/stats/summary", { signal });
     const data = response.data;
     return {
       todayCount: data.today_count,
       pendingCount: data.pending_count,
+      pendingAdhocCount: data.pending_adhoc_count,
+      pendingStaffCount: data.pending_staff_count,
       approvedCount: data.approved_count,
       activeQrCount: data.active_qr_count,
     };
   },
 
-  getWeeklyStats: async () => {
-    const response = await apiClient.get("/visits/stats/weekly");
-    return response.data;
-  },
-
-  getVisitDetails: async (visitId: string) => {
-    const response = await apiClient.get(`/visits/${visitId}`);
+  getWeeklyStats: async (signal?: AbortSignal) => {
+    const response = await apiClient.get("/visits/stats/weekly", { signal });
     return response.data;
   },
 };
 
 // Regular Visitors API
 export const visitorsAPI = {
-  getRegularVisitors: async () => {
-    const response = await apiClient.get("/visitors/regular");
+  getRegularVisitors: async (signal?: AbortSignal) => {
+    const response = await apiClient.get("/visitors/regular", { signal });
+    return response.data;
+  },
+
+  getPendingRegular: async (signal?: AbortSignal) => {
+    const response = await apiClient.get("/visitors/approvals/regular", { signal });
+    return response.data;
+  },
+
+  getHistoryRegular: async (signal?: AbortSignal) => {
+    const response = await apiClient.get("/visitors/history/regular", { signal });
+    return response.data;
+  },
+
+  approveRegular: async (visitorId: string) => {
+    const response = await apiClient.patch(`/visitors/${visitorId}/approve-regular`);
+    return response.data;
+  },
+
+  rejectRegular: async (visitorId: string) => {
+    const response = await apiClient.patch(`/visitors/${visitorId}/reject-regular`);
     return response.data;
   },
 
@@ -197,7 +217,27 @@ export const tempQRAPI = {
   },
 
   getAvailableFlats: async () => {
-    const response = await apiClient.get("/users/flats");
+    const response = await apiClient.get("/users/?role=owner");
+    return response.data;
+  },
+};
+
+// Notifications API
+export const notificationsAPI = {
+  getNotifications: async (unreadOnly: boolean = false) => {
+    const response = await apiClient.get(`/notifications?unread_only=${unreadOnly}`);
+    return response.data;
+  },
+  getUnreadCount: async () => {
+    const response = await apiClient.get("/notifications/unread/count");
+    return response.data;
+  },
+  markAsRead: async (id: string) => {
+    const response = await apiClient.patch(`/notifications/${id}/read`);
+    return response.data;
+  },
+  markAllAsRead: async () => {
+    const response = await apiClient.post("/notifications/read-all");
     return response.data;
   },
 };
@@ -208,38 +248,25 @@ export const uploadsAPI = {
     const formData = new FormData();
     formData.append("photo", file);
 
-    const response = await apiClient.post("/uploads/photo/regular-visitor", formData, {
-      headers: {
-        "Content-Type": "multipart/form-data",
-      },
-    });
-    // Backend returns { photo_url, storage_type, message }
-    // Horizon expects a stable photo_id to send when creating the visitor.
-    return {
-      photo_id: response.data.photo_url,
-      storage_type: response.data.storage_type,
-      message: response.data.message,
-    };
+    const response = await apiClient.post("/uploads/photo/regular-visitor", formData);
+    return response.data;
   },
 };
 
 // SSE Connection
-export const createSSEConnection = (onEvent: (event: MessageEvent) => void) => {
+export const createSSEConnection = () => {
   const token = localStorage.getItem("auth_token");
   if (!token) return null;
 
-  const eventSource = new EventSource(`${API_URL}/events/stream?token=${token}`, {
-    withCredentials: false,
-  });
-
-  eventSource.onmessage = onEvent;
-
-  eventSource.onerror = (error) => {
-    console.error("SSE Error:", error);
-    eventSource.close();
-  };
-
-  return eventSource;
+  try {
+    const url = `${API_URL}/events/stream?token=${token}`;
+    return new EventSource(url, {
+      withCredentials: false,
+    });
+  } catch (error) {
+    console.error("Failed to create SSE connection:", error);
+    return null;
+  }
 };
 
 export default apiClient;

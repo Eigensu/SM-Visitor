@@ -10,12 +10,18 @@ import { uploadsAPI } from "@/lib/api";
 import toast from "react-hot-toast";
 
 interface PhotoCaptureProps {
-  onPhotoUploaded: (photoUrl: string) => void;
+  onPhotoUploaded?: (photoUrl: string) => void;
+  onFileSelected?: (file: File) => void;
+  autoUpload?: boolean;
 }
 
 type CameraState = "idle" | "camera" | "preview";
 
-export function PhotoCapture({ onPhotoUploaded }: PhotoCaptureProps) {
+export function PhotoCapture({
+  onPhotoUploaded,
+  onFileSelected,
+  autoUpload = true,
+}: PhotoCaptureProps) {
   const [cameraState, setCameraState] = useState<CameraState>("idle");
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
@@ -58,12 +64,18 @@ export function PhotoCapture({ onPhotoUploaded }: PhotoCaptureProps) {
     }
   };
 
+  const [isUploaded, setIsUploaded] = useState(false);
+  const [photoName, setPhotoName] = useState<string>("");
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       setPhotoFile(file);
       setPhotoPreview(URL.createObjectURL(file));
+      setPhotoName(file.name);
       setCameraState("preview");
+      setIsUploaded(false);
+      if (onFileSelected) onFileSelected(file);
     }
   };
 
@@ -88,11 +100,15 @@ export function PhotoCapture({ onPhotoUploaded }: PhotoCaptureProps) {
 
     canvas.toBlob((blob) => {
       if (blob) {
-        const file = new File([blob], "photo.jpg", { type: "image/jpeg" });
+        const filename = `visitor_${Date.now()}.jpg`;
+        const file = new File([blob], filename, { type: "image/jpeg" });
         setPhotoFile(file);
+        setPhotoName(filename);
         setPhotoPreview(URL.createObjectURL(blob));
         stopCamera();
         setCameraState("preview");
+        setIsUploaded(false);
+        if (onFileSelected) onFileSelected(file);
       }
     }, "image/jpeg");
   };
@@ -100,22 +116,24 @@ export function PhotoCapture({ onPhotoUploaded }: PhotoCaptureProps) {
   const retakePhoto = () => {
     setPhotoFile(null);
     setPhotoPreview(null);
+    setPhotoName("");
     setCameraState("idle");
+    setIsUploaded(false);
   };
 
   const uploadPhoto = async () => {
     if (!photoFile) return;
 
+    // For guard form where we want to give feedback immediately
     setIsUploading(true);
     try {
       const response = await uploadsAPI.uploadNewVisitorPhoto(photoFile);
-      toast.success("Photo uploaded successfully!");
-      onPhotoUploaded(response.photo_url);
+      toast.success("Photo saved!");
+      setIsUploaded(true);
+      if (onPhotoUploaded) onPhotoUploaded(response.photo_url);
     } catch (error: any) {
       console.error("Photo upload error:", error);
-      const detail = error.response?.data?.detail;
-      const errorMessage = typeof detail === "string" ? detail : "Failed to upload photo";
-      toast.error(errorMessage);
+      toast.error("Failed to save photo");
     } finally {
       setIsUploading(false);
     }
@@ -165,10 +183,11 @@ export function PhotoCapture({ onPhotoUploaded }: PhotoCaptureProps) {
           </svg>
           <p className="mt-4 text-sm text-gray-600">No photo captured</p>
           <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:justify-center">
-            <Button onClick={startCamera} className="flex-1">
+            <Button type="button" onClick={startCamera} className="flex-1">
               Open Camera
             </Button>
             <Button
+              type="button"
               variant="outline"
               onClick={() => fileInputRef.current?.click()}
               className="flex-1"
@@ -187,6 +206,7 @@ export function PhotoCapture({ onPhotoUploaded }: PhotoCaptureProps) {
           </div>
           <div className="flex gap-3">
             <Button
+              type="button"
               variant="secondary"
               onClick={() => {
                 stopCamera();
@@ -196,7 +216,7 @@ export function PhotoCapture({ onPhotoUploaded }: PhotoCaptureProps) {
             >
               Cancel
             </Button>
-            <Button onClick={capturePhoto} className="flex-1">
+            <Button type="button" onClick={capturePhoto} className="flex-1">
               Capture
             </Button>
           </div>
@@ -206,24 +226,58 @@ export function PhotoCapture({ onPhotoUploaded }: PhotoCaptureProps) {
       {/* Preview State */}
       {cameraState === "preview" && photoPreview && (
         <div className="space-y-4">
-          <div className="overflow-hidden rounded-lg">
+          <div className="relative overflow-hidden rounded-lg">
             <img src={photoPreview} alt="Captured photo" className="w-full" />
+            {isUploaded && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-[2px]">
+                <div className="flex flex-col items-center rounded-2xl bg-white/90 p-4 shadow-2xl">
+                  <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-green-500 text-white">
+                    <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={3}
+                        d="M5 13l4 4L19 7"
+                      />
+                    </svg>
+                  </div>
+                  <p className="text-sm font-bold text-gray-900">Photo Saved</p>
+                  <p className="max-w-[150px] truncate text-xs text-gray-500">{photoName}</p>
+                </div>
+              </div>
+            )}
           </div>
           <div className="flex gap-3">
-            <Button
-              onClick={retakePhoto}
-              disabled={isUploading}
-              className="ocean-gradient h-11 flex-1 hover:opacity-90"
-            >
-              Retake
-            </Button>
-            <Button
-              onClick={uploadPhoto}
-              isLoading={isUploading}
-              className="ocean-gradient h-11 flex-1 hover:opacity-90"
-            >
-              Confirm & Upload
-            </Button>
+            {!isUploaded ? (
+              <>
+                <Button
+                  type="button"
+                  onClick={retakePhoto}
+                  disabled={isUploading}
+                  className="flex-1 border-border bg-muted hover:bg-muted/80"
+                  variant="outline"
+                >
+                  Retake
+                </Button>
+                <Button
+                  type="button"
+                  onClick={uploadPhoto}
+                  isLoading={isUploading}
+                  className="ocean-gradient h-11 flex-1 hover:opacity-90 shadow-lg"
+                >
+                  Confirm & Save
+                </Button>
+              </>
+            ) : (
+              <Button
+                type="button"
+                onClick={retakePhoto}
+                className="w-full border-border bg-muted hover:bg-muted/80"
+                variant="outline"
+              >
+                Change Photo
+              </Button>
+            )}
           </div>
         </div>
       )}

@@ -1,6 +1,6 @@
 /**
  * SSE Provider Component
- * Provides SSE connection to the entire app
+ * provides real-time updates for Orbit Guard App
  */
 "use client";
 
@@ -9,73 +9,61 @@ import { useStore } from "@/lib/store";
 import { createSSEConnection } from "@/lib/api";
 import toast from "react-hot-toast";
 
-export function SSEProvider({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isAuthLoading, updateVisitStatus, addVisit } = useStore();
+interface SSEProviderProps {
+  children: React.ReactNode;
+  onRefresh?: () => void; // Callback to trigger data refetch
+}
 
-  // Check if SSE is enabled (can be disabled via env var for development)
-  const sseEnabled = process.env.NEXT_PUBLIC_SSE_ENABLED !== "false";
+export function SSEProvider({ children, onRefresh }: SSEProviderProps) {
+  const { isAuthenticated, isAuthLoading, updateVisitStatus, triggerRefresh } = useStore();
 
   useSSE({
-    // Only connect when auth is fully loaded, user is authenticated, and SSE is enabled
-    isAuthenticated: isAuthenticated && !isAuthLoading && sseEnabled,
+    isAuthenticated: isAuthenticated && !isAuthLoading,
     createConnection: createSSEConnection,
-    onEvent: (data) => {
-      console.log("📨 [Orbit] SSE event received:", data);
+    handlers: {
+      VISITOR_APPROVED: (data: any) => {
+        console.log("✅ [ORBIT] Visitor approved event:", data);
+        toast.success(`Approved: ${data.visitor_name || "Visitor"}`, {
+          icon: "✅",
+          duration: 5000,
+        });
 
-      switch (data.type) {
-        case "visit_approved":
-          // Backend sends: { visit_id, visitor_name, approved_at }
-          console.log("✅ [Orbit] Processing visit_approved:", data.data);
-          updateVisitStatus(data.data.visit_id, "approved");
-          toast.success(`Visit approved for ${data.data.visitor_name}`, {
-            duration: 5000,
-            icon: "✅",
-          });
-          break;
+        // 🔥 SCOPED REFRESH
+        triggerRefresh("visitors");
+        triggerRefresh("dashboard");
+        if (onRefresh) onRefresh();
+      },
 
-        case "new_visit_pending":
-          console.log("📨 [Orbit] Processing new_visit_pending:", data.data);
-          addVisit(data.data as any); // Type assertion for now, data matches Visit shape
-          toast("New visitor waiting for approval", {
-            icon: "⏳",
-          });
-          break;
+      NEW_VISITOR_REQUEST: (data: any) => {
+        console.log("🔔 [ORBIT] New request created:", data);
+        triggerRefresh("visitors");
+        triggerRefresh("dashboard");
+        if (onRefresh) onRefresh();
+      },
 
-        case "visit_auto_approved":
-          console.log("📨 [Orbit] Processing visit_auto_approved:", data.data);
-          addVisit(data.data as any);
-          toast.success("Visitor auto-approved");
-          break;
+      VISITOR_REJECTED: (data: any) => {
+        console.log("❌ [ORBIT] Visitor registration rejected:", data);
+        toast.error(`Rejected: ${data.visitor_name || "Staff Registration"}`, {
+          icon: "❌",
+          duration: 5000,
+        });
+        triggerRefresh("visitors");
+        triggerRefresh("dashboard");
+        if (onRefresh) onRefresh();
+      },
 
-        case "visit_rejected":
-          // Backend sends: { visit_id, visitor_name, rejected_at }
-          console.log("❌ [Orbit] Processing visit_rejected:", data.data);
-          updateVisitStatus(data.data.visit_id, "rejected");
-          toast.error(`Visit rejected for ${data.data.visitor_name}`, {
-            duration: 5000,
-            icon: "❌",
-          });
-          break;
+      // Legacy support for ad-hoc visits
+      visit_approved: (data: any) => {
+        updateVisitStatus(data.visit_id || data._id, "approved");
+        toast.success(`Visit Approved: ${data.visitor_name}`, { icon: "✅" });
+        if (onRefresh) onRefresh();
+      },
 
-        case "new_user_registered": {
-          const roleName =
-            data.data.role === "owner"
-              ? "resident"
-              : data.data.role === "guard"
-                ? "guard"
-                : "user";
-          const flatInfo = data.data.flat_id ? ` (Flat ${data.data.flat_id})` : "";
-          console.log("👤 [Orbit] New user registered:", data.data);
-          toast(`New ${roleName} registered: ${data.data.name}${flatInfo}`, {
-            duration: 6000,
-            icon: "👤",
-          });
-          break;
-        }
-
-        default:
-          console.log("⚠️ [Orbit] Unknown SSE event type:", data.type);
-      }
+      visit_rejected: (data: any) => {
+        updateVisitStatus(data.visit_id || data._id, "rejected");
+        toast.error(`Visit Rejected: ${data.visitor_name}`, { icon: "❌" });
+        if (onRefresh) onRefresh();
+      },
     },
   });
 

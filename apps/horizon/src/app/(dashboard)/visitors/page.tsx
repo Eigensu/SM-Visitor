@@ -61,7 +61,7 @@ export default function Visitors() {
   const fetchVisits = async () => {
     try {
       setIsLoading(true);
-      const data = await visitsAPI.getHistory(100); // Fetch up to 100 recent visits
+      const data = await visitsAPI.getHistory(); // Fetch recent visits
 
       // Transform API data to component format
       const transformedVisits: Visit[] = data.map((v: any) => ({

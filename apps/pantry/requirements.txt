@@ -11,6 +11,7 @@ pymongo==4.9.1
 PyJWT==2.10.1
 python-dotenv==1.2.1
 bcrypt==4.1.2
+passlib==1.7.4
 
 # CORS and middleware
 starlette==0.50.0
@@ -28,6 +29,7 @@ cloudinary==1.41.0
 
 # Utilities
 python-dateutil==2.9.0
+pytz==2024.2
 
 # Testing
 pytest==8.3.4

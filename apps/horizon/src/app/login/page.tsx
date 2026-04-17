@@ -157,7 +157,7 @@ export default function Login() {
             {mode === "signup" && (
               <div className="space-y-2">
                 <label htmlFor="name" className="text-sm font-medium text-foreground">
-                  Name
+                  Name <span className="text-red-500">*</span>
                 </label>
                 <Input
                   id="name"
@@ -174,7 +174,7 @@ export default function Login() {
 
             <div className="space-y-2">
               <label htmlFor="phone" className="text-sm font-medium text-foreground">
-                Phone Number
+                Phone Number <span className="text-red-500">*</span>
               </label>
               <Input
                 id="phone"
@@ -194,7 +194,7 @@ export default function Login() {
             {mode === "signup" && (
               <div className="space-y-2">
                 <label htmlFor="flatId" className="text-sm font-medium text-foreground">
-                  Flat ID
+                  Flat ID <span className="text-red-500">*</span>
                 </label>
                 <Input
                   id="flatId"
@@ -210,7 +210,7 @@ export default function Login() {
 
             <div className="space-y-2">
               <label htmlFor="password" className="text-sm font-medium text-foreground">
-                Password
+                Password <span className="text-red-500">*</span>
               </label>
               <Input
                 id="password"

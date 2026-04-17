@@ -5,9 +5,8 @@ Saves regular visitor photos to GridFS and new visitor photos to local buffer
 
 from fastapi import APIRouter, HTTPException, status, Depends, UploadFile, File
 from pydantic import BaseModel
-from typing import Optional
 
-from middleware.auth import get_current_guard, get_current_owner, get_current_user
+from middleware.auth import get_current_guard
 from utils.storage import photo_storage
 
 
@@ -21,9 +20,10 @@ class PhotoUploadResponse(BaseModel):
 
 
 @router.post("/photo/regular", response_model=PhotoUploadResponse)
+@router.post("/photo/regular-visitor", response_model=PhotoUploadResponse)
 async def upload_regular_visitor_photo(
     photo: UploadFile = File(...),
-    current_user: dict = Depends(get_current_guard),
+    _current_user: dict = Depends(get_current_guard),
 ):
     """
     Upload photo for regular visitor (saved to MongoDB GridFS)
@@ -34,39 +34,9 @@ async def upload_regular_visitor_photo(
     """
     # Read photo data
     photo_data = await photo.read()
-
-    # Validate photo (allow up to 10MB to be safe for uploads from web)
-    is_valid, error_msg = photo_storage.validate_photo(photo_data, max_size_mb=10)
-    if not is_valid:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error_msg)
-
-    # Save to GridFS
-    file_id = await photo_storage.save_regular_visitor_photo(
-        photo_data,
-        photo.filename or "visitor_photo.jpg",
-    )
-
-    return PhotoUploadResponse(
-        photo_url=file_id,
-        storage_type="gridfs",
-        message="Photo saved to MongoDB GridFS",
-    )
-
-
-@router.post("/photo/regular-visitor", response_model=PhotoUploadResponse)
-async def upload_regular_visitor_photo_owner(
-    photo: UploadFile = File(...),
-    current_user: dict = Depends(get_current_owner),
-):
-    """
-    Upload photo for regular visitor from Horizon (owner app).
-    Uses the same storage behavior as guard endpoint but allows owner/admin roles.
-    """
-    # Read photo data
-    photo_data = await photo.read()
-
-    # Validate photo (allow up to 10MB)
-    is_valid, error_msg = photo_storage.validate_photo(photo_data, max_size_mb=10)
+    
+    # Validate photo
+    is_valid, error_msg = await photo_storage.validate_photo(photo_data)
     if not is_valid:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -80,7 +50,7 @@ async def upload_regular_visitor_photo_owner(
     )
 
     return PhotoUploadResponse(
-        photo_url=file_id,
+        photo_url=f"/uploads/photo/regular/{file_id}",
         storage_type="gridfs",
         message="Photo saved to MongoDB GridFS",
     )
@@ -88,7 +58,7 @@ async def upload_regular_visitor_photo_owner(
 
 @router.post("/photo/new-visitor", response_model=PhotoUploadResponse)
 async def upload_new_visitor_photo(
-    photo: UploadFile = File(...), current_user: dict = Depends(get_current_guard)
+    photo: UploadFile = File(...), _current_user: dict = Depends(get_current_guard)
 ):
     """
     Upload photo for new visitor (saved to Cloudinary cloud storage)
@@ -99,33 +69,32 @@ async def upload_new_visitor_photo(
     """
     # Read photo data
     photo_data = await photo.read()
-
-    # Validate photo (allow up to 10MB)
-    is_valid, error_msg = photo_storage.validate_photo(photo_data, max_size_mb=10)
+    
+    # Validate photo
+    is_valid, error_msg = await photo_storage.validate_photo(photo_data)
     if not is_valid:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error_msg)
-
-    # Save to Cloudinary (with local buffer fallback)
-    photo_url = await photo_storage.save_new_visitor_photo_buffer(
-        photo_data, photo.filename or "new_visitor_photo.jpg"
-    )
-
-    # Determine storage type based on URL
-    storage_type = "cloudinary" if photo_url.startswith("http") else "local_buffer"
-    message = (
-        "Photo saved to Cloudinary"
-        if storage_type == "cloudinary"
-        else "Photo saved to local buffer (Cloudinary unavailable)"
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_msg
+        )
+    
+    # Save to local buffer
+    filename = await photo_storage.save_new_visitor_photo_buffer(
+        photo_data,
+        photo.filename or "new_visitor_photo.jpg"
     )
 
     return PhotoUploadResponse(
-        photo_url=photo_url, storage_type=storage_type, message=message
+        photo_url=f"/uploads/photo/buffer/{filename}",
+        storage_type="local_buffer",
+        message="Photo saved to local buffer temporarily"
     )
 
 
 @router.get("/photo/regular/{file_id}")
+@router.get("/regular/{file_id}")
 async def get_regular_visitor_photo(
-    file_id: str, current_user: dict = Depends(get_current_user)
+    file_id: str,
 ):
     """
     Retrieve regular visitor photo from GridFS
@@ -145,8 +114,9 @@ async def get_regular_visitor_photo(
 
 
 @router.get("/photo/buffer/{filename}")
+@router.get("/buffer/{filename}")
 async def get_buffer_photo(
-    filename: str, current_user: dict = Depends(get_current_user)
+    filename: str,
 ):
     """
     Retrieve new visitor photo from local buffer
@@ -154,12 +124,9 @@ async def get_buffer_photo(
     Returns the image file
     """
     from fastapi.responses import Response
-    import os
-    from config import LOCAL_STORAGE_PATH
-
-    filepath = os.path.join(LOCAL_STORAGE_PATH, "buffer", filename)
-    photo_data = photo_storage.get_new_visitor_photo_buffer(filepath)
-
+    
+    photo_data = photo_storage.get_new_visitor_photo_buffer(filename)
+    
     if not photo_data:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Photo not found in buffer"
@@ -170,7 +137,7 @@ async def get_buffer_photo(
 
 @router.post("/photo/id-card", response_model=PhotoUploadResponse)
 async def upload_id_card_photo(
-    photo: UploadFile = File(...), current_user: dict = Depends(get_current_guard)
+    photo: UploadFile = File(...), _current_user: dict = Depends(get_current_guard)
 ):
     """
     Upload ID card photo (Aadhar/PAN) to Cloudinary

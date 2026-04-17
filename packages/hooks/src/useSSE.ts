@@ -12,21 +12,25 @@ import toast from "react-hot-toast";
 
 export interface SSEConfig {
   /**
-   * Whether the user is authenticated
+   * Whether the user is authenticated and SSE should be active
    */
   isAuthenticated: boolean;
 
   /**
    * Function to create the SSE connection
-   * Should return an EventSource or null
+   * Should return an EventSource instance or null
    */
-  createConnection: (onMessage: (event: MessageEvent) => void) => EventSource | null;
+  createConnection: () => EventSource | null;
 
   /**
-   * Callback to handle incoming SSE events
-   * Receives the parsed event data
+   * Callback to handle the default 'message' event (unnamed events)
    */
-  onEvent: (data: any) => void;
+  onMessage?: (data: any) => void;
+
+  /**
+   * Map of named event handlers (e.g., {"VISITOR_APPROVED": (data) => ...})
+   */
+  handlers?: Record<string, (data: any) => void>;
 
   /**
    * Maximum number of reconnection attempts (default: 5)
@@ -43,7 +47,8 @@ export function useSSE(config: SSEConfig) {
   const {
     isAuthenticated,
     createConnection,
-    onEvent,
+    onMessage,
+    handlers = {},
     maxReconnectAttempts = 5,
     maxReconnectDelay = 30000,
   } = config;
@@ -51,77 +56,87 @@ export function useSSE(config: SSEConfig) {
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttempts = useRef(0);
+  const seenEventIds = useRef<Set<string>>(new Set());
+  const isConnecting = useRef(false);
+
+  // Helper to deduplicate events
+  const handleEvent = (handler: (data: any) => void, event: any, type: string) => {
+    try {
+      if (!event.data) return;
+
+      // SSE ID is available on the event object itself
+      // We also check the data for a fallback id
+      const data = JSON.parse(event.data);
+      const eventId = event.lastEventId || data.id;
+
+      if (eventId) {
+        if (seenEventIds.current.has(eventId)) {
+          return;
+        }
+        seenEventIds.current.add(eventId);
+
+        // Keep the set from growing infinitely
+        if (seenEventIds.current.size > 100) {
+          const firstItem = seenEventIds.current.values().next().value;
+          if (firstItem !== undefined) seenEventIds.current.delete(firstItem);
+        }
+      }
+
+      handler(data);
+    } catch (_error) {}
+  };
 
   const connect = () => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || isConnecting.current || eventSourceRef.current) return;
 
+    isConnecting.current = true;
     try {
-      eventSourceRef.current = createConnection((event) => {
-        try {
-          const data = JSON.parse(event.data);
-          onEvent(data);
-        } catch (error) {
-          console.error("SSE parse error:", error);
-        }
-      });
+      const es = createConnection();
 
-      if (eventSourceRef.current) {
-        const es = eventSourceRef.current;
-
-        es.onopen = () => {
-          console.log("SSE connected successfully");
-          reconnectAttempts.current = 0; // Reset on successful connection
-        };
-
-        es.onerror = (error) => {
-          console.warn("SSE connection lost, will attempt to reconnect...");
-          reconnect();
-        };
-
-        // CRITICAL FIX: Listen for custom event types
-        // Backend sends events like: event: visit_approved, event: visit_rejected, etc.
-        const eventTypes = [
-          "visit_approved",
-          "visit_rejected",
-          "new_visit_pending",
-          "visit_auto_approved",
-          "visit_cancelled",
-          "test_event",
-        ];
-
-        eventTypes.forEach((eventType) => {
-          es.addEventListener(eventType, (event: Event) => {
-            try {
-              const messageEvent = event as MessageEvent;
-              const data = JSON.parse(messageEvent.data);
-              console.log(`📨 SSE Event [${eventType}]:`, data);
-              onEvent({ type: eventType, data });
-            } catch (error) {
-              console.error(`SSE parse error for ${eventType}:`, error);
-            }
-          });
-        });
+      if (!es) {
+        // Prevent getting stuck in a permanent "connecting" state.
+        isConnecting.current = false;
+        reconnect();
+        return;
       }
-    } catch (error) {
-      console.error("Failed to create SSE connection:", error);
+
+      eventSourceRef.current = es;
+
+      es.onopen = () => {
+        reconnectAttempts.current = 0;
+        isConnecting.current = false;
+      };
+
+      es.onerror = (_error) => {
+        isConnecting.current = false;
+        reconnect();
+      };
+
+      // Default message listener
+      es.onmessage = (event) => {
+        if (!onMessage) return;
+        handleEvent(onMessage, event, "message");
+      };
+
+      // Named listeners
+      Object.entries(handlers).forEach(([eventType, handler]) => {
+        es.addEventListener(eventType, (event: any) => {
+          handleEvent(handler, event, eventType);
+        });
+      });
+    } catch (_error) {
+      isConnecting.current = false;
     }
   };
 
   const reconnect = () => {
     if (reconnectAttempts.current >= maxReconnectAttempts) {
-      console.warn("Max SSE reconnection attempts reached. Real-time notifications disabled.");
-      toast.error("Lost connection to server. Real-time notifications disabled.", {
-        duration: 6000,
-      });
+      toast.error("Lost real-time connection to server.", { duration: 6000 });
       return;
     }
 
     const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), maxReconnectDelay);
     reconnectAttempts.current++;
-
-    console.log(
-      `Reconnecting SSE in ${delay}ms (attempt ${reconnectAttempts.current}/${maxReconnectAttempts})...`
-    );
 
     reconnectTimeoutRef.current = setTimeout(() => {
       connect();
@@ -130,6 +145,7 @@ export function useSSE(config: SSEConfig) {
 
   const disconnect = () => {
     if (eventSourceRef.current) {
+      // Named listeners are automatically cleaned up when the EventSource is closed
       eventSourceRef.current.close();
       eventSourceRef.current = null;
     }
@@ -142,13 +158,15 @@ export function useSSE(config: SSEConfig) {
   useEffect(() => {
     if (isAuthenticated) {
       connect();
+    } else {
+      disconnect();
     }
 
     return () => {
       disconnect();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated]);
+  }, [isAuthenticated, Object.keys(handlers).join(",")]); // Re-connect if handlers change
 
   return { disconnect };
 }

@@ -4,14 +4,12 @@
  */
 import axios, { AxiosInstance, AxiosError } from "axios";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 // Create axios instance
 const apiClient: AxiosInstance = axios.create({
   baseURL: API_URL,
-  headers: {
-    "Content-Type": "application/json",
-  },
+  headers: {},
 });
 
 // Request interceptor - Add JWT token
@@ -120,13 +118,13 @@ export const visitsAPI = {
     return response.data;
   },
 
-  getTodayVisits: async () => {
-    const response = await apiClient.get("/visits/today");
+  getTodayVisits: async (signal?: AbortSignal) => {
+    const response = await apiClient.get("/visits/today", { signal });
     return response.data;
   },
 
-  getVisit: async (visitId: string) => {
-    const response = await apiClient.get(`/visits/${visitId}`);
+  getVisit: async (visitId: string, signal?: AbortSignal) => {
+    const response = await apiClient.get(`/visits/${visitId}`, { signal });
     return response.data;
   },
 
@@ -141,14 +139,22 @@ export const visitsAPI = {
   },
 };
 
-// Visitors API
+// Regular Visitors API
 export const visitorsAPI = {
-  getRegularVisitors: async () => {
-    const response = await apiClient.get("/visitors/regular");
+  createRegularByGuard: async (data: FormData) => {
+    const response = await apiClient.post("/visitors/regular/guard", data);
     return response.data;
   },
-  getAllVisitors: async () => {
-    const response = await apiClient.get("/visitors/");
+  list: async (signal?: AbortSignal) => {
+    const response = await apiClient.get("/visitors/", { signal });
+    return response.data;
+  },
+  getAllVisitors: async (signal?: AbortSignal) => {
+    const response = await apiClient.get("/visitors/", { signal });
+    return response.data;
+  },
+  deleteRegular: async (visitorId: string) => {
+    const response = await apiClient.delete(`/visitors/${visitorId}`);
     return response.data;
   },
 };
@@ -159,9 +165,15 @@ export const uploadsAPI = {
     const formData = new FormData();
     formData.append("photo", file);
 
-    const response = await apiClient.post("/uploads/photo/new-visitor", formData, {
-      headers: { "Content-Type": "multipart/form-data" },
-    });
+    const response = await apiClient.post("/uploads/photo/new-visitor", formData);
+    return response.data;
+  },
+
+  uploadRegularVisitorPhoto: async (file: File) => {
+    const formData = new FormData();
+    formData.append("photo", file);
+
+    const response = await apiClient.post("/uploads/photo/regular-visitor", formData);
     return response.data;
   },
 
@@ -169,9 +181,7 @@ export const uploadsAPI = {
     const formData = new FormData();
     formData.append("photo", file);
 
-    const response = await apiClient.post("/uploads/photo/id-card", formData, {
-      headers: { "Content-Type": "multipart/form-data" },
-    });
+    const response = await apiClient.post("/uploads/photo/id-card", formData);
     return response.data;
   },
 };
@@ -184,8 +194,28 @@ export const usersAPI = {
   },
 };
 
+// Notifications API
+export const notificationsAPI = {
+  getNotifications: async (unreadOnly: boolean = false) => {
+    const response = await apiClient.get(`/notifications?unread_only=${unreadOnly}`);
+    return response.data;
+  },
+  getUnreadCount: async () => {
+    const response = await apiClient.get("/notifications/unread/count");
+    return response.data;
+  },
+  markAsRead: async (id: string) => {
+    const response = await apiClient.patch(`/notifications/${id}/read`);
+    return response.data;
+  },
+  markAllAsRead: async () => {
+    const response = await apiClient.post("/notifications/read-all");
+    return response.data;
+  },
+};
+
 // SSE Connection
-export const createSSEConnection = (onEvent: (event: MessageEvent) => void) => {
+export const createSSEConnection = () => {
   const token = localStorage.getItem("auth_token");
   if (!token || token === "undefined") {
     console.log("No auth token available for SSE connection");
@@ -195,22 +225,9 @@ export const createSSEConnection = (onEvent: (event: MessageEvent) => void) => {
   console.log("Creating SSE connection...");
 
   try {
-    const eventSource = new EventSource(`${API_URL}/events/stream?token=${token}`, {
+    return new EventSource(`${API_URL}/events/stream?token=${token}`, {
       withCredentials: false,
     });
-
-    eventSource.onopen = () => {
-      console.log("SSE connection established");
-    };
-
-    eventSource.onmessage = onEvent;
-
-    eventSource.onerror = (error) => {
-      console.error("SSE connection error:", error);
-      // Don't close here - let the useSSE hook handle reconnection
-    };
-
-    return eventSource;
   } catch (error) {
     console.error("Failed to create SSE connection:", error);
     return null;

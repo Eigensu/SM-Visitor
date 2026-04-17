@@ -6,16 +6,27 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useStore } from "@/lib/store";
-import { visitsAPI } from "@/lib/api";
+import { visitsAPI, visitorsAPI } from "@/lib/api";
 import { Button } from "@sm-visitor/ui";
 import { Spinner } from "@sm-visitor/ui";
-import { QrCode, UserPlus, ClipboardList, LogOut, Clock, CheckCircle2, Users } from "lucide-react";
+import {
+  LogOut,
+  QrCode,
+  UserCheck,
+  ClipboardList,
+  Clock,
+  CheckCircle2,
+  Users,
+  UserPlus,
+} from "lucide-react";
 import { StatCard } from "@/components/StatCard";
 import { GlassCard } from "@/components/GlassCard";
+import { NotificationCenter } from "@/components/NotificationCenter";
 import toast from "react-hot-toast";
 
 interface Visit {
   id: string;
+  visitor_id?: string;
   entry_time?: string;
   exit_time?: string;
   status: string;
@@ -23,16 +34,10 @@ interface Visit {
 
 export default function DashboardPage() {
   const router = useRouter();
-  const {
-    user,
-    isAuthenticated,
-    isAuthLoading,
-    logout,
-    pendingVisits,
-    todayVisits,
-    setTodayVisits,
-  } = useStore();
+  const { user, isAuthenticated, isAuthLoading, logout, pendingVisits, refreshMap } = useStore();
+  const [todayVisits, setTodayVisits] = useState<Visit[]>([]);
   const [isLoadingStats, setIsLoadingStats] = useState(true);
+  const [pendingStaffCount, setPendingStaffCount] = useState(0);
 
   // All hooks must be at the top level - no conditional hooks!
   useEffect(() => {
@@ -43,24 +48,44 @@ export default function DashboardPage() {
     }
   }, [isAuthenticated, isAuthLoading, router]);
 
-  // Fetch today's visits for statistics
-  useEffect(() => {
-    const fetchTodayVisits = async () => {
-      try {
-        const visits = await visitsAPI.getTodayVisits();
-        setTodayVisits(visits);
-      } catch (error: any) {
-        console.error("Failed to fetch today's visits:", error);
-        toast.error("Failed to load visit statistics");
-      } finally {
-        setIsLoadingStats(false);
+  // Fetch today's visits and staff directory for statistics
+  const fetchStats = async (signal?: AbortSignal) => {
+    try {
+      const [visits, staff] = await Promise.all([
+        visitsAPI.getTodayVisits(signal),
+        visitorsAPI.list(signal),
+      ]);
+      setTodayVisits(visits);
+      setPendingStaffCount(
+        staff.filter((v: any) => v.visitor_type === "regular" && v.approval_status === "pending")
+          .length
+      );
+    } catch (error: any) {
+      if (error.name === "AbortError" || error.message?.includes("canceled")) {
+        return; // Silent fail for aborted requests
       }
-    };
-
-    if (isAuthenticated && !isAuthLoading) {
-      fetchTodayVisits();
+      console.error("📡 [ORBIT] Failed to fetch dashboard statistics:", error);
+    } finally {
+      setIsLoadingStats(false);
     }
-  }, [isAuthenticated, isAuthLoading, setTodayVisits]);
+  };
+
+  useEffect(() => {
+    if (isAuthenticated && !isAuthLoading) {
+      const controller = new AbortController();
+      fetchStats(controller.signal);
+
+      // 🔥 HARDENED: Polling Fallback (10s) as per Spec
+      const interval = setInterval(() => fetchStats(controller.signal), 10000);
+
+      return () => {
+        controller.abort();
+        clearInterval(interval);
+      };
+    }
+  }, [isAuthenticated, isAuthLoading, refreshMap.dashboard]);
+
+  const totalPending = pendingVisits.length + pendingStaffCount;
 
   const handleLogout = () => {
     logout();
@@ -94,22 +119,28 @@ export default function DashboardPage() {
 
   const actionCards = [
     {
+      title: "Staff Directory",
+      description: "Maids, Cooks & Official Staff",
+      icon: Users,
+      href: "/staff",
+    },
+    {
+      title: "Register Staff",
+      description: "Permanent (Maid, Cook, etc.)",
+      icon: UserCheck,
+      href: "/new-regular-visitor?mode=staff",
+    },
+    {
+      title: "Register Guest",
+      description: "Temporary 24h entry pass",
+      icon: Clock,
+      href: "/new-regular-visitor?mode=guest",
+    },
+    {
       title: "Scan QR Code",
-      description: "Scan guest or staff QR",
+      description: "Quick entry scan",
       icon: QrCode,
       href: "/scan",
-    },
-    {
-      title: "New Guest",
-      description: "One-time visitor entry",
-      icon: UserPlus,
-      href: "/new-visitor",
-    },
-    {
-      title: "Daily Staff / Regulars",
-      description: "Maid, Cook, Driver, etc.",
-      icon: Users,
-      href: "/regulars",
     },
   ];
 
@@ -123,10 +154,13 @@ export default function DashboardPage() {
               <h1 className="text-xl font-bold text-foreground">Orbit Guard</h1>
               <p className="text-sm text-muted-foreground">Welcome, {user.name}</p>
             </div>
-            <Button variant="ghost" size="sm" onClick={handleLogout}>
-              <LogOut className="mr-2 h-4 w-4" />
-              Logout
-            </Button>
+            <div className="flex items-center gap-4">
+              <NotificationCenter />
+              <Button variant="ghost" size="sm" onClick={handleLogout}>
+                <LogOut className="mr-2 h-4 w-4" />
+                Logout
+              </Button>
+            </div>
           </div>
         </div>
       </header>
@@ -134,11 +168,16 @@ export default function DashboardPage() {
       {/* Main Content */}
       <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         {/* Pending Approvals Badge */}
-        {/* Pending Approvals Badge - Always visible but different style if empty */}
         <div
-          onClick={() => router.push("/history?status=pending")}
+          onClick={() => {
+            if (pendingStaffCount > 0 && pendingVisits.length === 0) {
+              router.push("/staff?filter=pending");
+            } else {
+              router.push("/history?status=pending");
+            }
+          }}
           className={`mb-6 cursor-pointer rounded-lg border p-4 transition-colors ${
-            pendingVisits.length > 0
+            totalPending > 0
               ? "border-yellow-200 bg-yellow-50 hover:bg-yellow-100"
               : "border-gray-200 bg-gray-50 hover:bg-gray-100"
           }`}
@@ -146,7 +185,7 @@ export default function DashboardPage() {
           <div className="flex items-center">
             <div className="flex-shrink-0">
               <svg
-                className={`h-5 w-5 ${pendingVisits.length > 0 ? "text-yellow-400" : "text-gray-400"}`}
+                className={`h-5 w-5 ${totalPending > 0 ? "text-yellow-400" : "text-gray-400"}`}
                 fill="currentColor"
                 viewBox="0 0 20 20"
               >
@@ -159,30 +198,32 @@ export default function DashboardPage() {
             </div>
             <div className="ml-3">
               <p
-                className={`text-sm font-medium ${pendingVisits.length > 0 ? "text-yellow-800" : "text-gray-600"}`}
+                className={`text-sm font-medium ${totalPending > 0 ? "text-yellow-800" : "text-gray-600"}`}
               >
-                {pendingVisits.length} visitor{pendingVisits.length !== 1 ? "s" : ""} waiting for
-                approval
+                {totalPending} request{totalPending !== 1 ? "s" : ""} waiting for approval
               </p>
               <p
-                className={`text-xs mt-1 ${pendingVisits.length > 0 ? "text-yellow-600" : "text-gray-500"}`}
+                className={`text-xs mt-1 ${totalPending > 0 ? "text-yellow-600" : "text-gray-500"}`}
               >
-                Click to review and manage
+                {pendingStaffCount > 0 ? `${pendingStaffCount} staff + ` : ""}
+                {pendingVisits.length} guest{pendingVisits.length !== 1 ? "s" : ""}
               </p>
             </div>
           </div>
         </div>
 
         {/* Action Cards */}
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           {actionCards.map((card) => (
             <GlassCard key={card.title} hover onClick={() => router.push(card.href)}>
-              <div className="p-8">
-                <div className="ocean-gradient mb-4 flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-2xl shadow-lg shadow-primary/20">
-                  <card.icon className="h-8 w-8 text-white" />
+              <div className="flex flex-col items-center p-5 text-center sm:flex-row sm:text-left sm:items-start min-h-[100px] h-full justify-center">
+                <div className="ocean-gradient mb-3 sm:mb-0 sm:mr-4 flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl shadow-md shadow-primary/20">
+                  <card.icon className="h-6 w-6 text-white" />
                 </div>
-                <h3 className="mb-2 text-xl font-semibold text-foreground">{card.title}</h3>
-                <p className="text-muted-foreground">{card.description}</p>
+                <div>
+                  <h3 className="mb-1 text-base font-semibold text-foreground">{card.title}</h3>
+                  <p className="text-xs text-muted-foreground">{card.description}</p>
+                </div>
               </div>
             </GlassCard>
           ))}
@@ -201,14 +242,15 @@ export default function DashboardPage() {
         </div>
 
         {/* Quick Stats */}
-        <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-3">
           <StatCard
-            title="Pending Approvals"
-            value={
-              isLoadingStats ? "..." : todayVisits.filter((v) => v.status === "pending").length
-            }
+            title="Pending Actions"
+            value={isLoadingStats ? "..." : totalPending}
             icon={Clock}
-            onClick={() => router.push("/history?status=pending")}
+            onClick={() => {
+              if (pendingStaffCount > 0) router.push("/staff");
+              else router.push("/history?status=pending");
+            }}
           />
           <StatCard
             title="Today's Visits"

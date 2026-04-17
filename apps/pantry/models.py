@@ -1,12 +1,13 @@
-"""
-Pydantic models for MongoDB documents
-These models provide validation and serialization for database operations
-"""
+from enum import Enum
 from pydantic import BaseModel, Field
 from typing import Optional, Any, List
 from datetime import datetime
 from bson import ObjectId
 
+class ApprovalStatus(str, Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
 
 class PyObjectId(ObjectId):
     """Custom ObjectId type for Pydantic"""
@@ -26,6 +27,25 @@ class PyObjectId(ObjectId):
         field_schema.update(type="string")
 
 
+from utils.time_utils import get_utc_now
+
+class NotificationModel(BaseModel):
+    """Notification document model"""
+    id: Optional[PyObjectId] = Field(default=None, alias="_id")
+    title: str
+    message: str
+    type: str  # info, entry_request, approval, rejection, regular_visitor_pending
+    recipient_id: str
+    is_read: bool = False
+    data: Optional[dict[str, Any]] = None
+    created_at: datetime = Field(default_factory=get_utc_now)
+
+    class Config:
+        populate_by_name = True
+        arbitrary_types_allowed = True
+        json_encoders = {ObjectId: str}
+
+
 class UserModel(BaseModel):
     """User document model"""
     id: Optional[PyObjectId] = Field(default=None, alias="_id")
@@ -36,7 +56,7 @@ class UserModel(BaseModel):
     otp_code: Optional[str] = None
     otp_expires_at: Optional[datetime] = None
     last_seen: Optional[datetime] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=get_utc_now)
     metadata: Optional[dict[str, Any]] = None
 
     class Config:
@@ -55,11 +75,13 @@ class VisitorModel(BaseModel):
     created_by: str  # User ID
     default_purpose: Optional[str] = None
     qr_token: Optional[str] = None
-    qr_expires_at: Optional[datetime] = None
-    is_all_flats: bool = False
-    valid_flats: Optional[List[str]] = None
+    qr_expires_at: Optional[datetime] = None  # NEW: For temporary visitors
+    qr_validity_hours: Optional[int] = None   # NEW: 6, 12, 18, 24
     is_active: bool = True
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    approval_status: ApprovalStatus = ApprovalStatus.PENDING
+    assigned_owner_id: Optional[str] = None  # Original resident who needs to approve
+    created_by_role: str = "owner"  # owner, guard, admin
+    created_at: datetime = Field(default_factory=get_utc_now)
     metadata: Optional[dict[str, Any]] = None
 
     class Config:
@@ -82,8 +104,8 @@ class VisitModel(BaseModel):
     exit_time: Optional[datetime] = None
     status: str  # pending, approved, rejected, auto_approved
     qr_token: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=get_utc_now)
+    updated_at: datetime = Field(default_factory=get_utc_now)
 
     class Config:
         populate_by_name = True
@@ -102,7 +124,7 @@ class TemporaryQRModel(BaseModel):
     is_all_flats: bool = False
     valid_flats: Optional[List[str]] = None
     used_at: Optional[datetime] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=get_utc_now)
 
     class Config:
         populate_by_name = True

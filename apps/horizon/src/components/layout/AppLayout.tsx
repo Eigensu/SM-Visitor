@@ -9,6 +9,8 @@ import { Menu, X } from "lucide-react";
 import { Button } from "@sm-visitor/ui";
 import { Spinner } from "@/components/shared/Spinner";
 import { cn } from "@/lib/utils";
+import { NotificationCenter } from "../NotificationCenter";
+import { visitsAPI, notificationsAPI } from "@/lib/api";
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -16,24 +18,24 @@ interface AppLayoutProps {
 
 export function AppLayout({ children }: AppLayoutProps) {
   const router = useRouter();
-  const { user, isAuthenticated } = useStore();
+  const user = useStore((state: any) => state.user);
+  const isAuthenticated = useStore((state: any) => state.isAuthenticated);
+  const setPendingCount = useStore((state: any) => state.setPendingCount);
+  const setUnreadCount = useStore((state: any) => state.setUnreadCount);
+  const setNotifications = useStore((state: any) => state.setNotifications);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isChecking, setIsChecking] = useState(true);
 
   useEffect(() => {
     // Check authentication on mount
-    const token = localStorage.getItem("auth_token");
+    const token = typeof window !== "undefined" ? localStorage.getItem("auth_token") : null;
 
-    // If we have a token in storage but not in store yet, wait (hydration happens in Providers)
-    // If no token in storage, redirect immediately
     if (!token && !isAuthenticated) {
       router.push("/login");
     } else if (isAuthenticated) {
       setIsChecking(false);
     } else if (token) {
-      // We have a token, wait for hydration
-      // Set a timeout to avoid infinite loading if hydration fails
       const timer = setTimeout(() => {
         if (!useStore.getState().isAuthenticated) {
           router.push("/login");
@@ -44,6 +46,29 @@ export function AppLayout({ children }: AppLayoutProps) {
       return () => clearTimeout(timer);
     }
   }, [isAuthenticated, router]);
+
+  // Periodic data synchronization (Sync counts for sidebar badges)
+  useEffect(() => {
+    if (!isAuthenticated || !user) return;
+
+    const syncData = async () => {
+      try {
+        const stats = await visitsAPI.getDashboardStats();
+        const unreadData = await notificationsAPI.getUnreadCount();
+        const notifications = await notificationsAPI.getNotifications(false);
+
+        setPendingCount(stats.pendingCount);
+        setUnreadCount(typeof unreadData === "object" ? unreadData.count : unreadData);
+        setNotifications(notifications);
+      } catch (error) {
+        console.error("Layout sync failed:", error);
+      }
+    };
+
+    syncData();
+    const interval = setInterval(syncData, 30000); // Poll every 30s
+    return () => clearInterval(interval);
+  }, [isAuthenticated, user, setPendingCount, setUnreadCount]);
 
   // Show loading spinner while checking auth
   if (isChecking || !user) {
@@ -93,17 +118,19 @@ export function AppLayout({ children }: AppLayoutProps) {
       {/* Main Content */}
       <div className="flex min-h-screen flex-1 flex-col">
         {/* Mobile Header */}
-        <header className="sticky top-0 z-30 flex items-center justify-between border-b border-border bg-background/95 p-4 backdrop-blur-xl md:hidden">
+        <header className="sticky top-0 z-30 flex items-center justify-between border-b border-sidebar-border bg-background/90 p-4 backdrop-blur-xl md:hidden">
           <Button
             variant="ghost"
             size="icon"
             onClick={() => setSidebarOpen(true)}
             className="-ml-2"
           >
-            <Menu className="h-5 w-5" />
+            <Menu className="h-5 w-5 text-slate-500" />
           </Button>
-          <h1 className="font-semibold text-foreground">Horizon</h1>
-          <div className="w-9" /> {/* Spacer for centering */}
+          <h1 className="font-bold tracking-tight text-foreground">Horizon</h1>
+          <div className="flex items-center">
+            <NotificationCenter />
+          </div>
         </header>
 
         {/* Page Content */}

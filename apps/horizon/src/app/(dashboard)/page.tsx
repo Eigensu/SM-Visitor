@@ -14,7 +14,7 @@ import toast from "react-hot-toast";
 
 export default function Dashboard() {
   const router = useRouter();
-  const { user } = useStore();
+  const { user, refreshMap } = useStore();
   const [isLoading, setIsLoading] = useState(true);
 
   // State for real data
@@ -27,19 +27,22 @@ export default function Dashboard() {
   const [recentVisitors, setRecentVisitors] = useState<any[]>([]);
 
   useEffect(() => {
-    const fetchData = async () => {
+    const fetchData = async (signal?: AbortSignal) => {
       try {
         setIsLoading(true);
 
         // Fetch all dashboard data in parallel
         const [dashboardStats, recent] = await Promise.all([
-          visitsAPI.getDashboardStats(),
-          visitsAPI.getRecentActivity(5),
+          visitsAPI.getDashboardStats(signal),
+          visitsAPI.getRecentActivity(5, signal),
         ]);
 
         setStats(dashboardStats);
         setRecentVisitors(recent);
-      } catch (error) {
+      } catch (error: any) {
+        if (error.name === "AbortError" || error.message?.includes("canceled")) {
+          return;
+        }
         console.error("Failed to fetch dashboard data:", error);
         toast.error("Failed to load dashboard data");
       } finally {
@@ -48,9 +51,11 @@ export default function Dashboard() {
     };
 
     if (user) {
-      fetchData();
+      const controller = new AbortController();
+      fetchData(controller.signal);
+      return () => controller.abort();
     }
-  }, [user]);
+  }, [user, refreshMap.dashboard]);
 
   const statCards = [
     {

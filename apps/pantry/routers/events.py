@@ -29,7 +29,7 @@ async def event_stream(request: Request, current_user: dict = Depends(get_curren
     
     async def event_generator():
         try:
-            async for event in sse_manager.event_generator(queue):
+            async for event in sse_manager.event_generator(request, queue):
                 yield event
         finally:
             # Clean up on disconnect
@@ -46,9 +46,7 @@ async def event_stream(request: Request, current_user: dict = Depends(get_curren
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-            "Access-Control-Allow-Origin": allow_origin,
-            "Access-Control-Allow-Credentials": "true",
+            "X-Accel-Buffering": "no",  # Disable nginx buffering
         }
     )
 

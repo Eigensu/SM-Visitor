@@ -79,73 +79,44 @@ class PhotoStorage:
     
     async def save_new_visitor_photo_buffer(self, photo_data: bytes, filename: str) -> str:
         """
-        Save new visitor photo to Cloudinary (cloud storage)
-        
-        Args:
-            photo_data: Photo binary data
-            filename: Original filename
-        
-        Returns:
-            Cloudinary secure URL
+        Save new visitor photo to local buffer (temporary storage)
         """
-        try:
-            from utils.cloudinary_storage import cloudinary_storage
-            
-            # Upload to Cloudinary
-            success, url_or_error = cloudinary_storage.upload_photo(photo_data, filename)
-            
-            if not success:
-                raise Exception(url_or_error)
-            
-            return url_or_error
-            
-        except Exception as e:
-            # Fallback to local buffer if Cloudinary fails
-            print(f"Cloudinary upload failed, falling back to local buffer: {e}")
-            
-            # Generate unique filename
-            ext = os.path.splitext(filename)[1]
-            unique_filename = f"{uuid.uuid4()}{ext}"
-            filepath = os.path.join(self.local_buffer_path, unique_filename)
-            
-            # Save to local buffer
+        import asyncio
+        # Generate unique filename
+        ext = os.path.splitext(filename)[1]
+        unique_filename = f"{uuid.uuid4()}{ext}"
+        filepath = os.path.join(self.local_buffer_path, unique_filename)
+        
+        # Save to local buffer off-thread
+        def write_file():
             with open(filepath, 'wb') as f:
                 f.write(photo_data)
-            
-            return filepath
-    
-    def get_new_visitor_photo_buffer(self, filepath: str) -> Optional[bytes]:
+        
+        await asyncio.to_thread(write_file)
+        return unique_filename
+
+    def get_new_visitor_photo_buffer(self, filename: str) -> Optional[bytes]:
         """
         Retrieve new visitor photo from local buffer
-        
-        Args:
-            filepath: Local file path
-        
-        Returns:
-            Photo binary data or None
         """
         try:
-            if os.path.exists(filepath):
-                with open(filepath, 'rb') as f:
+            full_path = os.path.join(self.local_buffer_path, filename)
+            if os.path.exists(full_path):
+                with open(full_path, 'rb') as f:
                     return f.read()
             return None
         except Exception as e:
             print(f"Error reading buffer photo: {e}")
             return None
     
-    def delete_buffer_photo(self, filepath: str) -> bool:
+    def delete_buffer_photo(self, filename: str) -> bool:
         """
         Delete photo from local buffer
-        
-        Args:
-            filepath: Local file path
-        
-        Returns:
-            True if deleted successfully
         """
         try:
-            if os.path.exists(filepath):
-                os.remove(filepath)
+            full_path = os.path.join(self.local_buffer_path, filename)
+            if os.path.exists(full_path):
+                os.remove(full_path)
                 return True
             return False
         except Exception as e:
@@ -155,12 +126,6 @@ class PhotoStorage:
     async def delete_regular_visitor_photo(self, file_id: str) -> bool:
         """
         Delete regular visitor photo from GridFS
-        
-        Args:
-            file_id: GridFS file ID
-        
-        Returns:
-            True if deleted successfully
         """
         try:
             from bson import ObjectId
@@ -183,35 +148,32 @@ class PhotoStorage:
         }
         return content_types.get(ext, 'application/octet-stream')
     
-    def validate_photo(self, photo_data: bytes, max_size_mb: int = 5) -> tuple[bool, str]:
+    async def validate_photo(self, photo_data: bytes, max_size_mb: int = 5) -> tuple[bool, str]:
         """
-        Validate photo data
-        
-        Args:
-            photo_data: Photo binary data
-            max_size_mb: Maximum size in MB
-        
-        Returns:
-            Tuple of (is_valid, error_message)
+        Validate photo data (Non-blocking)
         """
+        import asyncio
         # Check size
         size_mb = len(photo_data) / (1024 * 1024)
         if size_mb > max_size_mb:
             return False, f"Photo size exceeds {max_size_mb}MB limit"
         
-        # Check if it's a valid image using Pillow
-        try:
-            from PIL import Image
-            img = Image.open(io.BytesIO(photo_data))
-            img.verify()
-            
-            # Check format
-            if img.format not in ['JPEG', 'PNG']:
-                return False, "Only JPEG and PNG formats are supported"
-            
-            return True, ""
-        except Exception as e:
-            return False, f"Invalid image file: {str(e)}"
+        # Process image off-thread
+        def verify_image():
+            try:
+                from PIL import Image
+                img = Image.open(io.BytesIO(photo_data))
+                img.verify()
+                
+                # Check format
+                if img.format not in ['JPEG', 'PNG']:
+                    return False, "Only JPEG and PNG formats are supported"
+                
+                return True, ""
+            except Exception as e:
+                return False, f"Invalid image file: {str(e)}"
+        
+        return await asyncio.to_thread(verify_image)
 
 
 # Global instance

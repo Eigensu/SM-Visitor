@@ -1,0 +1,6 @@
+{
+  "python.analysis.extraPaths": ["./apps/pantry"],
+  "python.linting.pylintArgs": [
+    "--init-hook=import sys,os; sys.path.insert(0, os.path.join(os.getcwd(), 'apps', 'pantry'))"
+  ]
+}
