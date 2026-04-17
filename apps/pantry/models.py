@@ -27,7 +27,7 @@ class PyObjectId(ObjectId):
         field_schema.update(type="string")
 
 
-from utils.time_utils import get_ist_now
+from utils.time_utils import get_utc_now
 
 class NotificationModel(BaseModel):
     """Notification document model"""
@@ -38,7 +38,7 @@ class NotificationModel(BaseModel):
     recipient_id: str
     is_read: bool = False
     data: Optional[dict[str, Any]] = None
-    created_at: datetime = Field(default_factory=get_ist_now)
+    created_at: datetime = Field(default_factory=get_utc_now)
 
     class Config:
         populate_by_name = True
@@ -56,7 +56,7 @@ class UserModel(BaseModel):
     otp_code: Optional[str] = None
     otp_expires_at: Optional[datetime] = None
     last_seen: Optional[datetime] = None
-    created_at: datetime = Field(default_factory=get_ist_now)
+    created_at: datetime = Field(default_factory=get_utc_now)
     metadata: Optional[dict[str, Any]] = None
 
     class Config:
@@ -81,7 +81,7 @@ class VisitorModel(BaseModel):
     approval_status: ApprovalStatus = ApprovalStatus.PENDING
     assigned_owner_id: Optional[str] = None  # Original resident who needs to approve
     created_by_role: str = "owner"  # owner, guard, admin
-    created_at: datetime = Field(default_factory=get_ist_now)
+    created_at: datetime = Field(default_factory=get_utc_now)
     metadata: Optional[dict[str, Any]] = None
 
     class Config:
@@ -104,8 +104,8 @@ class VisitModel(BaseModel):
     exit_time: Optional[datetime] = None
     status: str  # pending, approved, rejected, auto_approved
     qr_token: Optional[str] = None
-    created_at: datetime = Field(default_factory=get_ist_now)
-    updated_at: datetime = Field(default_factory=get_ist_now)
+    created_at: datetime = Field(default_factory=get_utc_now)
+    updated_at: datetime = Field(default_factory=get_utc_now)
 
     class Config:
         populate_by_name = True
@@ -122,7 +122,7 @@ class TemporaryQRModel(BaseModel):
     expires_at: datetime
     one_time: bool = True
     used_at: Optional[datetime] = None
-    created_at: datetime = Field(default_factory=get_ist_now)
+    created_at: datetime = Field(default_factory=get_utc_now)
 
     class Config:
         populate_by_name = True

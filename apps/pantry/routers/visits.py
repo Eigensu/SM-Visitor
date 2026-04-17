@@ -12,7 +12,8 @@ from middleware.auth import get_current_guard, get_current_owner, get_current_us
 from utils.jwt_utils import decode_qr_token
 from utils.qr_utils import parse_qr_data
 from utils.sse_manager import sse_manager
-from utils.time_utils import get_ist_now
+from utils.time_utils import get_ist_now, get_utc_now, IST
+import pytz
 
 
 router = APIRouter(prefix="/visits", tags=["Visits"])
@@ -113,7 +114,11 @@ async def scan_qr_code(
                     from dateutil import parser
                     expires_at = parser.isoparse(expires_at)
                 
-                if get_ist_now() > expires_at:
+                # Normalize both to aware UTC for comparison
+                now_aware = get_ist_now().astimezone(pytz.utc)
+                expires_aware = expires_at if expires_at.tzinfo else pytz.utc.localize(expires_at)
+                
+                if now_aware > expires_aware:
                     return QRScanResponse(
                         valid=False,
                         auto_approve=False,
@@ -201,7 +206,10 @@ async def scan_qr_code(
                 error="QR code already used"
             )
         
-        if get_ist_now() > temp_qr["expires_at"]:
+        now_aware = get_ist_now().astimezone(pytz.utc)
+        expires_aware = temp_qr["expires_at"] if temp_qr["expires_at"].tzinfo else pytz.utc.localize(temp_qr["expires_at"])
+        
+        if now_aware > expires_aware:
             return QRScanResponse(
                 valid=False,
                 auto_approve=False,
@@ -280,12 +288,12 @@ async def start_visit(
                 "purpose": qr_request.purpose or visitor.get("default_purpose", "Visit"),
                 "owner_id": qr_request.owner_id,
                 "guard_id": current_user["user_id"],
-                "entry_time": get_ist_now(),
+                "entry_time": get_utc_now(),
                 "exit_time": None,
                 "status": "auto_approved",
                 "qr_token": qr_request.qr_token,
-                "created_at": get_ist_now(),
-                "updated_at": get_ist_now()
+                "created_at": get_utc_now(),
+                "updated_at": get_utc_now()
             }
         
         elif token_type == "temporary":
@@ -312,12 +320,12 @@ async def start_visit(
                 "purpose": "Guest visit",
                 "owner_id": temp_qr["owner_id"],
                 "guard_id": current_user["user_id"],
-                "entry_time": get_ist_now(),
+                "entry_time": get_utc_now(),
                 "exit_time": None,
                 "status": "auto_approved",
                 "qr_token": qr_request.qr_token,
-                "created_at": get_ist_now(),
-                "updated_at": get_ist_now()
+                "created_at": get_utc_now(),
+                "updated_at": get_utc_now()
             }
         else:
             raise HTTPException(
@@ -354,8 +362,8 @@ async def start_visit(
             "exit_time": None,
             "status": "pending",
             "qr_token": None,
-            "created_at": get_ist_now(),
-            "updated_at": get_ist_now()
+            "created_at": get_utc_now(),
+            "updated_at": get_utc_now()
         }
         
         # Insert visit
@@ -467,8 +475,8 @@ async def approve_visit(
         {
             "$set": {
                 "status": "approved",
-                "entry_time": get_ist_now(),
-                "updated_at": get_ist_now()
+                "entry_time": get_utc_now(),
+                "updated_at": get_utc_now()
             }
         }
     )
@@ -558,7 +566,7 @@ async def reject_visit(
         {
             "$set": {
                 "status": "rejected",
-                "updated_at": get_ist_now()
+                "updated_at": get_utc_now()
             }
         }
     )
@@ -610,8 +618,10 @@ async def get_todays_visits(
     visits = get_visits_collection()
     
     # Build query for today in IST
-    today_start = get_ist_now().replace(hour=0, minute=0, second=0, microsecond=0)
-    query = {"created_at": {"$gte": today_start}}
+    # Get today start in IST and convert to UTC for MongoDB query
+    today_start_ist = get_ist_now().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start_utc = today_start_ist.astimezone(pytz.utc).replace(tzinfo=None)
+    query = {"created_at": {"$gte": today_start_utc}}
     
     # Apply filters based on role
     if current_user["role"] == "guard":
@@ -684,8 +694,8 @@ async def checkout_visit(
         {"_id": ObjectId(visit_id)},
         {
             "$set": {
-                "exit_time": get_ist_now(),
-                "updated_at": get_ist_now()
+                "exit_time": get_utc_now(),
+                "updated_at": get_utc_now()
             }
         }
     )
@@ -1025,12 +1035,13 @@ async def get_today_count(
     visits_collection = get_visits_collection()
     flat_id = await get_owner_flat_id(current_user["user_id"], db)
     
-    # Get start of today (midnight)
-    today_start = get_ist_now().replace(hour=0, minute=0, second=0, microsecond=0)
+    # Get start of today (midnight) in IST and convert to UTC
+    today_start_ist = get_ist_now().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start_utc = today_start_ist.astimezone(pytz.utc).replace(tzinfo=None)
     
     count = await visits_collection.count_documents({
         "owner_id": flat_id,
-        "created_at": {"$gte": today_start}
+        "created_at": {"$gte": today_start_utc}
     })
     
     return {"count": count}
@@ -1136,8 +1147,9 @@ async def get_dashboard_stats(
     flat_id = await get_owner_flat_id(current_user["user_id"], db)
     
     # Time ranges
-    today_start = get_ist_now().replace(hour=0, minute=0, second=0, microsecond=0)
-    now = get_ist_now()
+    today_start_ist = get_ist_now().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start_utc = today_start_ist.astimezone(pytz.utc).replace(tzinfo=None)
+    now = get_utc_now()
     
     # Unified metrics (Ad-hoc + Staff)
     visitors_collection = get_visitors_collection()
@@ -1146,12 +1158,12 @@ async def get_dashboard_stats(
     # 1. Today's Arrivals (Ad-hoc + Staff created today)
     today_count_visits = await visits_collection.count_documents({
         "owner_id": flat_id,
-        "created_at": {"$gte": today_start}
+        "created_at": {"$gte": today_start_utc}
     })
     today_count_staff = await visitors_collection.count_documents({
         "assigned_owner_id": {"$in": [curr_uid, str(curr_uid), ObjectId(curr_uid)]},
         "visitor_type": "regular",
-        "created_at": {"$gte": today_start}
+        "created_at": {"$gte": today_start_utc}
     })
     total_today = today_count_visits + today_count_staff
     
@@ -1171,7 +1183,7 @@ async def get_dashboard_stats(
     approved_visits_count = await visits_collection.count_documents({
         "owner_id": flat_id,
         "status": {"$in": ["approved", "auto_approved"]},
-        "created_at": {"$gte": today_start}
+        "created_at": {"$gte": today_start_utc}
     })
     # NOTE: Staff approved today (We check both approval_status and recent creation or activity)
     # Since we don't have an 'approved_at' field yet, we use updated_at if it exists or today's creation
@@ -1179,7 +1191,7 @@ async def get_dashboard_stats(
     approved_staff_count = await visitors_collection.count_documents({
         "assigned_owner_id": {"$in": [curr_uid, str(curr_uid), ObjectId(curr_uid)]},
         "approval_status": "approved",
-        "created_at": {"$gte": today_start}
+        "created_at": {"$gte": today_start_utc}
     })
     total_approved = approved_visits_count + approved_staff_count
     

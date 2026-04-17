@@ -12,7 +12,6 @@ import { toast } from "sonner";
 import { AnimatePresence } from "framer-motion";
 import { visitsAPI, visitorsAPI } from "@/lib/api";
 import { useStore } from "@/lib/store";
-import { formatDateTime } from "@/lib/utils";
 import DebugOverlay from "@/components/DebugOverlay";
 
 export default function Approvals() {

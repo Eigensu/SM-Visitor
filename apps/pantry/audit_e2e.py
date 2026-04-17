@@ -19,21 +19,27 @@ from datetime import datetime, timedelta
 
 # ── Setup path so we can reuse pantry modules ──────────────────────────────
 sys.path.insert(0, os.path.dirname(__file__))
-os.environ.setdefault("MONGODB_URI", "mongodb+srv://smeigensu_db_user:vToNR0Afez6PsJWc@sm-db.dblhcnk.mongodb.net/?appName=sm-db")
-os.environ.setdefault("DATABASE_NAME", "sm_visitor")
-os.environ.setdefault("JWT_SECRET", "7d6a0e29a9e4d0f34c8c1b2d6f4b8a0f9e2c7a6d1f3b9c0e8a4d2c6b1f0a7e3c")
+# Environment variables should be set in the shell or .env file
+# DO NOT hardcode credentials here
+MONGODB_URI = os.environ.get("MONGODB_URI")
+DATABASE_NAME = os.environ.get("DATABASE_NAME", "sm_visitor")
+JWT_SECRET = os.environ.get("JWT_SECRET")
+
+if not MONGODB_URI or not JWT_SECRET:
+    print("❌ Error: MONGODB_URI and JWT_SECRET environment variables must be set.")
+    sys.exit(1)
 
 from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
 import jwt as pyjwt
 
 # ── Config ─────────────────────────────────────────────────────────────────
-MONGO_URI     = os.environ["MONGODB_URI"]
-DB_NAME       = os.environ["DATABASE_NAME"]
-JWT_SECRET    = os.environ["JWT_SECRET"]
+MONGO_URI     = MONGODB_URI
+DB_NAME       = DATABASE_NAME
+JWT_SECRET    = JWT_SECRET
 JWT_ALGORITHM = "HS256"
-API_BASE      = "http://localhost:8000"
-OWNER_ID      = "6961022acbec409664c1b80f"
+API_BASE      = os.environ.get("API_BASE", "http://localhost:8000")
+OWNER_ID      = os.environ.get("OWNER_ID", "6961022acbec409664c1b80f") # Fallback to dev ID if needed
 
 PASS = "PASS"
 FAIL = "FAIL"

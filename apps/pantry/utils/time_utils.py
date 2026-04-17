@@ -6,13 +6,18 @@ import pytz
 
 IST = pytz.timezone('Asia/Kolkata')
 
-def get_ist_now() -> datetime:
+def get_utc_now() -> datetime:
     """
-    Returns the current UTC time for storage in MongoDB.
-    MongoDB/Motor always stores datetimes as UTC. The frontend
-    converts to IST for display using the Asia/Kolkata timezone.
+    Returns the current UTC time as a naive datetime object.
+    Used for storage in MongoDB which expects UTC.
     """
     return datetime.utcnow()
+
+def get_ist_now() -> datetime:
+    """
+    Returns the current IST-aware datetime.
+    """
+    return datetime.now(pytz.utc).astimezone(IST)
 
 def format_ist(dt: datetime) -> str:
     """
@@ -26,7 +31,7 @@ def format_ist(dt: datetime) -> str:
 
 def parse_to_ist(iso_string: str) -> datetime:
     """
-    Parse an ISO string and convert to IST
+    Parse an ISO string and convert to IST-aware datetime.
     """
     try:
         dt = datetime.fromisoformat(iso_string.replace('Z', '+00:00'))
@@ -34,6 +39,4 @@ def parse_to_ist(iso_string: str) -> datetime:
             dt = pytz.utc.localize(dt)
         return dt.astimezone(IST)
     except Exception:
-        dt = get_ist_now()
-        dt = pytz.utc.localize(dt)
-        return dt.astimezone(IST)
+        return get_ist_now()

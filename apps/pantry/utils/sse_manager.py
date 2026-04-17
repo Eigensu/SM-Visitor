@@ -76,9 +76,10 @@ class SSEManager:
         AND save it as a persistent notification in the DB
         """
         # Guard: enforce strict identity contract
-        assert user_id is not None, "[SSE] user_id must not be None"
-        assert isinstance(user_id, str), f"[SSE] user_id must be str, got {type(user_id)}"
-        assert user_id.strip(), "[SSE] user_id must not be empty string"
+        if user_id is None or not isinstance(user_id, str) or not user_id.strip():
+            print(f"❌ [SSE] Invalid user_id: {user_id}")
+            return
+            
         # 1. Prepare Persistent Notification
         try:
             from database import get_notifications_collection
@@ -113,7 +114,7 @@ class SSEManager:
             # No, we should await but it's okay because Mongo is fast.
             # However, for MAX performance, we wrap in try-except.
             notifications = get_notifications_collection()
-            await notifications.insert_one(notif_doc.dict(by_alias=True, exclude_none=True))
+            await notifications.insert_one(notif_doc.model_dump(by_alias=True, exclude_none=True))
             
         except Exception as e:
             print(f"⚠️  Failed to save persistent notification: {e}")

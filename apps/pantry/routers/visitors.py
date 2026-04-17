@@ -10,7 +10,7 @@ from utils.jwt_utils import create_qr_token
 from utils.qr_utils import generate_qr_image_with_details
 from utils.storage import photo_storage
 from utils.sse_manager import sse_manager
-from utils.time_utils import get_ist_now
+from utils.time_utils import get_ist_now, get_utc_now
 from models import VisitorModel, ApprovalStatus
 from services.serializers.visitor import serialize_visitor
 from utils.auth_helpers import get_user_id
@@ -203,7 +203,7 @@ async def create_regular_visitor(
         "approval_status": "approved",
         "assigned_owner_id": None,
         "created_by_role": "owner",
-        "created_at": get_ist_now(),
+        "created_at": get_utc_now(),
     }
     
     # Insert visitor
@@ -368,7 +368,7 @@ async def create_regular_visitor_by_guard(
             "rule": request.auto_approval_rule,
             "rule_label": get_auto_approval_label(request.auto_approval_rule)
         },
-        "created_at": get_ist_now(),
+        "created_at": get_utc_now(),
     }
     
     result = await visitors.insert_one(visitor_doc)
@@ -466,7 +466,7 @@ async def approve_regular_visitor(
     from datetime import timedelta
     expires_at = None
     if visitor.get("qr_validity_hours"):
-        expires_at = get_ist_now() + timedelta(hours=int(visitor["qr_validity_hours"]))
+        expires_at = get_utc_now() + timedelta(hours=int(visitor["qr_validity_hours"]))
     
     # Generate QR
     qr_token = create_qr_token({

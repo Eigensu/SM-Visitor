@@ -95,7 +95,8 @@ async def upload_new_visitor_photo(
 @router.get("/photo/regular/{file_id}")
 @router.get("/regular/{file_id}")
 async def get_regular_visitor_photo(
-    file_id: str
+    file_id: str,
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Retrieve regular visitor photo from GridFS
@@ -121,7 +122,8 @@ async def get_regular_visitor_photo(
 @router.get("/photo/buffer/{filename}")
 @router.get("/buffer/{filename}")
 async def get_buffer_photo(
-    filename: str
+    filename: str,
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Retrieve new visitor photo from local buffer
@@ -129,10 +131,7 @@ async def get_buffer_photo(
     Returns the image file
     """
     from fastapi.responses import Response
-    import os
-    from config import LOCAL_STORAGE_PATH
     
-    filepath = os.path.join(LOCAL_STORAGE_PATH, "buffer", filename)
     photo_data = photo_storage.get_new_visitor_photo_buffer(filename)
     
     if not photo_data:

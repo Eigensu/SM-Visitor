@@ -21,7 +21,7 @@ if not hasattr(bcrypt, "__about__"):
 
 from database import get_database
 from bson import ObjectId
-from utils.time_utils import get_ist_now
+from utils.time_utils import get_ist_now, get_utc_now
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 security = HTTPBearer()
@@ -77,7 +77,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def create_access_token(user_id: str, role: str) -> str:
     """Create JWT access token"""
-    now = get_ist_now()
+    now = get_utc_now()
     payload = {
         "user_id": user_id,
         "role": role,
@@ -150,7 +150,7 @@ async def get_current_user(
     # Update last seen
     await collection.update_one(
         {"_id": user["_id"]},
-        {"$set": {"last_seen": get_ist_now()}}
+        {"$set": {"last_seen": get_utc_now()}}
     )
     
     return user
@@ -194,7 +194,7 @@ async def signup(request: SignupRequest, db = Depends(get_database)):
         "role": request.role,
         "flat_id": request.flat_id,
         "last_seen": None,
-        "created_at": get_ist_now(),
+        "created_at": get_utc_now(),
         "metadata": {}
     }
     
@@ -273,7 +273,7 @@ async def login(request: LoginRequest, db = Depends(get_database)):
     # Update last seen
     await collection.update_one(
         {"_id": user["_id"]},
-        {"$set": {"last_seen": get_ist_now()}}
+        {"$set": {"last_seen": get_utc_now()}}
     )
     
     # Prepare response
