@@ -5,7 +5,7 @@
  */
 "use client";
 
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@sm-visitor/ui";
 import { Input } from "@sm-visitor/ui";
@@ -24,7 +24,7 @@ const CATEGORIES = [
   { id: "other", label: "Other" },
 ];
 
-export default function NewRegularVisitorPage() {
+function RegularVisitorContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const mode = searchParams.get("mode") || "staff"; // default to staff
@@ -254,5 +254,15 @@ export default function NewRegularVisitorPage() {
         </form>
       </main>
     </div>
+  );
+}
+
+export default function NewRegularVisitorPage() {
+  return (
+    <Suspense
+      fallback={<div className="flex min-h-screen items-center justify-center p-4">Loading...</div>}
+    >
+      <RegularVisitorContent />
+    </Suspense>
   );
 }

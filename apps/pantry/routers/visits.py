@@ -931,10 +931,11 @@ async def get_history_visits(
     try:
         visits_collection = get_visits_collection()
         user_id = current_user.get("user_id")
+        flat_id = await get_owner_flat_id(user_id, db)
         
         # Get all visits that are NOT pending
         query = {
-            "owner_id": user_id, # Simplified, adjust if flat_id mapping is needed
+            "owner_id": flat_id,
             "status": {"$in": ["approved", "rejected"]}
         }
 
@@ -946,7 +947,7 @@ async def get_history_visits(
                     visitor_id=visit.get("visitor_id"),
                     name_snapshot=visit["name_snapshot"],
                     phone_snapshot=visit.get("phone_snapshot"),
-                    photo_snapshot_url=visit["photo_snapshot_url"],
+                    photo_snapshot_url=visit.get("photo_snapshot_url"),
                     purpose=visit["purpose"],
                     owner_id=visit["owner_id"],
                     guard_id=visit["guard_id"],
@@ -1056,9 +1057,13 @@ async def get_recent_activity(
         "owner_id": flat_id
     }).sort("created_at", -1).limit(limit).to_list(length=limit)
     
+    owner_ids = [user_id, str(user_id)]
+    if ObjectId.is_valid(user_id):
+        owner_ids.append(ObjectId(user_id))
+        
     # 2. Recent regular visitors assigned to this owner
     visitors_task = visitors_collection.find({
-        "assigned_owner_id": {"$in": [user_id, str(user_id), ObjectId(user_id) if ObjectId.is_valid(user_id) else None]},
+        "assigned_owner_id": {"$in": owner_ids},
         "visitor_type": "regular"
     }).sort("created_at", -1).limit(limit).to_list(length=limit)
     

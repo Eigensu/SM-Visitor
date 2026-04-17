@@ -145,7 +145,7 @@ export default function Approvals() {
       description="Manage visitor entry and staff registration requests"
       action={<SSEIndicator connected={true} />}
     >
-      <DebugOverlay refreshMap={refreshMap} />
+      {process.env.NODE_ENV !== "production" && <DebugOverlay refreshMap={refreshMap} />}
       {isLoading ? (
         <div className="flex items-center justify-center py-12">
           <Spinner size="lg" />

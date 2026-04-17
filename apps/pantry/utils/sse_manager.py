@@ -188,7 +188,7 @@ payload={data}
                     # 3. Protocol Serialization (Strict ID/NAME/DATA format)
                     event_id = message.get("id")
                     if event_id:
-                         yield f"id: {event_id}\n"
+                        yield f"id: {event_id}\n"
                     yield f"event: {event_type}\ndata: {json.dumps(event_data)}\n\n"
                     
                 except asyncio.TimeoutError:

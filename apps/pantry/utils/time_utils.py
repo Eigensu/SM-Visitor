@@ -34,4 +34,6 @@ def parse_to_ist(iso_string: str) -> datetime:
             dt = pytz.utc.localize(dt)
         return dt.astimezone(IST)
     except Exception:
-        return get_ist_now()
+        dt = get_ist_now()
+        dt = pytz.utc.localize(dt)
+        return dt.astimezone(IST)

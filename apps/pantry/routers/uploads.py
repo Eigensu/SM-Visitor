@@ -133,7 +133,7 @@ async def get_buffer_photo(
     from config import LOCAL_STORAGE_PATH
     
     filepath = os.path.join(LOCAL_STORAGE_PATH, "buffer", filename)
-    photo_data = photo_storage.get_new_visitor_photo_buffer(filepath)
+    photo_data = photo_storage.get_new_visitor_photo_buffer(filename)
     
     if not photo_data:
         raise HTTPException(
