@@ -176,6 +176,14 @@ export const uploadsAPI = {
     const response = await apiClient.post("/uploads/photo/regular-visitor", formData);
     return response.data;
   },
+
+  uploadIDCardPhoto: async (file: File) => {
+    const formData = new FormData();
+    formData.append("photo", file);
+
+    const response = await apiClient.post("/uploads/photo/id-card", formData);
+    return response.data;
+  },
 };
 
 // Users API
