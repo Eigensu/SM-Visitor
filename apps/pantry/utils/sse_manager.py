@@ -169,6 +169,35 @@ payload={data}
                 return_exceptions=True
             )
     
+    async def broadcast_to_flats(self, flat_ids: list, event_type: str, data: dict, db=None):
+        """
+        Broadcast an event to all users associated with a set of flat IDs
+        """
+        if not flat_ids or not db:
+            print(f"⚠️  [SSE] Cannot broadcast to flats: flat_ids={flat_ids}, db_provided={db is not None}")
+            return
+            
+        # 1. Resolve flat_ids to user_ids (owners only)
+        # Using 'users' collection as verified in init_database.py
+        try:
+            cursor = db.users.find({"flat_id": {"$in": flat_ids}, "role": "owner"})
+            owners = await cursor.to_list(length=100)
+            
+            target_user_ids = [str(owner["_id"]) for owner in owners]
+            
+            if not target_user_ids:
+                print(f"⚠️  [SSE] No owners found for flats: {flat_ids}")
+                return
+                
+            # 2. Parallel Broadcast
+            print(f"📢 [SSE BROADCAST] target_flats={flat_ids}, target_users={len(target_user_ids)}")
+            await asyncio.gather(
+                *[self.send_event(user_id, event_type, data) for user_id in target_user_ids],
+                return_exceptions=True
+            )
+        except Exception as e:
+            print(f"❌ [SSE] Broadcast to flats failed: {e}")
+
     async def event_generator(self, request: Request, queue: asyncio.Queue):
         """
         Generate SSE events from queue with disconnect handling

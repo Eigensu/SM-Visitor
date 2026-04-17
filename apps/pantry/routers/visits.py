@@ -61,7 +61,6 @@ class VisitResponse(BaseModel):
     name_snapshot: str
     phone_snapshot: Optional[str]
     photo_snapshot_url: Optional[str]  # Made optional to handle temp QR codes
-    photo_snapshot_url: Optional[str]  # Made optional to handle temp QR codes
     purpose: str
     owner_id: str
     guard_id: str
@@ -73,6 +72,28 @@ class VisitResponse(BaseModel):
     valid_flats: Optional[List[str]] = None
     target_flat_ids: Optional[List[str]] = None
     created_at: datetime
+
+
+def map_visit_to_response(v: dict) -> VisitResponse:
+    """Helper to map MongoDB visit document to VisitResponse"""
+    return VisitResponse(
+        id=str(v["_id"]),
+        visitor_id=v.get("visitor_id"),
+        name_snapshot=v["name_snapshot"],
+        phone_snapshot=v.get("phone_snapshot"),
+        photo_snapshot_url=v.get("photo_snapshot_url"),
+        purpose=v["purpose"],
+        owner_id=v["owner_id"],
+        guard_id=v["guard_id"],
+        entry_time=v.get("entry_time"),
+        exit_time=v.get("exit_time"),
+        status=v["status"],
+        qr_token=v.get("qr_token"),
+        is_all_flats=v.get("is_all_flats", False),
+        valid_flats=v.get("valid_flats"),
+        target_flat_ids=v.get("target_flat_ids"),
+        created_at=v["created_at"]
+    )
 
 
 @router.post("/qr-scan", response_model=QRScanResponse)
@@ -281,7 +302,7 @@ async def start_visit(
             target_flat_ids = []
             if is_all_flats:
                 # Fetch all unique flat IDs from residents
-                all_flats = await db.residents.distinct("flat_id")
+                all_flats = await db.users.distinct("flat_id")
                 target_flat_ids = (
                     random.sample(all_flats, min(len(all_flats), 3))
                     if all_flats
@@ -297,7 +318,7 @@ async def start_visit(
             rule = auto_approval.get("rule", "always")
 
             status_val = "auto_approved"
-            entry_time = datetime.utcnow()
+            entry_time = get_utc_now()
 
             if rule == "manual":
                 status_val = "pending"
@@ -319,7 +340,7 @@ async def start_visit(
                 ),
                 "target_flat_ids": target_flat_ids,
                 "guard_id": current_user["user_id"],
-                "entry_time": get_utc_now(),
+                "entry_time": entry_time,
                 "exit_time": None,
                 "status": status_val,
                 "qr_token": qr_request.qr_token,
@@ -331,7 +352,7 @@ async def start_visit(
             temp_qr_collection = get_temporary_qr_collection()
             temp_qr = await temp_qr_collection.find_one({"_id": ObjectId(payload["temp_qr_id"])})
             
-            if not temp_qr or temp_qr.get("used_at") or get_ist_now() > temp_qr["expires_at"]:
+            if not temp_qr or temp_qr.get("used_at") or get_utc_now() > temp_qr["expires_at"]:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Invalid or expired temporary QR",
@@ -343,7 +364,7 @@ async def start_visit(
 
             target_flat_ids = []
             if is_all_flats:
-                all_flats = await db.residents.distinct("flat_id")
+                all_flats = await db.users.distinct("flat_id")
                 target_flat_ids = (
                     random.sample(all_flats, min(len(all_flats), 3))
                     if all_flats
@@ -357,7 +378,7 @@ async def start_visit(
             # Mark temp QR as used
             await temp_qr_collection.update_one(
                 {"_id": ObjectId(payload["temp_qr_id"])},
-                {"$set": {"used_at": get_ist_now()}}
+                {"$set": {"used_at": get_utc_now()}}
             )
 
             visit_doc = {
@@ -408,7 +429,7 @@ async def start_visit(
                 "new_visit_pending",
                 {
                     "id": str(result.inserted_id),
-                    "visitor_id": str(visitor["_id"]),
+                    "visitor_id": visit_doc.get("visitor_id"),
                     "name_snapshot": visit_doc["name_snapshot"],
                     "phone_snapshot": visit_doc["phone_snapshot"],
                     "photo_snapshot_url": visit_doc["photo_snapshot_url"],
@@ -449,7 +470,7 @@ async def start_visit(
                 "visit_auto_approved",
                 {
                     "id": str(result.inserted_id),
-                    "visitor_id": str(visitor["_id"]),
+                    "visitor_id": visit_doc.get("visitor_id"),
                     "name_snapshot": visit_doc["name_snapshot"],
                     "phone_snapshot": visit_doc["phone_snapshot"],
                     "photo_snapshot_url": visit_doc["photo_snapshot_url"],
@@ -473,7 +494,7 @@ async def start_visit(
         # Determine target owners/flats for New Visitor
         target_flat_ids = []
         if new_request.owner_id == "all":
-            all_flats = await db.residents.distinct("flat_id")
+            all_flats = await db.users.distinct("flat_id")
             target_flat_ids = (
                 random.sample(all_flats, min(len(all_flats), 3)) if all_flats else []
             )
@@ -539,21 +560,7 @@ async def start_visit(
     # Fetch and return created visit
     created_visit = await visits.find_one({"_id": result.inserted_id})
 
-    return VisitResponse(
-        id=str(created_visit["_id"]),
-        visitor_id=created_visit.get("visitor_id"),
-        name_snapshot=created_visit["name_snapshot"],
-        phone_snapshot=created_visit.get("phone_snapshot"),
-        photo_snapshot_url=created_visit["photo_snapshot_url"],
-        purpose=created_visit["purpose"],
-        owner_id=created_visit["owner_id"],
-        guard_id=created_visit["guard_id"],
-        entry_time=created_visit.get("entry_time"),
-        exit_time=created_visit.get("exit_time"),
-        status=created_visit["status"],
-        qr_token=created_visit.get("qr_token"),
-        created_at=created_visit["created_at"],
-    )
+    return map_visit_to_response(created_visit)
 
 
 @router.patch("/{visit_id}/approve", response_model=VisitResponse)
@@ -586,7 +593,7 @@ async def approve_visit(
 
     # If not direct match, check flat_id
     if not is_owner:
-        resident = await db.residents.find_one(
+        resident = await db.users.find_one(
             {"_id": ObjectId(current_user["user_id"])}
         )
         if resident:
@@ -604,21 +611,7 @@ async def approve_visit(
     if visit["status"] != "pending":
         # Check if it's already approved to avoid error
         if visit["status"] == "approved":
-            return VisitResponse(
-                id=str(visit["_id"]),
-                visitor_id=visit.get("visitor_id"),
-                name_snapshot=visit["name_snapshot"],
-                phone_snapshot=visit.get("phone_snapshot"),
-                photo_snapshot_url=visit["photo_snapshot_url"],
-                purpose=visit["purpose"],
-                owner_id=visit["owner_id"],
-                guard_id=visit["guard_id"],
-                entry_time=visit.get("entry_time"),
-                exit_time=visit.get("exit_time"),
-                status=visit["status"],
-                qr_token=visit.get("qr_token"),
-                created_at=visit["created_at"],
-            )
+            return map_visit_to_response(visit)
 
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -698,7 +691,7 @@ async def reject_visit(
 
     # If not direct match, check flat_id
     if not is_owner:
-        resident = await db.residents.find_one(
+        resident = await db.users.find_one(
             {"_id": ObjectId(current_user["user_id"])}
         )
         if resident and resident.get("flat_id") == visit["owner_id"]:
@@ -792,27 +785,7 @@ async def get_todays_visits(
     cursor = visits.find(query).sort("created_at", -1)
     visit_list = await cursor.to_list(length=200)
 
-    return [
-        VisitResponse(
-            id=str(v["_id"]),
-            visitor_id=v.get("visitor_id"),
-            name_snapshot=v["name_snapshot"],
-            phone_snapshot=v.get("phone_snapshot"),
-            photo_snapshot_url=v["photo_snapshot_url"],
-            purpose=v["purpose"],
-            owner_id=v["owner_id"],
-            guard_id=v["guard_id"],
-            entry_time=v.get("entry_time"),
-            exit_time=v.get("exit_time"),
-            status=v["status"],
-            qr_token=v.get("qr_token"),
-            is_all_flats=v.get("is_all_flats", False),
-            valid_flats=v.get("valid_flats"),
-            target_flat_ids=v.get("target_flat_ids"),
-            created_at=v["created_at"],
-        )
-        for v in visit_list
-    ]
+    return [map_visit_to_response(v) for v in visit_list]
 
 
 @router.patch("/{visit_id}/checkout", response_model=VisitResponse)
@@ -937,7 +910,7 @@ async def get_notifications(
 
         # Get owner's flat_id
         user_id = current_user.get("user_id")
-        resident = await db.residents.find_one({"_id": ObjectId(user_id)})
+        resident = await db.users.find_one({"_id": ObjectId(user_id)})
         if not resident:
             return []
 
@@ -1038,7 +1011,7 @@ async def get_pending_visits(
             )
 
         print(f"[DEBUG] Looking up resident with _id: {user_id}")
-        resident = await db.residents.find_one({"_id": ObjectId(user_id)})
+        resident = await db.users.find_one({"_id": ObjectId(user_id)})
         print(f"[DEBUG] Resident found: {resident}")
 
         if not resident:
@@ -1068,24 +1041,7 @@ async def get_pending_visits(
 
         print(f"[DEBUG] Found {len(visits)} pending visits")
 
-        return [
-            VisitResponse(
-                id=str(visit["_id"]),
-                visitor_id=visit.get("visitor_id"),
-                name_snapshot=visit["name_snapshot"],
-                phone_snapshot=visit.get("phone_snapshot"),
-                photo_snapshot_url=visit["photo_snapshot_url"],
-                purpose=visit["purpose"],
-                owner_id=visit["owner_id"],
-                guard_id=visit["guard_id"],
-                entry_time=visit.get("entry_time"),
-                exit_time=visit.get("exit_time"),
-                status=visit["status"],
-                qr_token=visit.get("qr_token"),  # None for pending visits
-                created_at=visit["created_at"],
-            )
-            for visit in visits
-        ]
+        return [map_visit_to_response(visit) for visit in visits]
     except Exception as e:
         print(f"[ERROR] Failed to get pending visits: {str(e)}")
         import traceback
@@ -1116,23 +1072,7 @@ async def get_history_visits(
 
         visits = []
         async for visit in visits_collection.find(query).sort("created_at", -1).limit(50):
-            visits.append(
-                VisitResponse(
-                    id=str(visit["_id"]),
-                    visitor_id=visit.get("visitor_id"),
-                    name_snapshot=visit["name_snapshot"],
-                    phone_snapshot=visit.get("phone_snapshot"),
-                    photo_snapshot_url=visit.get("photo_snapshot_url"),
-                    purpose=visit["purpose"],
-                    owner_id=visit["owner_id"],
-                    guard_id=visit["guard_id"],
-                    entry_time=visit.get("entry_time"),
-                    exit_time=visit.get("exit_time"),
-                    status=visit["status"],
-                    qr_token=visit.get("qr_token"),
-                    created_at=visit["created_at"]
-                )
-            )
+            visits.append(map_visit_to_response(visit))
         return visits
     except Exception as e:
         print(f"[ERROR] Failed to get visit history: {str(e)}")
@@ -1145,7 +1085,7 @@ async def get_history_visits(
 
 async def get_owner_flat_id(user_id: str, db) -> str:
     """Helper to get flat_id for an owner"""
-    resident = await db.residents.find_one({"_id": ObjectId(user_id)})
+    resident = await db.users.find_one({"_id": ObjectId(user_id)})
     if not resident or not resident.get("flat_id"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

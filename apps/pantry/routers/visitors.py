@@ -59,6 +59,58 @@ class UpdateVisitorRequest(BaseModel):
     valid_flats: Optional[List[str]] = None
 
 
+
+def get_category_label(category: str) -> str:
+    mapping = {
+        "maid": "Maid",
+        "cook": "Cook",
+        "driver": "Driver",
+        "delivery": "Delivery",
+        "other": "Other Staff"
+    }
+    return mapping.get(category, "Staff")
+
+def get_auto_approval_label(rule: str) -> str:
+    mapping = {
+        "always": "Always",
+        "within_schedule": "Within Schedule",
+        "notify_only": "Notify Only"
+    }
+    return mapping.get(rule, "Standard")
+
+async def get_visitor_request(
+    name: str = Form(...),
+    phone: Optional[str] = Form(None),
+    category: str = Form("other"),
+    flat_id: Optional[str] = Form(None),
+    default_purpose: Optional[str] = Form(None),
+    schedule_enabled: bool = Form(False),
+    schedule_start_time: Optional[str] = Form(None),
+    schedule_end_time: Optional[str] = Form(None),
+    auto_approval_enabled: bool = Form(True),
+    auto_approval_rule: str = Form("always")
+) -> CreateRegularVisitorRequest:
+    # Convert empty strings to None for optional fields
+    # This prevents Pydantic min_length validation errors for blank form fields
+    s_phone = phone if phone and phone.strip() else None
+    s_flat_id = flat_id if flat_id and flat_id.strip() else None
+    s_default_purpose = default_purpose if default_purpose and default_purpose.strip() else None
+    s_start_time = schedule_start_time if schedule_start_time and schedule_start_time.strip() else None
+    s_end_time = schedule_end_time if schedule_end_time and schedule_end_time.strip() else None
+
+    return CreateRegularVisitorRequest(
+        name=name,
+        phone=s_phone,
+        category=category,
+        flat_id=s_flat_id,
+        default_purpose=s_default_purpose,
+        schedule_enabled=schedule_enabled,
+        schedule_start_time=s_start_time,
+        schedule_end_time=s_end_time,
+        auto_approval_enabled=auto_approval_enabled,
+        auto_approval_rule=auto_approval_rule
+    )
+
 class VisitorResponse(BaseModel):
     id: str  # serializer returns 'id' key, matching this field exactly
     name: str
@@ -190,56 +242,6 @@ async def create_regular_visitor(
         }
     )
     
-def get_category_label(category: str) -> str:
-    mapping = {
-        "maid": "Maid",
-        "cook": "Cook",
-        "driver": "Driver",
-        "delivery": "Delivery",
-        "other": "Other Staff"
-    }
-    return mapping.get(category, "Staff")
-
-def get_auto_approval_label(rule: str) -> str:
-    mapping = {
-        "always": "Always",
-        "within_schedule": "Within Schedule",
-        "notify_only": "Notify Only"
-    }
-    return mapping.get(rule, "Standard")
-
-async def get_visitor_request(
-    name: str = Form(...),
-    phone: Optional[str] = Form(None),
-    category: str = Form("other"),
-    flat_id: Optional[str] = Form(None),
-    default_purpose: Optional[str] = Form(None),
-    schedule_enabled: bool = Form(False),
-    schedule_start_time: Optional[str] = Form(None),
-    schedule_end_time: Optional[str] = Form(None),
-    auto_approval_enabled: bool = Form(True),
-    auto_approval_rule: str = Form("always")
-) -> CreateRegularVisitorRequest:
-    # Convert empty strings to None for optional fields
-    # This prevents Pydantic min_length validation errors for blank form fields
-    s_phone = phone if phone and phone.strip() else None
-    s_flat_id = flat_id if flat_id and flat_id.strip() else None
-    s_default_purpose = default_purpose if default_purpose and default_purpose.strip() else None
-    s_start_time = schedule_start_time if schedule_start_time and schedule_start_time.strip() else None
-    s_end_time = schedule_end_time if schedule_end_time and schedule_end_time.strip() else None
-
-    return CreateRegularVisitorRequest(
-        name=name,
-        phone=s_phone,
-        category=category,
-        flat_id=s_flat_id,
-        default_purpose=s_default_purpose,
-        schedule_enabled=schedule_enabled,
-        schedule_start_time=s_start_time,
-        schedule_end_time=s_end_time,
-        auto_approval_enabled=auto_approval_enabled,
-        auto_approval_rule=auto_approval_rule
-    )
 
 @router.post("/regular/guard", response_model=VisitorResponse, status_code=status.HTTP_201_CREATED)
 async def create_regular_visitor_by_guard(

@@ -113,6 +113,11 @@ export const visitsAPI = {
     return response.data;
   },
 
+  exportAll: async () => {
+    const response = await apiClient.get("/visits/history");
+    return response.data;
+  },
+
   getNotifications: async (signal?: AbortSignal) => {
     const response = await apiClient.get("/visits/notifications", { signal });
     return response.data;
@@ -208,6 +213,11 @@ export const tempQRAPI = {
 
   getActive: async () => {
     const response = await apiClient.get("/temp-qr/active");
+    return response.data;
+  },
+
+  getAvailableFlats: async () => {
+    const response = await apiClient.get("/users/?role=owner");
     return response.data;
   },
 };

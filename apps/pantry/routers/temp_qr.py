@@ -61,10 +61,22 @@ async def generate_temporary_qr(
     
     # Calculate expiry
     expires_at = get_utc_now() + timedelta(hours=request.validity_hours)
+
+    # 1. Fetch flat_id for the owner
+    from database import get_database
+    db = await get_database()
+    owner_doc = await db.users.find_one({"_id": ObjectId(current_user["user_id"])})
+    flat_id = owner_doc.get("flat_id") if owner_doc else None
     
-    # Create temporary QR document
+    if not flat_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Owner profile must have a flat_id to generate QR codes."
+        )
+
+    # 2. Create temporary QR document
     temp_qr_doc = {
-        "owner_id": current_user["user_id"],
+        "owner_id": flat_id,  # Standardized to flat_id
         "guest_name": request.guest_name,
         "expires_at": expires_at,
         "one_time": True,
