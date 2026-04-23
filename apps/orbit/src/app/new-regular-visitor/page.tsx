@@ -14,13 +14,14 @@ import { OwnerSelect } from "@/components/OwnerSelect";
 import { GlassCard } from "@/components/GlassCard";
 import { visitorsAPI } from "@/lib/api";
 import toast from "react-hot-toast";
-import { ArrowLeft, UserCheck, Clock, ShieldCheck } from "lucide-react";
+import { ArrowLeft, UserCheck, Clock, CreditCard, Camera } from "lucide-react";
 
-const CATEGORIES = [
-  { id: "maid", label: "Maid" },
-  { id: "cook", label: "Cook" },
-  { id: "driver", label: "Driver" },
-  { id: "delivery", label: "Delivery" },
+const ID_CARD_TYPES = [
+  { id: "aadhaar", label: "Aadhaar" },
+  { id: "pan", label: "PAN" },
+  { id: "voter", label: "Voter ID" },
+  { id: "driving", label: "Driving Licence" },
+  { id: "passport", label: "Passport" },
   { id: "other", label: "Other" },
 ];
 
@@ -33,14 +34,16 @@ function RegularVisitorContent() {
   const [step, setStep] = useState<"form" | "pending">("form");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [photoBlob, setPhotoBlob] = useState<Blob | null>(null);
+  const [idCardPhotoBlob, setIdCardPhotoBlob] = useState<Blob | null>(null);
 
   const [formData, setFormData] = useState({
     name: "",
     phone: "",
-    category: isGuestMode ? "other" : "maid",
     owner_id: "",
     default_purpose: "",
     validity_hours: "24", // Default to 24 for guests
+    id_card_type: "aadhaar",
+    id_card_number: "",
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -50,6 +53,8 @@ function RegularVisitorContent() {
     if (!formData.name.trim()) newErrors.name = "Name is required";
     if (!formData.owner_id) newErrors.owner_id = "Owner assignment is required";
     if (!photoBlob) newErrors.photo = "Photo is required";
+    if (!formData.id_card_number.trim()) newErrors.id_card_number = "ID card number is required";
+    if (!idCardPhotoBlob) newErrors.id_card_photo = "ID card photo is required";
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -67,12 +72,13 @@ function RegularVisitorContent() {
       const data = new FormData();
       data.append("name", formData.name);
       data.append("phone", formData.phone);
-      data.append("category", formData.category);
       data.append("flat_id", formData.owner_id);
       data.append(
         "default_purpose",
-        formData.default_purpose || (isGuestMode ? "Guest Visit" : formData.category)
+        formData.default_purpose || (isGuestMode ? "Guest Visit" : "visitor")
       );
+      data.append("id_card_type", formData.id_card_type);
+      data.append("id_card_number", formData.id_card_number);
 
       // Only append qr_validity_hours if in guest mode to avoid sending empty strings
       if (isGuestMode) {
@@ -81,6 +87,10 @@ function RegularVisitorContent() {
 
       if (photoBlob) {
         data.append("photo", photoBlob, "visitor.jpg");
+      }
+
+      if (idCardPhotoBlob) {
+        data.append("id_card_photo", idCardPhotoBlob, "id_card.jpg");
       }
 
       await visitorsAPI.createRegularByGuard(data);
@@ -174,27 +184,6 @@ function RegularVisitorContent() {
                   })
                 }
               />
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium text-muted-foreground">
-                  Category <span className="text-red-500">*</span>
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {CATEGORIES.map((cat) => (
-                    <button
-                      key={cat.id}
-                      type="button"
-                      onClick={() => setFormData({ ...formData, category: cat.id })}
-                      className={`rounded-lg border px-3 py-2 text-sm font-medium transition-all ${
-                        formData.category === cat.id
-                          ? "border-primary bg-primary/10 text-primary shadow-sm"
-                          : "border-border bg-card text-muted-foreground hover:bg-muted"
-                      }`}
-                    >
-                      {cat.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
 
               {isGuestMode && (
                 <div className="space-y-1.5 pt-2">
@@ -242,6 +231,64 @@ function RegularVisitorContent() {
             </h2>
             <PhotoCapture autoUpload={false} onFileSelected={(file) => setPhotoBlob(file)} />
             {errors.photo && <p className="mt-2 text-xs text-destructive">{errors.photo}</p>}
+          </GlassCard>
+
+          <GlassCard>
+            <h2 className="mb-4 text-lg font-semibold text-foreground border-b pb-2 flex items-center gap-2">
+              <CreditCard className="h-5 w-5 text-primary" />
+              Identity Card
+            </h2>
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-muted-foreground">
+                  Card Type <span className="text-red-500">*</span>
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {ID_CARD_TYPES.map((card) => (
+                    <button
+                      key={card.id}
+                      type="button"
+                      onClick={() => setFormData({ ...formData, id_card_type: card.id })}
+                      className={`rounded-lg border px-3 py-2 text-sm font-medium transition-all ${
+                        formData.id_card_type === card.id
+                          ? "border-primary bg-primary/10 text-primary shadow-sm"
+                          : "border-border bg-card text-muted-foreground hover:bg-muted"
+                      }`}
+                    >
+                      {card.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <Input
+                label="Card Number"
+                placeholder={`Enter ${ID_CARD_TYPES.find((c) => c.id === formData.id_card_type)?.label} number`}
+                value={formData.id_card_number}
+                onChange={(e) =>
+                  setFormData({ ...formData, id_card_number: e.target.value.toUpperCase() })
+                }
+                error={errors.id_card_number}
+                required
+              />
+
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
+                  <Camera className="h-4 w-4" />
+                  Photo of ID Card <span className="text-red-500">*</span>
+                </label>
+                <p className="text-xs text-muted-foreground">
+                  Take a clear photo of the identity card.
+                </p>
+                <PhotoCapture
+                  autoUpload={false}
+                  onFileSelected={(file) => setIdCardPhotoBlob(file)}
+                />
+                {errors.id_card_photo && (
+                  <p className="mt-2 text-xs text-destructive">{errors.id_card_photo}</p>
+                )}
+              </div>
+            </div>
           </GlassCard>
 
           <Button
