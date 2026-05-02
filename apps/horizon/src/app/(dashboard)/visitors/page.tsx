@@ -34,7 +34,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { visitsAPI } from "@/lib/api";
+import { visitsAPI, visitorsAPI } from "@/lib/api";
 import toast from "react-hot-toast";
 
 interface Visit {
@@ -43,11 +43,13 @@ interface Visit {
   phone: string;
   purpose: string;
   date: string;
+  createdAt: string;
   status: StatusType;
   photo?: string;
   is_all_flats?: boolean;
   target_flat_ids?: string[];
   owner_id: string;
+  visitor_type?: "adhoc" | "regular";
 }
 
 export default function Visitors() {
@@ -61,28 +63,57 @@ export default function Visitors() {
   const fetchVisits = async () => {
     try {
       setIsLoading(true);
-      const data = await visitsAPI.getHistory(); // Fetch recent visits
+      const [historyVisits, historyRegularVisitors] = await Promise.all([
+        visitsAPI.getHistory(),
+        visitorsAPI.getHistoryRegular(),
+      ]);
 
-      // Transform API data to component format
-      const transformedVisits: Visit[] = data.map((v: any) => ({
-        id: v.id || v._id,
-        name: v.name_snapshot,
-        phone: v.phone_snapshot || "N/A",
-        purpose: v.purpose,
-        date: new Date(
-          v.created_at.endsWith("Z") ? v.created_at : v.created_at + "Z"
-        ).toLocaleDateString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-          day: "numeric",
-          month: "short",
-        }),
-        status: v.status,
-        photo: v.photo_snapshot_url,
-        is_all_flats: v.is_all_flats,
-        target_flat_ids: v.target_flat_ids,
-        owner_id: v.owner_id,
-      }));
+      const transformedVisits: Visit[] = [
+        ...historyVisits.map((v: any) => ({
+          id: v.id || v._id,
+          name: v.name_snapshot,
+          phone: v.phone_snapshot || "N/A",
+          purpose: v.purpose,
+          createdAt: v.created_at,
+          date: new Date(
+            v.created_at.endsWith("Z") ? v.created_at : v.created_at + "Z"
+          ).toLocaleDateString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+            day: "numeric",
+            month: "short",
+          }),
+          status: v.status,
+          photo: v.photo_snapshot_url,
+          is_all_flats: v.is_all_flats,
+          target_flat_ids: v.target_flat_ids,
+          owner_id: v.owner_id,
+          visitor_type: "adhoc",
+        })),
+        ...historyRegularVisitors.map((v: any) => ({
+          id: v.id || v._id,
+          name: v.name,
+          phone: v.phone || "N/A",
+          purpose: `Staff Registration: ${v.category_label || v.category || "Staff"}`,
+          createdAt: v.created_at,
+          date: new Date(
+            v.created_at.endsWith("Z") ? v.created_at : v.created_at + "Z"
+          ).toLocaleDateString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+            day: "numeric",
+            month: "short",
+          }),
+          status: v.approval_status,
+          photo: v.photo_url,
+          owner_id: v.assigned_owner_id || v.created_by || "",
+          visitor_type: "regular",
+        })),
+      ].sort(
+        (a, b) =>
+          new Date(b.createdAt.endsWith("Z") ? b.createdAt : `${b.createdAt}Z`).getTime() -
+          new Date(a.createdAt.endsWith("Z") ? a.createdAt : `${a.createdAt}Z`).getTime()
+      );
 
       setVisits(transformedVisits);
     } catch (error) {
