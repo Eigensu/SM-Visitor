@@ -5,17 +5,19 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Bell, CheckCircle2, XCircle, Clock, Check } from "lucide-react";
+import { Bell, CheckCircle2, XCircle, Clock } from "lucide-react";
 import { useStore } from "@/lib/store";
+import type { AppNotification } from "@/lib/store";
 import { notificationsAPI } from "@/lib/api";
-import { Button } from "@sm-visitor/ui";
 import { format } from "date-fns";
 import { useRouter } from "next/navigation";
+import { mergeNotifications } from "@sm-visitor/hooks";
 
 export function NotificationCenter() {
   const [isOpen, setIsOpen] = useState(false);
   const router = useRouter();
-  const { notifications, unreadCount, setNotifications, clearUnreadCount } = useStore();
+  const { notifications, unreadCount, setNotifications, setUnreadCount, clearUnreadCount } =
+    useStore();
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Close dropdown when clicking outside
@@ -39,15 +41,14 @@ export function NotificationCenter() {
           notificationsAPI.getUnreadCount(),
         ]);
 
-        // Merge with existing Zustand notifications, deduplicating by ID
-        const existingIds = new Set(notifications.map((n) => n._id || n.id));
-        const newNotifications = persisted.filter((n: any) => !existingIds.has(n._id || n.id));
-        const merged = [...newNotifications, ...notifications];
+        const persistedList = Array.isArray(persisted) ? (persisted as AppNotification[]) : [];
+        const currentNotifications = useStore.getState().notifications;
+        const merged = mergeNotifications(persistedList, currentNotifications) as AppNotification[];
 
         setNotifications(merged);
         const count = typeof unreadData === "object" ? unreadData.count : unreadData;
         if (typeof count === "number") {
-          useStore.setState({ unreadCount: count });
+          setUnreadCount(count);
         }
       } catch (error) {
         // Silent fail - persisted notifications are nice-to-have, not critical
@@ -56,7 +57,7 @@ export function NotificationCenter() {
     };
 
     fetchPersistedNotifications();
-  }, []);
+  }, [setNotifications, setUnreadCount]);
 
   const handleMarkAllRead = async () => {
     try {
@@ -70,10 +71,15 @@ export function NotificationCenter() {
     }
   };
 
-  const handleNotificationClick = async (notif: any) => {
+  const handleNotificationClick = async (notif: AppNotification) => {
     if (!notif.is_read) {
       try {
-        await notificationsAPI.markAsRead(notif._id || notif.id);
+        const notificationId = notif._id || notif.id;
+        if (!notificationId) {
+          return;
+        }
+
+        await notificationsAPI.markAsRead(notificationId);
         // Update local state
         const updated = notifications.map((n) =>
           n._id === notif._id || n.id === notif.id ? { ...n, is_read: true } : n
@@ -155,7 +161,7 @@ export function NotificationCenter() {
               <div className="divide-y divide-slate-100 dark:divide-slate-800">
                 {notifications.map((notif) => (
                   <div
-                    key={notif._id || notif.id}
+                    key={notif._id || notif.id || `${notif.type}-${notif.created_at}`}
                     onClick={() => handleNotificationClick(notif)}
                     className={`flex cursor-pointer items-start gap-4 p-4 transition-colors hover:bg-slate-50 dark:hover:bg-slate-900/50 ${
                       !notif.is_read ? "bg-primary/5 dark:bg-primary/10" : ""

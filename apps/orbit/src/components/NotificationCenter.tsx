@@ -6,16 +6,16 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Bell, CheckCircle2, XCircle, Clock, Check, Trash2 } from "lucide-react";
-import { useStore } from "@/lib/store";
+import { Bell, CheckCircle2, XCircle, Clock } from "lucide-react";
+import { useStore, type AppNotification } from "@/lib/store";
 import { notificationsAPI } from "@/lib/api";
-import { Button } from "@sm-visitor/ui";
 import { format } from "date-fns";
+import { mergeNotifications } from "@sm-visitor/hooks";
 
 export function NotificationCenter() {
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
-  const { notifications, unreadCount, addNotification, setNotifications, clearUnreadCount } =
+  const { notifications, unreadCount, setNotifications, setUnreadCount, clearUnreadCount } =
     useStore();
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -40,15 +40,14 @@ export function NotificationCenter() {
           notificationsAPI.getUnreadCount(),
         ]);
 
-        // Merge with existing Zustand notifications, deduplicating by ID
-        const existingIds = new Set(notifications.map((n) => n.id || n._id));
-        const newNotifications = persisted.filter((n: any) => !existingIds.has(n.id || n._id));
-        const merged = [...newNotifications, ...notifications];
+        const persistedList = Array.isArray(persisted) ? (persisted as AppNotification[]) : [];
+        const currentNotifications = useStore.getState().notifications;
+        const merged = mergeNotifications(persistedList, currentNotifications) as AppNotification[];
 
         setNotifications(merged);
         const count = typeof unreadData === "object" ? unreadData.count : unreadData;
         if (typeof count === "number") {
-          useStore.setState({ unreadCount: count });
+          setUnreadCount(count);
         }
       } catch (error) {
         // Silent fail - persisted notifications are nice-to-have, not critical
@@ -57,7 +56,7 @@ export function NotificationCenter() {
     };
 
     fetchPersistedNotifications();
-  }, []);
+  }, [setNotifications, setUnreadCount]);
 
   const handleMarkAllRead = async () => {
     try {
@@ -122,9 +121,9 @@ export function NotificationCenter() {
               </div>
             ) : (
               <div className="divide-y divide-border">
-                {notifications.map((notif) => (
+                {notifications.map((notif, index) => (
                   <div
-                    key={notif.id}
+                    key={notif._id || notif.id || `${notif.type}-${notif.created_at}-${index}`}
                     className={`flex items-start gap-3 p-4 transition-colors hover:bg-muted/50 ${
                       !notif.is_read ? "bg-primary/5" : ""
                     }`}

@@ -6,6 +6,19 @@ import axios, { AxiosInstance, AxiosError } from "axios";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+const isBrowser = typeof window !== "undefined";
+
+const getAuthToken = (): string | null => {
+  if (!isBrowser) return null;
+  return localStorage.getItem("auth_token");
+};
+
+const clearAuthStorage = () => {
+  if (!isBrowser) return;
+  localStorage.removeItem("auth_token");
+  localStorage.removeItem("user");
+};
+
 export type ApiVisitStatus = "pending" | "approved" | "rejected" | "auto_approved";
 
 export interface VisitHistoryItem {
@@ -69,7 +82,7 @@ const apiClient: AxiosInstance = axios.create({
 // Request interceptor - Add JWT token
 apiClient.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem("auth_token");
+    const token = getAuthToken();
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -91,9 +104,8 @@ apiClient.interceptors.response.use(
 
     // Only redirect to login for 401 errors that are NOT from the login endpoint
     if (error.response?.status === 401 && !error.config?.url?.includes("/auth/login")) {
-      localStorage.removeItem("auth_token");
-      localStorage.removeItem("user");
-      if (typeof window !== "undefined") {
+      clearAuthStorage();
+      if (isBrowser) {
         window.location.href = "/login";
       }
     }
@@ -312,11 +324,13 @@ export const uploadsAPI = {
 
 // SSE Connection
 export const createSSEConnection = () => {
-  const token = localStorage.getItem("auth_token");
+  if (!isBrowser || typeof EventSource === "undefined") return null;
+
+  const token = getAuthToken();
   if (!token) return null;
 
   try {
-    const url = `${API_URL}/events/stream?token=${token}`;
+    const url = `${API_URL}/events/stream?token=${encodeURIComponent(token)}`;
     return new EventSource(url, {
       withCredentials: false,
     });

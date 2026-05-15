@@ -4,14 +4,10 @@
  */
 "use client";
 
-import { useSSE, safeString } from "@sm-visitor/hooks";
+import { useSSE, safeString, type SSEEventData } from "@sm-visitor/hooks";
 import { useStore } from "@/lib/store";
 import { createSSEConnection } from "@/lib/api";
 import toast from "react-hot-toast";
-
-interface SSEEventData {
-  [key: string]: any;
-}
 
 interface SSEProviderProps {
   children: React.ReactNode;

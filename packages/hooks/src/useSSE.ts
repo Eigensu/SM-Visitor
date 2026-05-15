@@ -10,6 +10,9 @@
 import { useEffect, useRef } from "react";
 import toast from "react-hot-toast";
 
+type SSEPayload = Record<string, unknown>;
+type SSEEventHandler = (data: SSEPayload) => void;
+
 export interface SSEConfig {
   /**
    * Whether the user is authenticated and SSE should be active
@@ -25,12 +28,12 @@ export interface SSEConfig {
   /**
    * Callback to handle the default 'message' event (unnamed events)
    */
-  onMessage?: (data: any) => void;
+  onMessage?: SSEEventHandler;
 
   /**
    * Map of named event handlers (e.g., {"VISITOR_APPROVED": (data) => ...})
    */
-  handlers?: Record<string, (data: any) => void>;
+  handlers?: Record<string, SSEEventHandler>;
 
   /**
    * Maximum number of reconnection attempts (default: 5)
@@ -58,16 +61,25 @@ export function useSSE(config: SSEConfig) {
   const reconnectAttempts = useRef(0);
   const seenEventIds = useRef<Set<string>>(new Set());
   const isConnecting = useRef(false);
+  const onMessageRef = useRef<SSEEventHandler | undefined>(onMessage);
+  const handlersRef = useRef<Record<string, SSEEventHandler>>(handlers);
+
+  useEffect(() => {
+    onMessageRef.current = onMessage;
+    handlersRef.current = handlers;
+  }, [onMessage, handlers]);
 
   // Helper to deduplicate events
-  const handleEvent = (handler: (data: any) => void, event: any, type: string) => {
+  const handleEvent = (handler: SSEEventHandler, event: Event) => {
     try {
-      if (!event.data) return;
+      if (!(event instanceof MessageEvent) || typeof event.data !== "string") return;
 
       // SSE ID is available on the event object itself
       // We also check the data for a fallback id
-      const data = JSON.parse(event.data);
-      const eventId = event.lastEventId || data.id;
+      const parsed = JSON.parse(event.data) as SSEPayload;
+      const eventId =
+        (event.lastEventId as string | undefined) ||
+        (typeof parsed.id === "string" ? parsed.id : undefined);
 
       if (eventId) {
         if (seenEventIds.current.has(eventId)) {
@@ -82,12 +94,13 @@ export function useSSE(config: SSEConfig) {
         }
       }
 
-      handler(data);
+      handler(parsed);
     } catch (_error) {}
   };
 
   const connect = () => {
     if (!isAuthenticated || isConnecting.current || eventSourceRef.current) return;
+    if (typeof window === "undefined" || typeof EventSource === "undefined") return;
 
     isConnecting.current = true;
     try {
@@ -114,14 +127,14 @@ export function useSSE(config: SSEConfig) {
 
       // Default message listener
       es.onmessage = (event) => {
-        if (!onMessage) return;
-        handleEvent(onMessage, event, "message");
+        if (!onMessageRef.current) return;
+        handleEvent(onMessageRef.current, event);
       };
 
       // Named listeners
-      Object.entries(handlers).forEach(([eventType, handler]) => {
-        es.addEventListener(eventType, (event: any) => {
-          handleEvent(handler, event, eventType);
+      Object.entries(handlersRef.current).forEach(([eventType, handler]) => {
+        es.addEventListener(eventType, (event: Event) => {
+          handleEvent(handler, event);
         });
       });
     } catch (_error) {
@@ -166,7 +179,7 @@ export function useSSE(config: SSEConfig) {
       disconnect();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated, Object.keys(handlers).join(",")]); // Re-connect if handlers change
+  }, [isAuthenticated]);
 
   return { disconnect };
 }

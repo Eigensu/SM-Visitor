@@ -26,6 +26,33 @@ interface Visit {
   created_at: string;
 }
 
+export interface AppNotification {
+  id?: string;
+  _id?: string;
+  type: string;
+  title: string;
+  message: string;
+  created_at?: string;
+  is_read?: boolean;
+}
+
+const isBrowser = typeof window !== "undefined";
+
+const setStorageItem = (key: string, value: string) => {
+  if (!isBrowser) return;
+  localStorage.setItem(key, value);
+};
+
+const removeStorageItem = (key: string) => {
+  if (!isBrowser) return;
+  localStorage.removeItem(key);
+};
+
+const getStorageItem = (key: string): string | null => {
+  if (!isBrowser) return null;
+  return localStorage.getItem(key);
+};
+
 interface AppState {
   // Auth
   user: User | null;
@@ -42,7 +69,7 @@ interface AppState {
   error: string | null;
 
   // Notifications
-  notifications: any[];
+  notifications: AppNotification[];
   unreadCount: number;
 
   // Actions
@@ -56,8 +83,8 @@ interface AppState {
   addPendingVisit: (visit: Visit) => void;
   addVisit: (visit: Visit) => void;
   updateVisitStatus: (visitId: string, status: Visit["status"]) => void;
-  setNotifications: (notifications: any[]) => void;
-  addNotification: (notification: any) => void;
+  setNotifications: (notifications: AppNotification[]) => void;
+  addNotification: (notification: AppNotification) => void;
   setUnreadCount: (count: number) => void;
   clearUnreadCount: () => void;
   setLoading: (loading: boolean) => void;
@@ -99,22 +126,22 @@ export const useStore = create<AppState>((set, get) => ({
 
   setToken: (token) => {
     if (token) {
-      localStorage.setItem("auth_token", token);
+      setStorageItem("auth_token", token);
     } else {
-      localStorage.removeItem("auth_token");
+      removeStorageItem("auth_token");
     }
     set({ token });
   },
 
   login: (user, token) => {
-    localStorage.setItem("auth_token", token);
-    localStorage.setItem("user", JSON.stringify(user));
+    setStorageItem("auth_token", token);
+    setStorageItem("user", JSON.stringify(user));
     set({ user, token, isAuthenticated: true, isAuthLoading: false });
   },
 
   logout: () => {
-    localStorage.removeItem("auth_token");
-    localStorage.removeItem("user");
+    removeStorageItem("auth_token");
+    removeStorageItem("user");
     set({
       user: null,
       token: null,
@@ -202,8 +229,8 @@ export const useStore = create<AppState>((set, get) => ({
 if (typeof window !== "undefined") {
   const initializeAuth = () => {
     try {
-      const token = localStorage.getItem("auth_token");
-      const userStr = localStorage.getItem("user");
+      const token = getStorageItem("auth_token");
+      const userStr = getStorageItem("user");
 
       if (token && userStr && token !== "undefined" && userStr !== "undefined") {
         const user = JSON.parse(userStr);
@@ -218,8 +245,8 @@ if (typeof window !== "undefined") {
       } else {
         console.log("No valid auth state found in localStorage");
         // Clean up any invalid tokens
-        localStorage.removeItem("auth_token");
-        localStorage.removeItem("user");
+        removeStorageItem("auth_token");
+        removeStorageItem("user");
         useStore.setState({
           isAuthLoading: false,
         });
@@ -227,8 +254,8 @@ if (typeof window !== "undefined") {
     } catch (error) {
       console.error("Failed to restore auth state:", error);
       // Clean up corrupted data
-      localStorage.removeItem("auth_token");
-      localStorage.removeItem("user");
+      removeStorageItem("auth_token");
+      removeStorageItem("user");
       useStore.setState({
         isAuthLoading: false,
       });

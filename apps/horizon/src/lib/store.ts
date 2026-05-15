@@ -55,6 +55,28 @@ interface TempQR {
   is_active: boolean;
 }
 
+export interface AppNotification {
+  id?: string;
+  _id?: string;
+  type: string;
+  title: string;
+  message: string;
+  created_at?: string;
+  is_read?: boolean;
+}
+
+const isBrowser = typeof window !== "undefined";
+
+const setStorageItem = (key: string, value: string) => {
+  if (!isBrowser) return;
+  localStorage.setItem(key, value);
+};
+
+const removeStorageItem = (key: string) => {
+  if (!isBrowser) return;
+  localStorage.removeItem(key);
+};
+
 interface AppState {
   // Auth
   user: User | null;
@@ -79,7 +101,7 @@ interface AppState {
   error: string | null;
 
   // Notifications
-  notifications: any[];
+  notifications: AppNotification[];
   unreadCount: number;
 
   // Actions
@@ -110,8 +132,8 @@ interface AppState {
   removeTempQR: (qrId: string) => void;
 
   // Notification actions
-  setNotifications: (notifications: any[]) => void;
-  addNotification: (notification: any) => void;
+  setNotifications: (notifications: AppNotification[]) => void;
+  addNotification: (notification: AppNotification) => void;
   setUnreadCount: (count: number) => void;
   clearUnreadCount: () => void;
 
@@ -162,22 +184,22 @@ export const useStore = create<AppState>((set) => ({
 
   setToken: (token) => {
     if (token) {
-      localStorage.setItem("auth_token", token);
+      setStorageItem("auth_token", token);
     } else {
-      localStorage.removeItem("auth_token");
+      removeStorageItem("auth_token");
     }
     set({ token });
   },
 
   login: (user, token) => {
-    localStorage.setItem("auth_token", token);
-    localStorage.setItem("user", JSON.stringify(user));
+    setStorageItem("auth_token", token);
+    setStorageItem("user", JSON.stringify(user));
     set({ user, token, isAuthenticated: true });
   },
 
   logout: () => {
-    localStorage.removeItem("auth_token");
-    localStorage.removeItem("user");
+    removeStorageItem("auth_token");
+    removeStorageItem("user");
     set({
       user: null,
       token: null,

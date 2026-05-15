@@ -3,8 +3,11 @@
  * Uses the Web Notifications API for OS-level popups
  */
 
+const hasNotificationSupport = () =>
+  typeof window !== "undefined" && typeof Notification !== "undefined";
+
 export const requestNotificationPermission = async (): Promise<boolean> => {
-  if (!("Notification" in window)) return false;
+  if (!hasNotificationSupport()) return false;
   if (Notification.permission === "granted") return true;
   if (Notification.permission === "denied") return false;
 
@@ -12,10 +15,10 @@ export const requestNotificationPermission = async (): Promise<boolean> => {
   return permission === "granted";
 };
 
-export const isNotificationSupported = () => "Notification" in window;
+export const isNotificationSupported = () => hasNotificationSupport();
 
 export const getNotificationPermission = () =>
-  "Notification" in window ? Notification.permission : "denied";
+  hasNotificationSupport() ? Notification.permission : "denied";
 
 export const sendNotification = (
   title: string,
@@ -27,7 +30,7 @@ export const sendNotification = (
     onClick?: () => void;
   }
 ) => {
-  if (!("Notification" in window) || Notification.permission !== "granted") return;
+  if (!hasNotificationSupport() || Notification.permission !== "granted") return;
 
   const notification = new Notification(title, {
     body: options?.body,
@@ -38,7 +41,9 @@ export const sendNotification = (
 
   if (options?.onClick) {
     notification.onclick = () => {
-      window.focus();
+      if (typeof window !== "undefined") {
+        window.focus();
+      }
       options.onClick?.();
       notification.close();
     };

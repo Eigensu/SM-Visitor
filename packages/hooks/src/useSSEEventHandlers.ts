@@ -71,7 +71,7 @@ export const createRefreshHandler = (
   refreshScopes: string[],
   onCustom?: (data: SSEEventData) => void | Promise<void>
 ): SSEEventHandler => {
-  let timeoutId: NodeJS.Timeout | null = null;
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
   return async (data: SSEEventData) => {
     try {

@@ -6,15 +6,11 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useSSE, safeString } from "@sm-visitor/hooks";
+import { useSSE, safeString, type SSEEventData } from "@sm-visitor/hooks";
 import { useStore } from "@/lib/store";
 import { createSSEConnection, notificationsAPI } from "@/lib/api";
 import { sendNotification } from "@/lib/notifications";
 import toast from "react-hot-toast";
-
-interface SSEEventData {
-  [key: string]: any;
-}
 
 interface SSEProviderProps {
   children: React.ReactNode;
