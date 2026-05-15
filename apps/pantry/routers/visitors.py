@@ -143,6 +143,7 @@ async def get_visitor_request(
     auto_approval_enabled: bool = Form(True),
     auto_approval_rule: str = Form("always"),
     qr_validity_hours: Optional[int] = Form(None),
+    photo_id: Optional[str] = Form(None),
     is_all_flats: bool = Form(False),
     valid_flats: Optional[List[str]] = Form(None),
 ) -> CreateRegularVisitorRequest:
@@ -161,6 +162,17 @@ async def get_visitor_request(
     s_end_time = (
         schedule_end_time if schedule_end_time and schedule_end_time.strip() else None
     )
+    s_photo_id = photo_id if photo_id and photo_id.strip() else None
+
+    normalized_valid_flats: list[str] = []
+    for flat in valid_flats or []:
+        if isinstance(flat, str):
+            value = flat.strip()
+            if value and value not in normalized_valid_flats:
+                normalized_valid_flats.append(value)
+
+    if not is_all_flats and s_flat_id and not normalized_valid_flats:
+        normalized_valid_flats = [s_flat_id]
 
     return CreateRegularVisitorRequest(
         name=name,
@@ -175,9 +187,24 @@ async def get_visitor_request(
         auto_approval_enabled=auto_approval_enabled,
         auto_approval_rule=auto_approval_rule,
         qr_validity_hours=qr_validity_hours,
+        photo_id=s_photo_id,
         is_all_flats=is_all_flats,
-        valid_flats=valid_flats,
+        valid_flats=normalized_valid_flats,
     )
+
+
+def normalize_photo_file_id(photo_ref: str) -> str:
+    """Accept either raw GridFS id or /uploads/photo/regular/{id} path."""
+    value = photo_ref.strip()
+    marker = "/uploads/photo/regular/"
+    if marker in value:
+        value = value.split(marker, 1)[1]
+    if not value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="photo_id is empty",
+        )
+    return value
 
 
 class VisitorResponse(BaseModel):
@@ -211,7 +238,7 @@ class VisitorWithQRResponse(VisitorResponse):
 )
 async def create_regular_visitor(
     request: CreateRegularVisitorRequest = Depends(get_visitor_request),
-    photo: UploadFile = File(...),
+    photo: Optional[UploadFile] = File(None),
     current_user: dict = Depends(get_current_owner),
 ):
     """
@@ -226,17 +253,42 @@ async def create_regular_visitor(
     """
     visitors = get_visitors_collection()
 
-    # Validate and save photo to GridFS
-    photo_data = await photo.read()
-    is_valid, error_msg = await photo_storage.validate_photo(photo_data)
+    if request.is_all_flats and not request.valid_flats:
+        db = get_database()
+        request.valid_flats = [
+            flat
+            for flat in await db.residents.distinct("flat_id")
+            if isinstance(flat, str) and flat.strip()
+        ]
 
-    if not is_valid:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error_msg)
+    owner_flat_id = await get_current_owner_flat_id(current_user)
 
-    # Save photo to MongoDB GridFS
-    photo_file_id = await photo_storage.save_regular_visitor_photo(
-        photo_data, photo.filename or "visitor_photo.jpg"
-    )
+    if not request.is_all_flats and not request.valid_flats:
+        if not owner_flat_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Could not resolve owner flat for regular visitor targeting.",
+            )
+        request.valid_flats = [owner_flat_id]
+
+    photo_file_id: Optional[str] = None
+    if photo is not None:
+        # Validate and save uploaded photo to GridFS
+        photo_data = await photo.read()
+        is_valid, error_msg = await photo_storage.validate_photo(photo_data)
+        if not is_valid:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error_msg)
+        photo_file_id = await photo_storage.save_regular_visitor_photo(
+            photo_data, photo.filename or "visitor_photo.jpg"
+        )
+    elif request.photo_id:
+        # Backward compatibility: allow legacy clients that pass photo_id from upload endpoint
+        photo_file_id = normalize_photo_file_id(request.photo_id)
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Either photo upload or photo_id must be provided.",
+        )
 
     # Create visitor document
     visitor_doc = {
@@ -278,7 +330,8 @@ async def create_regular_visitor(
         "valid_flats": request.valid_flats or [],
         "is_active": True,
         "approval_status": "approved",
-        "assigned_owner_id": None,
+        "assigned_owner_id": get_user_id(current_user),
+        "flat_id": owner_flat_id,
         "created_by_role": "owner",
         "created_at": get_utc_now(),
     }
@@ -314,6 +367,20 @@ async def create_regular_visitor(
             "token": qr_token,
             "created_at": get_ist_now().isoformat(),
         },
+    )
+
+    created_visitor = await visitors.find_one({"_id": result.inserted_id})
+    if not created_visitor:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch created visitor",
+        )
+
+    return VisitorWithQRResponse(
+        **serialize_visitor(created_visitor),
+        qr_image_url=qr_image_url,
+        is_all_flats=created_visitor.get("is_all_flats", False),
+        valid_flats=created_visitor.get("valid_flats"),
     )
 
 

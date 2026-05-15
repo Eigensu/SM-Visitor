@@ -55,6 +55,23 @@ export interface RegularVisitorHistoryItem {
   created_by?: string | null;
 }
 
+export interface CreateRegularVisitorInput {
+  name: string;
+  phone?: string;
+  photo?: File;
+  photo_id?: string;
+  default_purpose?: string;
+  category?: string;
+  schedule_enabled?: boolean;
+  schedule_days?: number[];
+  schedule_start_time?: string;
+  schedule_end_time?: string;
+  auto_approval_enabled?: boolean;
+  auto_approval_rule?: string;
+  is_all_flats?: boolean;
+  valid_flats?: string[];
+}
+
 export interface VisitTimelineDetails {
   id: string;
   visitor_id?: string | null;
@@ -243,22 +260,41 @@ export const visitorsAPI = {
     return response.data.count;
   },
 
-  createRegular: async (data: {
-    name: string;
-    phone: string;
-    photo_id: string;
-    default_purpose: string;
-    category?: string;
-    schedule_enabled?: boolean;
-    schedule_days?: number[];
-    schedule_start_time?: string;
-    schedule_end_time?: string;
-    auto_approval_enabled?: boolean;
-    auto_approval_rule?: string;
-    is_all_flats?: boolean;
-    valid_flats?: string[];
-  }) => {
-    const response = await apiClient.post("/visitors/regular", data);
+  createRegular: async (data: CreateRegularVisitorInput) => {
+    const formData = new FormData();
+    formData.append("name", data.name);
+
+    if (data.phone) formData.append("phone", data.phone);
+    if (data.default_purpose) formData.append("default_purpose", data.default_purpose);
+    if (data.category) formData.append("category", data.category);
+    if (typeof data.schedule_enabled === "boolean") {
+      formData.append("schedule_enabled", String(data.schedule_enabled));
+    }
+    if (Array.isArray(data.schedule_days)) {
+      data.schedule_days.forEach((day) => formData.append("schedule_days", String(day)));
+    }
+    if (data.schedule_start_time) formData.append("schedule_start_time", data.schedule_start_time);
+    if (data.schedule_end_time) formData.append("schedule_end_time", data.schedule_end_time);
+    if (typeof data.auto_approval_enabled === "boolean") {
+      formData.append("auto_approval_enabled", String(data.auto_approval_enabled));
+    }
+    if (data.auto_approval_rule) formData.append("auto_approval_rule", data.auto_approval_rule);
+    if (typeof data.is_all_flats === "boolean") {
+      formData.append("is_all_flats", String(data.is_all_flats));
+    }
+    if (Array.isArray(data.valid_flats)) {
+      data.valid_flats.forEach((flat) => formData.append("valid_flats", flat));
+    }
+
+    if (data.photo) {
+      formData.append("photo", data.photo);
+    } else if (data.photo_id) {
+      formData.append("photo_id", data.photo_id);
+    } else {
+      throw new Error("createRegular requires either photo or photo_id");
+    }
+
+    const response = await apiClient.post("/visitors/regular", formData);
     return response.data;
   },
 
