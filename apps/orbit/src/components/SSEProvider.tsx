@@ -4,14 +4,14 @@
  */
 "use client";
 
-import { useSSE } from "@sm-visitor/hooks";
+import { useSSE, safeString, type SSEEventData } from "@sm-visitor/hooks";
 import { useStore } from "@/lib/store";
 import { createSSEConnection } from "@/lib/api";
 import toast from "react-hot-toast";
 
 interface SSEProviderProps {
   children: React.ReactNode;
-  onRefresh?: () => void; // Callback to trigger data refetch
+  onRefresh?: () => void;
 }
 
 export function SSEProvider({ children, onRefresh }: SSEProviderProps) {
@@ -21,29 +21,46 @@ export function SSEProvider({ children, onRefresh }: SSEProviderProps) {
     isAuthenticated: isAuthenticated && !isAuthLoading,
     createConnection: createSSEConnection,
     handlers: {
-      VISITOR_APPROVED: (data: any) => {
+      VISITOR_APPROVED: (data: SSEEventData) => {
+        const visitorName = safeString(data, "visitor_name", "Visitor");
+
         console.log("✅ [ORBIT] Visitor approved event:", data);
-        toast.success(`Approved: ${data.visitor_name || "Visitor"}`, {
+        toast.success(`Approved: ${visitorName}`, {
           icon: "✅",
           duration: 5000,
         });
 
-        // 🔥 SCOPED REFRESH
         triggerRefresh("visitors");
         triggerRefresh("dashboard");
         if (onRefresh) onRefresh();
       },
 
-      NEW_VISITOR_REQUEST: (data: any) => {
+      visit_auto_approved: (data: SSEEventData) => {
+        const visitorName = safeString(data, "name_snapshot", "Visitor");
+
+        console.log("🚀 [ORBIT] Visit auto-approved:", data);
+        toast.success(`Auto-Approved: ${visitorName}`, {
+          icon: "⚡",
+          duration: 4000,
+        });
+
+        triggerRefresh("visitors");
+        triggerRefresh("dashboard");
+        if (onRefresh) onRefresh();
+      },
+
+      NEW_VISITOR_REQUEST: (data: SSEEventData) => {
         console.log("🔔 [ORBIT] New request created:", data);
         triggerRefresh("visitors");
         triggerRefresh("dashboard");
         if (onRefresh) onRefresh();
       },
 
-      VISITOR_REJECTED: (data: any) => {
+      VISITOR_REJECTED: (data: SSEEventData) => {
+        const visitorName = safeString(data, "visitor_name", "Staff Registration");
+
         console.log("❌ [ORBIT] Visitor registration rejected:", data);
-        toast.error(`Rejected: ${data.visitor_name || "Staff Registration"}`, {
+        toast.error(`Rejected: ${visitorName}`, {
           icon: "❌",
           duration: 5000,
         });
@@ -52,16 +69,23 @@ export function SSEProvider({ children, onRefresh }: SSEProviderProps) {
         if (onRefresh) onRefresh();
       },
 
-      // Legacy support for ad-hoc visits
-      visit_approved: (data: any) => {
-        updateVisitStatus(data.visit_id || data._id, "approved");
-        toast.success(`Visit Approved: ${data.visitor_name}`, { icon: "✅" });
+      visit_approved: (data: SSEEventData) => {
+        const visitId = data?.visit_id || data?._id;
+        if (visitId) {
+          updateVisitStatus(String(visitId), "approved");
+        }
+        const visitorName = safeString(data, "visitor_name", "Visitor");
+        toast.success(`Visit Approved: ${visitorName}`, { icon: "✅" });
         if (onRefresh) onRefresh();
       },
 
-      visit_rejected: (data: any) => {
-        updateVisitStatus(data.visit_id || data._id, "rejected");
-        toast.error(`Visit Rejected: ${data.visitor_name}`, { icon: "❌" });
+      visit_rejected: (data: SSEEventData) => {
+        const visitId = data?.visit_id || data?._id;
+        if (visitId) {
+          updateVisitStatus(String(visitId), "rejected");
+        }
+        const visitorName = safeString(data, "visitor_name", "Visitor");
+        toast.error(`Visit Rejected: ${visitorName}`, { icon: "❌" });
         if (onRefresh) onRefresh();
       },
     },

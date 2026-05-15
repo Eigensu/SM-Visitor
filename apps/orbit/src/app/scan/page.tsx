@@ -16,28 +16,53 @@ import { ArrowLeft } from "lucide-react";
 
 type ScanState = "scanning" | "preview" | "submitting" | "error";
 
+interface ScannedVisitorData {
+  visitor_id?: string;
+  temp_qr_id?: string;
+  name: string;
+  phone?: string;
+  photo_url?: string;
+  purpose?: string;
+  visitor_type: "regular" | "temporary";
+  owner_id?: string;
+  is_all_flats?: boolean;
+  valid_flats?: string[];
+  expires_at?: string;
+}
+
+interface QRScanApiResponse {
+  valid: boolean;
+  auto_approve: boolean;
+  visitor_data?: ScannedVisitorData;
+  error?: string;
+}
+
+const extractQrToken = (decodedText: string): string | null => {
+  const trimmed = decodedText.trim();
+  if (!trimmed) return null;
+
+  try {
+    const parsed = JSON.parse(trimmed) as { token?: string };
+    if (typeof parsed.token === "string" && parsed.token.trim()) {
+      return parsed.token.trim();
+    }
+  } catch {
+    // Legacy non-JSON format: treat payload as raw token.
+  }
+
+  return trimmed;
+};
+
 export default function ScanPage() {
   const router = useRouter();
   const [scanState, setScanState] = useState<ScanState>("scanning");
-  const [visitorData, setVisitorData] = useState<any>(null);
+  const [visitorData, setVisitorData] = useState<ScannedVisitorData | null>(null);
   const [qrToken, setQRToken] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const handleScanSuccess = async (decodedText: string) => {
     try {
-      let token: string | null = null;
-      let visitorInfo: any = null;
-
-      try {
-        // Try to parse as JSON first (new format)
-        const qrData = JSON.parse(decodedText);
-        token = qrData.token;
-        visitorInfo = qrData; // Store other details if needed
-      } catch (e) {
-        // Fallback: Treat the whole text as the token (legacy format)
-        console.log("Failed to parse QR JSON, using raw text as token");
-        token = decodedText;
-      }
+      const token = extractQrToken(decodedText);
 
       if (!token) {
         setErrorMessage("Invalid QR code format");
@@ -53,7 +78,7 @@ export default function ScanPage() {
       }
 
       // Validate QR with backend
-      const response = await visitsAPI.scanQR(token);
+      const response = (await visitsAPI.scanQR(token)) as QRScanApiResponse;
 
       if (!response.valid) {
         // Handle specific error cases
@@ -77,6 +102,11 @@ export default function ScanPage() {
 
       // Show visitor preview
       // Use backend response data, or merge with QR data if useful
+      if (!response.visitor_data) {
+        toast.error("QR scan response is missing visitor details");
+        return;
+      }
+
       setVisitorData(response.visitor_data);
       setQRToken(token);
       setScanState("preview");
@@ -96,12 +126,23 @@ export default function ScanPage() {
   const handleSubmitEntry = async () => {
     if (!qrToken || !visitorData) return;
 
+    const ownerId =
+      visitorData.owner_id ||
+      (Array.isArray(visitorData.valid_flats) && visitorData.valid_flats.length > 0
+        ? visitorData.valid_flats[0]
+        : undefined);
+
+    if (!ownerId && !visitorData.is_all_flats) {
+      toast.error("Cannot submit entry: owner/flat mapping is missing for this QR");
+      return;
+    }
+
     setScanState("submitting");
 
     try {
       const visit = await visitsAPI.startVisit({
         qr_token: qrToken,
-        owner_id: visitorData.owner_id,
+        owner_id: ownerId,
         purpose: visitorData.purpose || "Visit",
       });
 

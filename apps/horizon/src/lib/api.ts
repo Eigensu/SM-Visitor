@@ -6,6 +6,19 @@ import axios, { AxiosInstance, AxiosError } from "axios";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+const isBrowser = typeof window !== "undefined";
+
+const getAuthToken = (): string | null => {
+  if (!isBrowser) return null;
+  return localStorage.getItem("auth_token");
+};
+
+const clearAuthStorage = () => {
+  if (!isBrowser) return;
+  localStorage.removeItem("auth_token");
+  localStorage.removeItem("user");
+};
+
 export type ApiVisitStatus = "pending" | "approved" | "rejected" | "auto_approved";
 
 export interface VisitHistoryItem {
@@ -42,6 +55,23 @@ export interface RegularVisitorHistoryItem {
   created_by?: string | null;
 }
 
+export interface CreateRegularVisitorInput {
+  name: string;
+  phone?: string;
+  photo?: File;
+  photo_id?: string;
+  default_purpose?: string;
+  category?: string;
+  schedule_enabled?: boolean;
+  schedule_days?: number[];
+  schedule_start_time?: string;
+  schedule_end_time?: string;
+  auto_approval_enabled?: boolean;
+  auto_approval_rule?: string;
+  is_all_flats?: boolean;
+  valid_flats?: string[];
+}
+
 export interface VisitTimelineDetails {
   id: string;
   visitor_id?: string | null;
@@ -69,7 +99,7 @@ const apiClient: AxiosInstance = axios.create({
 // Request interceptor - Add JWT token
 apiClient.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem("auth_token");
+    const token = getAuthToken();
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -91,9 +121,8 @@ apiClient.interceptors.response.use(
 
     // Only redirect to login for 401 errors that are NOT from the login endpoint
     if (error.response?.status === 401 && !error.config?.url?.includes("/auth/login")) {
-      localStorage.removeItem("auth_token");
-      localStorage.removeItem("user");
-      if (typeof window !== "undefined") {
+      clearAuthStorage();
+      if (isBrowser) {
         window.location.href = "/login";
       }
     }
@@ -231,22 +260,41 @@ export const visitorsAPI = {
     return response.data.count;
   },
 
-  createRegular: async (data: {
-    name: string;
-    phone: string;
-    photo_id: string;
-    default_purpose: string;
-    category?: string;
-    schedule_enabled?: boolean;
-    schedule_days?: number[];
-    schedule_start_time?: string;
-    schedule_end_time?: string;
-    auto_approval_enabled?: boolean;
-    auto_approval_rule?: string;
-    is_all_flats?: boolean;
-    valid_flats?: string[];
-  }) => {
-    const response = await apiClient.post("/visitors/regular", data);
+  createRegular: async (data: CreateRegularVisitorInput) => {
+    const formData = new FormData();
+    formData.append("name", data.name);
+
+    if (data.phone) formData.append("phone", data.phone);
+    if (data.default_purpose) formData.append("default_purpose", data.default_purpose);
+    if (data.category) formData.append("category", data.category);
+    if (typeof data.schedule_enabled === "boolean") {
+      formData.append("schedule_enabled", String(data.schedule_enabled));
+    }
+    if (Array.isArray(data.schedule_days)) {
+      data.schedule_days.forEach((day) => formData.append("schedule_days", String(day)));
+    }
+    if (data.schedule_start_time) formData.append("schedule_start_time", data.schedule_start_time);
+    if (data.schedule_end_time) formData.append("schedule_end_time", data.schedule_end_time);
+    if (typeof data.auto_approval_enabled === "boolean") {
+      formData.append("auto_approval_enabled", String(data.auto_approval_enabled));
+    }
+    if (data.auto_approval_rule) formData.append("auto_approval_rule", data.auto_approval_rule);
+    if (typeof data.is_all_flats === "boolean") {
+      formData.append("is_all_flats", String(data.is_all_flats));
+    }
+    if (Array.isArray(data.valid_flats)) {
+      data.valid_flats.forEach((flat) => formData.append("valid_flats", flat));
+    }
+
+    if (data.photo) {
+      formData.append("photo", data.photo);
+    } else if (data.photo_id) {
+      formData.append("photo_id", data.photo_id);
+    } else {
+      throw new Error("createRegular requires either photo or photo_id");
+    }
+
+    const response = await apiClient.post("/visitors/regular", formData);
     return response.data;
   },
 
@@ -312,11 +360,13 @@ export const uploadsAPI = {
 
 // SSE Connection
 export const createSSEConnection = () => {
-  const token = localStorage.getItem("auth_token");
+  if (!isBrowser || typeof EventSource === "undefined") return null;
+
+  const token = getAuthToken();
   if (!token) return null;
 
   try {
-    const url = `${API_URL}/events/stream?token=${token}`;
+    const url = `${API_URL}/events/stream?token=${encodeURIComponent(token)}`;
     return new EventSource(url, {
       withCredentials: false,
     });

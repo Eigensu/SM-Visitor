@@ -6,7 +6,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useSSE } from "@sm-visitor/hooks";
+import { useSSE, safeString, type SSEEventData } from "@sm-visitor/hooks";
 import { useStore } from "@/lib/store";
 import { createSSEConnection, notificationsAPI } from "@/lib/api";
 import { sendNotification } from "@/lib/notifications";
@@ -14,7 +14,7 @@ import toast from "react-hot-toast";
 
 interface SSEProviderProps {
   children: React.ReactNode;
-  onRefresh?: () => void; // Callback to trigger data refetch
+  onRefresh?: () => void;
 }
 
 export function SSEProvider({ children, onRefresh }: SSEProviderProps) {
@@ -30,15 +30,17 @@ export function SSEProvider({ children, onRefresh }: SSEProviderProps) {
       ]);
 
       setNotifications(notifications);
-      setUnreadCount(typeof unreadData === "object" ? unreadData.count : unreadData);
+      const count =
+        typeof unreadData === "object" && unreadData?.count ? unreadData.count : unreadData;
+      if (typeof count === "number") {
+        setUnreadCount(count);
+      }
     } catch (error) {
       console.error("Failed to refresh notifications:", error);
     }
   };
 
   useEffect(() => {
-    // Safety Net: Always fetch UI state once at mount ensuring missed events
-    // do not create a stale UI.
     if (isAuthenticated && !hasFetchedInitial) {
       triggerRefresh("approvals");
       triggerRefresh("dashboard");
@@ -48,30 +50,53 @@ export function SSEProvider({ children, onRefresh }: SSEProviderProps) {
   }, [isAuthenticated, hasFetchedInitial, triggerRefresh]);
 
   useSSE({
-    // Only connect when authenticated AND user is fully hydrated (prevents race condition)
     isAuthenticated: isAuthenticated && !!user,
     createConnection: createSSEConnection,
     handlers: {
-      NEW_VISITOR_REQUEST: (data: any) => {
-        toast.success(`New Request: ${data.name || "Visitor"}`, {
+      NEW_VISITOR_REQUEST: (data: SSEEventData) => {
+        const visitorName = safeString(data, "name", "Visitor");
+        const visitId = data?.visit_id || data?.id || data?.name || "new-visitor-request";
+
+        toast.success(`New Request: ${visitorName}`, {
           icon: "👤",
           duration: 5000,
         });
 
         sendNotification("New user is at the gate", {
-          body: `${data.name || "A visitor"} is waiting for approval.`,
-          tag: data.visit_id || data.id || data.name || "new-visitor-request",
+          body: `${visitorName} is waiting for approval.`,
+          tag: String(visitId),
           onClick: () => router.push("/approvals"),
         });
 
-        // 🔥 SCOPED REFRESH
         triggerRefresh("approvals");
         triggerRefresh("dashboard");
         refreshNotifications();
         if (onRefresh) onRefresh();
       },
 
-      VISITOR_APPROVED: (data: any) => {
+      new_visit_pending: (data: SSEEventData) => {
+        const visitorName = safeString(data, "visitor_name", "Guest");
+        const purpose = safeString(data, "purpose", "N/A");
+        const visitId = data?.visit_id || data?.id || "new-visit-pending";
+
+        toast.success(`New Visitor: ${visitorName}`, {
+          icon: "🚪",
+          duration: 5000,
+        });
+
+        sendNotification("New visitor at the gate", {
+          body: `${visitorName} is waiting for approval. Purpose: ${purpose}`,
+          tag: String(visitId),
+          onClick: () => router.push("/approvals"),
+        });
+
+        triggerRefresh("approvals");
+        triggerRefresh("dashboard");
+        refreshNotifications();
+        if (onRefresh) onRefresh();
+      },
+
+      VISITOR_APPROVED: (data: SSEEventData) => {
         triggerRefresh("visitors");
         triggerRefresh("approvals");
         triggerRefresh("dashboard");
@@ -79,12 +104,14 @@ export function SSEProvider({ children, onRefresh }: SSEProviderProps) {
         if (onRefresh) onRefresh();
       },
 
-      // Legacy or other event support
-      visit_request: (data: any) => {
-        toast.success(`Entry Request: ${data.name_snapshot || "Guest"}`, { icon: "🚗" });
+      visit_request: (data: SSEEventData) => {
+        const visitorName = safeString(data, "name_snapshot", "Guest");
+        const visitId = data?.visit_id || data?.id || data?.name_snapshot || "visit-request";
+
+        toast.success(`Entry Request: ${visitorName}`, { icon: "🚗" });
         sendNotification("New user is at the gate", {
-          body: `${data.name_snapshot || "A visitor"} is waiting for approval.`,
-          tag: data.visit_id || data.id || data.name_snapshot || "visit-request",
+          body: `${visitorName} is waiting for approval.`,
+          tag: String(visitId),
           onClick: () => router.push("/approvals"),
         });
         triggerRefresh("dashboard");

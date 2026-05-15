@@ -183,10 +183,10 @@ class SSEManager:
             )
             return
 
-        # 1. Resolve flat_ids to user_ids (owners only)
-        # Using 'users' collection as verified in init_database.py
+        # 1. Resolve flat_ids to user_ids (residents/owners)
+        # Owners/residents are stored in db.residents collection (primary storage for unit owners)
         try:
-            cursor = db.users.find({"flat_id": {"$in": flat_ids}, "role": "owner"})
+            cursor = db.residents.find({"flat_id": {"$in": flat_ids}})
             owners = await cursor.to_list(length=100)
 
             target_user_ids = [str(owner["_id"]) for owner in owners]

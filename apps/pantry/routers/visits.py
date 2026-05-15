@@ -40,6 +40,33 @@ async def get_owner_profile(user_id: str, db) -> Optional[dict]:
     return await db.users.find_one({"_id": owner_object_id})
 
 
+async def resolve_owner_flat_for_regular_visitor(visitor: dict, db) -> Optional[str]:
+    """Resolve a stable owner flat_id for regular visitor flows."""
+    valid_flats = visitor.get("valid_flats") or []
+    if isinstance(valid_flats, list) and valid_flats:
+        first = valid_flats[0]
+        if isinstance(first, str) and first.strip():
+            return first
+
+    flat_id = visitor.get("flat_id")
+    if isinstance(flat_id, str) and flat_id.strip():
+        return flat_id
+
+    assigned_owner_id = visitor.get("assigned_owner_id")
+    if isinstance(assigned_owner_id, str) and assigned_owner_id.strip():
+        owner = await get_owner_profile(assigned_owner_id, db)
+        if owner and isinstance(owner.get("flat_id"), str):
+            return owner["flat_id"]
+
+    created_by = visitor.get("created_by")
+    if created_by is not None:
+        owner = await get_owner_profile(str(created_by), db)
+        if owner and isinstance(owner.get("flat_id"), str):
+            return owner["flat_id"]
+
+    return None
+
+
 # Request/Response Models
 class QRScanRequest(BaseModel):
     qr_token: str
@@ -54,7 +81,7 @@ class QRScanResponse(BaseModel):
 
 class StartVisitQRRequest(BaseModel):
     qr_token: str
-    owner_id: str
+    owner_id: Optional[str] = None
     purpose: Optional[str] = None
 
 
@@ -132,6 +159,7 @@ async def scan_qr_code(
     # Handle regular visitor QR
     if token_type == "regular":
         visitors = get_visitors_collection()
+        db = get_database()
 
         try:
             visitor = await visitors.find_one({"_id": ObjectId(payload["visitor_id"])})
@@ -192,6 +220,7 @@ async def scan_qr_code(
         # Determine auto-approval based on rules
         auto_approval_config = visitor.get("auto_approval", {})
         auto_approval_rule = auto_approval_config.get("rule", "always")
+        resolved_owner_flat = await resolve_owner_flat_for_regular_visitor(visitor, db)
 
         if auto_approval_rule == "always":
             auto_approve = True
@@ -212,6 +241,9 @@ async def scan_qr_code(
                 "photo_url": visitor["photo_url"],
                 "purpose": visitor.get("default_purpose", "Visit"),
                 "visitor_type": "regular",
+                "owner_id": resolved_owner_flat,
+                "is_all_flats": visitor.get("is_all_flats", False),
+                "valid_flats": visitor.get("valid_flats", []),
                 "category": visitor.get("category", "other"),
                 "category_label": visitor.get("category_label", "Other"),
                 "within_schedule": within_schedule,
@@ -310,7 +342,15 @@ async def start_visit(
 
         if token_type == "regular":
             visitors = get_visitors_collection()
-            visitor = await visitors.find_one({"_id": ObjectId(payload["visitor_id"])})
+            try:
+                visitor_object_id = ObjectId(payload["visitor_id"])
+            except (InvalidId, KeyError, TypeError) as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Malformed regular visitor token",
+                ) from exc
+
+            visitor = await visitors.find_one({"_id": visitor_object_id})
 
             if not visitor or not visitor["is_active"]:
                 raise HTTPException(
@@ -325,7 +365,11 @@ async def start_visit(
             target_flat_ids = []
             if is_all_flats:
                 # Fetch all unique flat IDs from residents
-                all_flats = await db.users.distinct("flat_id")
+                all_flats = [
+                    flat
+                    for flat in await db.residents.distinct("flat_id")
+                    if isinstance(flat, str) and flat.strip()
+                ]
                 target_flat_ids = (
                     random.sample(all_flats, min(len(all_flats), 3))
                     if all_flats
@@ -334,7 +378,15 @@ async def start_visit(
             elif valid_flats:
                 target_flat_ids = valid_flats
             else:
-                target_flat_ids = [qr_request.owner_id]
+                fallback_owner_flat = qr_request.owner_id or await resolve_owner_flat_for_regular_visitor(
+                    visitor, db
+                )
+                if not fallback_owner_flat:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Could not resolve target flat for this QR visitor",
+                    )
+                target_flat_ids = [fallback_owner_flat]
 
             # Determine status based on auto-approval rules
             auto_approval = visitor.get("auto_approval", {})
@@ -373,9 +425,15 @@ async def start_visit(
 
         elif token_type == "temporary":
             temp_qr_collection = get_temporary_qr_collection()
-            temp_qr = await temp_qr_collection.find_one(
-                {"_id": ObjectId(payload["temp_qr_id"])}
-            )
+            try:
+                temp_qr_object_id = ObjectId(payload["temp_qr_id"])
+            except (InvalidId, KeyError, TypeError) as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Malformed temporary QR token",
+                ) from exc
+
+            temp_qr = await temp_qr_collection.find_one({"_id": temp_qr_object_id})
 
             if (
                 not temp_qr
@@ -393,7 +451,11 @@ async def start_visit(
 
             target_flat_ids = []
             if is_all_flats:
-                all_flats = await db.users.distinct("flat_id")
+                all_flats = [
+                    flat
+                    for flat in await db.residents.distinct("flat_id")
+                    if isinstance(flat, str) and flat.strip()
+                ]
                 target_flat_ids = (
                     random.sample(all_flats, min(len(all_flats), 3))
                     if all_flats
@@ -406,7 +468,7 @@ async def start_visit(
 
             # Mark temp QR as used
             await temp_qr_collection.update_one(
-                {"_id": ObjectId(payload["temp_qr_id"])},
+                {"_id": temp_qr_object_id},
                 {"$set": {"used_at": get_utc_now()}},
             )
 
@@ -524,7 +586,11 @@ async def start_visit(
         # Determine target owners/flats for New Visitor
         target_flat_ids = []
         if new_request.owner_id == "all":
-            all_flats = await db.users.distinct("flat_id")
+            all_flats = [
+                flat
+                for flat in await db.residents.distinct("flat_id")
+                if isinstance(flat, str) and flat.strip()
+            ]
             target_flat_ids = (
                 random.sample(all_flats, min(len(all_flats), 3)) if all_flats else []
             )

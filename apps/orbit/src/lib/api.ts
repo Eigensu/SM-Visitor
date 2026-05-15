@@ -6,6 +6,19 @@ import axios, { AxiosInstance, AxiosError } from "axios";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+const isBrowser = typeof window !== "undefined";
+
+const getAuthToken = (): string | null => {
+  if (!isBrowser) return null;
+  return localStorage.getItem("auth_token");
+};
+
+const clearAuthStorage = () => {
+  if (!isBrowser) return;
+  localStorage.removeItem("auth_token");
+  localStorage.removeItem("user");
+};
+
 // Create axios instance
 const apiClient: AxiosInstance = axios.create({
   baseURL: API_URL,
@@ -15,7 +28,7 @@ const apiClient: AxiosInstance = axios.create({
 // Request interceptor - Add JWT token
 apiClient.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem("auth_token");
+    const token = getAuthToken();
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -38,9 +51,8 @@ apiClient.interceptors.response.use(
       if (!isLoginAttempt) {
         console.log("Redirecting to login due to 401");
         // Unauthorized - clear token and redirect to login
-        localStorage.removeItem("auth_token");
-        localStorage.removeItem("user");
-        if (typeof window !== "undefined") {
+        clearAuthStorage();
+        if (isBrowser) {
           window.location.href = "/login";
         }
       } else {
@@ -216,7 +228,9 @@ export const notificationsAPI = {
 
 // SSE Connection
 export const createSSEConnection = () => {
-  const token = localStorage.getItem("auth_token");
+  if (!isBrowser || typeof EventSource === "undefined") return null;
+
+  const token = getAuthToken();
   if (!token || token === "undefined") {
     console.log("No auth token available for SSE connection");
     return null;
@@ -225,7 +239,7 @@ export const createSSEConnection = () => {
   console.log("Creating SSE connection...");
 
   try {
-    return new EventSource(`${API_URL}/events/stream?token=${token}`, {
+    return new EventSource(`${API_URL}/events/stream?token=${encodeURIComponent(token)}`, {
       withCredentials: false,
     });
   } catch (error) {
