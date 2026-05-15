@@ -37,6 +37,8 @@ class TemporaryQRResponse(BaseModel):
     qr_image_url: str
     expires_at: datetime
     one_time: bool
+    is_all_flats: bool = False
+    valid_flats: Optional[List[str]] = None
     created_at: datetime
 
 
@@ -88,12 +90,31 @@ async def generate_temporary_qr(
             detail="Owner profile must have a flat_id to generate QR codes.",
         )
 
+    normalized_valid_flats: list[str] = []
+    for flat in request.valid_flats or []:
+        if isinstance(flat, str):
+            value = flat.strip()
+            if value and value not in normalized_valid_flats:
+                normalized_valid_flats.append(value)
+
+    if request.is_all_flats and not normalized_valid_flats:
+        normalized_valid_flats = [
+            flat
+            for flat in await db.residents.distinct("flat_id")
+            if isinstance(flat, str) and flat.strip()
+        ]
+
+    if not request.is_all_flats and not normalized_valid_flats:
+        normalized_valid_flats = [flat_id]
+
     # 2. Create temporary QR document
     temp_qr_doc = {
         "owner_id": flat_id,  # Standardized to flat_id
         "guest_name": request.guest_name,
         "expires_at": expires_at,
         "one_time": True,
+        "is_all_flats": request.is_all_flats,
+        "valid_flats": normalized_valid_flats,
         "used_at": None,
         "created_at": get_utc_now(),
     }
@@ -108,6 +129,8 @@ async def generate_temporary_qr(
             "type": "temporary",
             "temp_qr_id": temp_qr_id,
             "owner_id": current_user["user_id"],
+            "is_all_flats": request.is_all_flats,
+            "valid_flats": normalized_valid_flats,
             "guest_name": request.guest_name,
         },
         expires_delta=timedelta(hours=request.validity_hours),
@@ -131,12 +154,14 @@ async def generate_temporary_qr(
 
     return TemporaryQRResponse(
         id=temp_qr_id,
-        owner_id=current_user["user_id"],
+        owner_id=flat_id,
         guest_name=request.guest_name,
         token=qr_token,
         qr_image_url=qr_image_url,
         expires_at=expires_at,
         one_time=True,
+        is_all_flats=request.is_all_flats,
+        valid_flats=normalized_valid_flats,
         created_at=temp_qr_doc["created_at"],
     )
 
@@ -305,6 +330,8 @@ async def get_active_qr_codes(current_user: dict = Depends(get_current_owner)):
                 qr_image_url=qr_image_url,
                 expires_at=qr["expires_at"],
                 one_time=qr.get("one_time", True),
+                is_all_flats=qr.get("is_all_flats", False),
+                valid_flats=qr.get("valid_flats"),
                 created_at=qr["created_at"],
             )
         )
