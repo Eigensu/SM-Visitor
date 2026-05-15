@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { PageContainer } from "@/components/shared/PageContainer";
 import { GlassCard } from "@/components/shared/GlassCard";
 import { StatusBadge, StatusType } from "@/components/shared/StatusBadge";
-import { VisitorTimeline } from "@/components/shared/VisitorTimeline";
+import { VisitorTimeline, type VisitorTimelineVisit } from "@/components/shared/VisitorTimeline";
 import { Button } from "@sm-visitor/ui";
 import { Input } from "@sm-visitor/ui";
 import { Spinner } from "@sm-visitor/ui";
@@ -34,7 +34,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { visitsAPI } from "@/lib/api";
+import {
+  visitsAPI,
+  visitorsAPI,
+  type VisitHistoryItem,
+  type RegularVisitorHistoryItem,
+} from "@/lib/api";
+import { formatDateTime, getDateTimestamp } from "@/lib/utils";
 import toast from "react-hot-toast";
 
 interface Visit {
@@ -43,46 +49,85 @@ interface Visit {
   phone: string;
   purpose: string;
   date: string;
+  createdAt: string;
   status: StatusType;
   photo?: string;
   is_all_flats?: boolean;
   target_flat_ids?: string[];
   owner_id: string;
+  visitor_type?: "adhoc" | "regular";
 }
+
+const toStatusType = (status: string | undefined): StatusType => {
+  switch (status) {
+    case "approved":
+    case "pending":
+    case "rejected":
+    case "auto_approved":
+      return status;
+    default:
+      return "pending";
+  }
+};
+
+const mapAdhocVisit = (v: VisitHistoryItem): Visit => ({
+  id: v.id || v._id || "",
+  name: v.name_snapshot,
+  phone: v.phone_snapshot || "N/A",
+  purpose: v.purpose,
+  createdAt: v.created_at,
+  date: formatDateTime(v.created_at, {
+    hour: "2-digit",
+    minute: "2-digit",
+    day: "numeric",
+    month: "short",
+  }),
+  status: toStatusType(v.status),
+  photo: v.photo_snapshot_url || undefined,
+  is_all_flats: v.is_all_flats,
+  target_flat_ids: v.target_flat_ids,
+  owner_id: v.owner_id,
+  visitor_type: "adhoc",
+});
+
+const mapRegularVisit = (v: RegularVisitorHistoryItem): Visit => ({
+  id: v.id || v._id || "",
+  name: v.name,
+  phone: v.phone || "N/A",
+  purpose: `Staff Registration: ${v.category_label || v.category || "Staff"}`,
+  createdAt: v.created_at,
+  date: formatDateTime(v.created_at, {
+    hour: "2-digit",
+    minute: "2-digit",
+    day: "numeric",
+    month: "short",
+  }),
+  status: toStatusType(v.approval_status),
+  photo: v.photo_url || undefined,
+  owner_id: v.assigned_owner_id || v.created_by || "",
+  visitor_type: "regular",
+});
 
 export default function Visitors() {
   const [searchQuery, setSearchQuery] = useState("");
   const [visits, setVisits] = useState<Visit[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [timelineVisitId, setTimelineVisitId] = useState<string | null>(null);
-  const [timelineData, setTimelineData] = useState<any>(null);
+  const [timelineData, setTimelineData] = useState<VisitorTimelineVisit | null>(null);
   const [isLoadingTimeline, setIsLoadingTimeline] = useState(false);
 
   const fetchVisits = async () => {
     try {
       setIsLoading(true);
-      const data = await visitsAPI.getHistory(); // Fetch recent visits
+      const [historyVisits, historyRegularVisitors] = await Promise.all([
+        visitsAPI.getHistory(),
+        visitorsAPI.getHistoryRegular(),
+      ]);
 
-      // Transform API data to component format
-      const transformedVisits: Visit[] = data.map((v: any) => ({
-        id: v.id || v._id,
-        name: v.name_snapshot,
-        phone: v.phone_snapshot || "N/A",
-        purpose: v.purpose,
-        date: new Date(
-          v.created_at.endsWith("Z") ? v.created_at : v.created_at + "Z"
-        ).toLocaleDateString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-          day: "numeric",
-          month: "short",
-        }),
-        status: v.status,
-        photo: v.photo_snapshot_url,
-        is_all_flats: v.is_all_flats,
-        target_flat_ids: v.target_flat_ids,
-        owner_id: v.owner_id,
-      }));
+      const transformedVisits: Visit[] = [
+        ...historyVisits.map(mapAdhocVisit),
+        ...historyRegularVisitors.map(mapRegularVisit),
+      ].sort((a, b) => getDateTimestamp(b.createdAt) - getDateTimestamp(a.createdAt));
 
       setVisits(transformedVisits);
     } catch (error) {
@@ -121,11 +166,16 @@ export default function Visitors() {
     }
   };
 
-  const handleViewTimeline = async (visitId: string) => {
+  const handleViewTimeline = async (visit: Visit) => {
+    if (visit.visitor_type === "regular") {
+      toast("Timeline is available only for ad-hoc visits");
+      return;
+    }
+
     try {
-      setTimelineVisitId(visitId);
+      setTimelineVisitId(visit.id);
       setIsLoadingTimeline(true);
-      const data = await visitsAPI.getVisitDetails(visitId);
+      const data = await visitsAPI.getVisitDetails(visit.id);
       setTimelineData(data);
     } catch (error) {
       console.error("Failed to fetch timeline:", error);
@@ -221,6 +271,9 @@ export default function Visitors() {
                         <div className="flex flex-col">
                           <div className="flex items-center gap-2">
                             <span className="font-medium">{visitor.name}</span>
+                            <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                              {visitor.visitor_type === "regular" ? "REGULAR" : "ADHOC"}
+                            </span>
                             {visitor.is_all_flats && (
                               <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold text-primary">
                                 BROADCAST
@@ -243,7 +296,7 @@ export default function Visitors() {
                       <StatusBadge status={visitor.status} />
                     </TableCell>
                     <TableCell>
-                      {visitor.status === "pending" && (
+                      {visitor.status === "pending" && visitor.visitor_type === "adhoc" && (
                         <div className="flex gap-2">
                           <Button
                             size="sm"
@@ -274,9 +327,14 @@ export default function Visitors() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => handleViewTimeline(visitor.id)}>
+                          <DropdownMenuItem
+                            onClick={() => handleViewTimeline(visitor)}
+                            disabled={visitor.visitor_type === "regular"}
+                          >
                             <ClockIcon className="mr-2 h-4 w-4" />
-                            View Timeline
+                            {visitor.visitor_type === "regular"
+                              ? "Timeline Unavailable"
+                              : "View Timeline"}
                           </DropdownMenuItem>
                           <DropdownMenuItem>View Details</DropdownMenuItem>
                           {visitor.status !== "pending" && (

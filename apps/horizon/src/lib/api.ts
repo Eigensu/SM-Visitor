@@ -6,6 +6,60 @@ import axios, { AxiosInstance, AxiosError } from "axios";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+export type ApiVisitStatus = "pending" | "approved" | "rejected" | "auto_approved";
+
+export interface VisitHistoryItem {
+  id?: string;
+  _id?: string;
+  visitor_id?: string | null;
+  name_snapshot: string;
+  phone_snapshot?: string | null;
+  photo_snapshot_url?: string | null;
+  purpose: string;
+  owner_id: string;
+  guard_id?: string;
+  status: ApiVisitStatus;
+  created_at: string;
+  entry_time?: string | null;
+  exit_time?: string | null;
+  updated_at?: string | null;
+  qr_token?: string | null;
+  is_all_flats?: boolean;
+  target_flat_ids?: string[];
+}
+
+export interface RegularVisitorHistoryItem {
+  id?: string;
+  _id?: string;
+  name: string;
+  phone?: string | null;
+  photo_url?: string | null;
+  category?: string;
+  category_label?: string;
+  created_at: string;
+  approval_status: string;
+  assigned_owner_id?: string | null;
+  created_by?: string | null;
+}
+
+export interface VisitTimelineDetails {
+  id: string;
+  visitor_id?: string | null;
+  name_snapshot: string;
+  phone_snapshot?: string | null;
+  photo_snapshot_url?: string | null;
+  purpose: string;
+  owner_id: string;
+  guard_id: string;
+  guard_name?: string;
+  status: ApiVisitStatus;
+  created_at: string;
+  entry_time?: string | null;
+  exit_time?: string | null;
+  updated_at?: string | null;
+  qr_token?: string | null;
+}
+
 // Create axios instance
 const apiClient: AxiosInstance = axios.create({
   baseURL: API_URL,
@@ -98,17 +152,20 @@ export const visitsAPI = {
     return response.data;
   },
 
-  getRecentActivity: async (limit: number = 10, signal?: AbortSignal) => {
+  getRecentActivity: async (
+    limit: number = 10,
+    signal?: AbortSignal
+  ): Promise<VisitHistoryItem[]> => {
     const response = await apiClient.get(`/visits/recent?limit=${limit}`, { signal });
     return response.data;
   },
 
-  getVisitDetails: async (visitId: string, signal?: AbortSignal) => {
+  getVisitDetails: async (visitId: string, signal?: AbortSignal): Promise<VisitTimelineDetails> => {
     const response = await apiClient.get(`/visits/${visitId}`, { signal });
     return response.data;
   },
 
-  getHistory: async (signal?: AbortSignal) => {
+  getHistory: async (signal?: AbortSignal): Promise<VisitHistoryItem[]> => {
     const response = await apiClient.get("/visits/history", { signal });
     return response.data;
   },
@@ -154,7 +211,7 @@ export const visitorsAPI = {
     return response.data;
   },
 
-  getHistoryRegular: async (signal?: AbortSignal) => {
+  getHistoryRegular: async (signal?: AbortSignal): Promise<RegularVisitorHistoryItem[]> => {
     const response = await apiClient.get("/visitors/history/regular", { signal });
     return response.data;
   },
