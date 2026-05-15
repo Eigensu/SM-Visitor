@@ -3,48 +3,69 @@
  */
 
 /**
- * Parse a backend datetime string as UTC.
- * The backend stores naive ISO strings (no 'Z' / no offset).
- * Without this, browsers treat them as LOCAL time, showing times 5h 30m earlier.
+ * Normalize ISO datetime strings so timezone-naive values are treated as UTC.
+ * If timezone is already present (Z / +HH:MM / -HH:MM), preserve as-is.
  */
-const parseUTCDate = (dateString: string): Date => {
-  if (!dateString) return new Date();
-  // Append 'Z' if the string has no timezone info
-  const normalized =
-    dateString.endsWith("Z") ||
-    dateString.includes("+") ||
-    /\d{2}:\d{2}$/.test(dateString.slice(-6)) // e.g. +05:30
-      ? dateString
-      : dateString + "Z";
-  return new Date(normalized);
+const ISO_TIMEZONE_SUFFIX_REGEX = /(Z|[+-]\d{2}:\d{2})$/i;
+
+export const normalizeIsoDateTime = (dateString: string): string => {
+  const trimmed = dateString.trim();
+  if (!trimmed) return trimmed;
+
+  return ISO_TIMEZONE_SUFFIX_REGEX.test(trimmed) ? trimmed : `${trimmed}Z`;
 };
 
-// Format date/time — all use parseUTCDate for correct IST display
+export const parseDateTime = (dateString?: string | null): Date | null => {
+  if (!dateString) return null;
+
+  const normalized = normalizeIsoDateTime(dateString);
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+export const getDateTimestamp = (dateString?: string | null): number => {
+  return parseDateTime(dateString)?.getTime() ?? 0;
+};
+
+const formatDateWithOptions = (
+  dateString: string,
+  options: Intl.DateTimeFormatOptions,
+  fallback = "N/A"
+): string => {
+  const parsed = parseDateTime(dateString);
+  if (!parsed) return fallback;
+
+  return parsed.toLocaleString("en-IN", {
+    ...options,
+    timeZone: "Asia/Kolkata",
+  });
+};
+
 export const formatTime = (dateString: string): string => {
-  return parseUTCDate(dateString).toLocaleTimeString("en-IN", {
+  return formatDateWithOptions(dateString, {
     hour: "2-digit",
     minute: "2-digit",
-    timeZone: "Asia/Kolkata",
   });
 };
 
 export const formatDate = (dateString: string): string => {
-  return parseUTCDate(dateString).toLocaleDateString("en-IN", {
+  return formatDateWithOptions(dateString, {
     month: "short",
     day: "numeric",
     year: "numeric",
-    timeZone: "Asia/Kolkata",
   });
 };
 
-export const formatDateTime = (dateString: string): string => {
-  return parseUTCDate(dateString).toLocaleString("en-IN", {
+export const formatDateTime = (
+  dateString: string,
+  options: Intl.DateTimeFormatOptions = {
     month: "short",
     day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
-    timeZone: "Asia/Kolkata",
-  });
+  }
+): string => {
+  return formatDateWithOptions(dateString, options);
 };
 
 // Phone number validation

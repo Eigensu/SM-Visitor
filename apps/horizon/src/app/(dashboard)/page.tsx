@@ -9,7 +9,8 @@ import { GlassCard } from "@/components/shared/GlassCard";
 import { Users, CheckCircle2, Clock, QrCode, Calendar } from "lucide-react";
 import { Button, Spinner } from "@sm-visitor/ui";
 import { useStore } from "@/lib/store";
-import { visitsAPI } from "@/lib/api";
+import { visitsAPI, type VisitHistoryItem } from "@/lib/api";
+import { formatDateTime } from "@/lib/utils";
 import toast from "react-hot-toast";
 
 export default function Dashboard() {
@@ -24,7 +25,7 @@ export default function Dashboard() {
     approvedCount: 0,
     activeQrCount: 0,
   });
-  const [recentVisitors, setRecentVisitors] = useState<any[]>([]);
+  const [recentVisitors, setRecentVisitors] = useState<VisitHistoryItem[]>([]);
 
   useEffect(() => {
     const fetchData = async (signal?: AbortSignal) => {
@@ -119,64 +120,74 @@ export default function Dashboard() {
                 <Spinner />
               </div>
             ) : recentVisitors.length > 0 ? (
-              recentVisitors.map((visitor) => (
-                <VisitorCard
-                  key={visitor.id || visitor._id}
-                  visitor={{
-                    id: visitor.id || visitor._id,
-                    name: visitor.name_snapshot,
-                    phone: visitor.phone_snapshot || "N/A",
-                    purpose: visitor.purpose,
-                    // flatNumber omitted as it's redundant for the owner
-                    status: visitor.status,
-                    timestamp: new Date(
-                      visitor.created_at.endsWith("Z")
-                        ? visitor.created_at
-                        : visitor.created_at + "Z"
-                    ).toLocaleDateString([], {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                      day: "numeric",
-                      month: "short",
-                    }),
-                    photo: visitor.photo_snapshot_url,
-                  }}
-                  showActions={true}
-                  onApprove={async () => {
-                    try {
-                      await visitsAPI.approve(visitor.id || visitor._id);
-                      toast.success("Visit approved");
-                      // Refresh data
-                      const [dashboardStats, recent] = await Promise.all([
-                        visitsAPI.getDashboardStats(),
-                        visitsAPI.getRecentActivity(5),
-                      ]);
-                      setStats(dashboardStats);
-                      setRecentVisitors(recent);
-                    } catch (error) {
-                      console.error("Failed to approve:", error);
-                      toast.error("Failed to approve visit");
-                    }
-                  }}
-                  onReject={async () => {
-                    if (!confirm("Reject this visitor?")) return;
-                    try {
-                      await visitsAPI.reject(visitor.id || visitor._id);
-                      toast.success("Visit rejected");
-                      // Refresh data
-                      const [dashboardStats, recent] = await Promise.all([
-                        visitsAPI.getDashboardStats(),
-                        visitsAPI.getRecentActivity(5),
-                      ]);
-                      setStats(dashboardStats);
-                      setRecentVisitors(recent);
-                    } catch (error) {
-                      console.error("Failed to reject:", error);
-                      toast.error("Failed to reject visit");
-                    }
-                  }}
-                />
-              ))
+              recentVisitors.map((visitor, index) => {
+                const visitId = visitor.id || visitor._id || `recent-${index}`;
+
+                return (
+                  <VisitorCard
+                    key={visitId}
+                    visitor={{
+                      id: visitId,
+                      name: visitor.name_snapshot,
+                      phone: visitor.phone_snapshot || "N/A",
+                      purpose: visitor.purpose,
+                      // flatNumber omitted as it's redundant for the owner
+                      status: visitor.status,
+                      timestamp: formatDateTime(visitor.created_at, {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        day: "numeric",
+                        month: "short",
+                      }),
+                      photo: visitor.photo_snapshot_url || undefined,
+                    }}
+                    showActions={true}
+                    onApprove={async () => {
+                      if (!visitor.id && !visitor._id) {
+                        toast.error("Unable to approve: missing visit id");
+                        return;
+                      }
+
+                      try {
+                        await visitsAPI.approve(visitor.id || visitor._id || "");
+                        toast.success("Visit approved");
+                        // Refresh data
+                        const [dashboardStats, recent] = await Promise.all([
+                          visitsAPI.getDashboardStats(),
+                          visitsAPI.getRecentActivity(5),
+                        ]);
+                        setStats(dashboardStats);
+                        setRecentVisitors(recent);
+                      } catch (error) {
+                        console.error("Failed to approve:", error);
+                        toast.error("Failed to approve visit");
+                      }
+                    }}
+                    onReject={async () => {
+                      if (!confirm("Reject this visitor?")) return;
+                      if (!visitor.id && !visitor._id) {
+                        toast.error("Unable to reject: missing visit id");
+                        return;
+                      }
+
+                      try {
+                        await visitsAPI.reject(visitor.id || visitor._id || "");
+                        toast.success("Visit rejected");
+                        // Refresh data
+                        const [dashboardStats, recent] = await Promise.all([
+                          visitsAPI.getDashboardStats(),
+                          visitsAPI.getRecentActivity(5),
+                        ]);
+                        setStats(dashboardStats);
+                        setRecentVisitors(recent);
+                      } catch (error) {
+                        console.error("Failed to reject:", error);
+                        toast.error("Failed to reject visit");
+                      }
+                    }}
+                  />
+                );
+              })
             ) : (
               <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
                 No recent visitors

@@ -2,6 +2,7 @@
 
 import { UserPlus, CheckCircle, XCircle, LogOut, Clock } from "lucide-react";
 import { GlassCard } from "./GlassCard";
+import { formatDateTime, parseDateTime } from "@/lib/utils";
 
 interface TimelineEvent {
   type: "created" | "approved" | "rejected" | "exited";
@@ -12,29 +13,33 @@ interface TimelineEvent {
   color: string;
 }
 
+export interface VisitorTimelineVisit {
+  id: string;
+  name_snapshot: string;
+  phone_snapshot?: string | null;
+  photo_snapshot_url?: string | null;
+  purpose: string;
+  status: "pending" | "approved" | "rejected" | "auto_approved";
+  created_at: string;
+  entry_time?: string | null;
+  exit_time?: string | null;
+  updated_at?: string | null;
+  guard_name?: string | null;
+  qr_token?: string | null;
+}
+
 interface VisitorTimelineProps {
-  visit: {
-    id: string;
-    name_snapshot: string;
-    phone_snapshot?: string;
-    photo_snapshot_url?: string;
-    purpose: string;
-    status: "pending" | "approved" | "rejected" | "auto_approved";
-    created_at: string;
-    entry_time?: string;
-    exit_time?: string;
-    updated_at?: string;
-    guard_name?: string;
-    qr_token?: string;
-  };
+  visit: VisitorTimelineVisit;
 }
 
 export function VisitorTimeline({ visit }: VisitorTimelineProps) {
-  const calculateDuration = (start?: string, end?: string): string => {
+  const calculateDuration = (start?: string | null, end?: string | null): string => {
     if (!start || !end) return "N/A";
 
-    const startDate = new Date(start);
-    const endDate = new Date(end);
+    const startDate = parseDateTime(start);
+    const endDate = parseDateTime(end);
+    if (!startDate || !endDate) return "N/A";
+
     const diffMs = endDate.getTime() - startDate.getTime();
 
     const hours = Math.floor(diffMs / (1000 * 60 * 60));
@@ -47,8 +52,7 @@ export function VisitorTimeline({ visit }: VisitorTimelineProps) {
   };
 
   const formatTimestamp = (timestamp: string): string => {
-    const date = new Date(timestamp.endsWith("Z") ? timestamp : timestamp + "Z");
-    return date.toLocaleString([], {
+    return formatDateTime(timestamp, {
       month: "short",
       day: "numeric",
       hour: "2-digit",

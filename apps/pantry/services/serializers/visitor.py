@@ -1,5 +1,4 @@
 from enum import Enum
-from enum import Enum as _Enum
 
 
 class ApprovalStatus(str, Enum):
@@ -23,15 +22,12 @@ def serialize_visitor(visitor: dict) -> dict:
 
     # 2. Normalize status to lowercase enum or string value
     status = visitor["approval_status"]
-    # If it's an Enum instance, use its value; if string, lowercase it
-    try:
-        if isinstance(status, _Enum):
-            status = status.value
-    except Exception:
-        # fallback: not an Enum type
-        pass
-    if isinstance(status, str):
-        status = status.lower()
+    if isinstance(status, Enum):
+        normalized_status = str(status.value).lower()
+    elif isinstance(status, str):
+        normalized_status = status.lower()
+    else:
+        normalized_status = str(status).lower() if status is not None else "approved"
 
     # 3. Construct response object following strict contract
     # Backfill missing role (Production Hardening)
@@ -64,7 +60,7 @@ def serialize_visitor(visitor: dict) -> dict:
         ),
         "pass_type": "temporary" if visitor.get("qr_validity_hours") else "permanent",
         "is_active": visitor.get("is_active", True),
-        "approval_status": status or "approved",
+        "approval_status": normalized_status,
         "assigned_owner_id": (
             str(visitor.get("assigned_owner_id"))
             if visitor.get("assigned_owner_id")
