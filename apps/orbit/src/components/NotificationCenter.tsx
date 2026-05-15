@@ -30,6 +30,35 @@ export function NotificationCenter() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // Fetch persisted notifications on component mount
+  // This ensures guards see notifications even after page refresh or SSE reconnect
+  useEffect(() => {
+    const fetchPersistedNotifications = async () => {
+      try {
+        const [persisted, unreadData] = await Promise.all([
+          notificationsAPI.getNotifications(false), // Get all notifications
+          notificationsAPI.getUnreadCount(),
+        ]);
+
+        // Merge with existing Zustand notifications, deduplicating by ID
+        const existingIds = new Set(notifications.map((n) => n.id || n._id));
+        const newNotifications = persisted.filter((n: any) => !existingIds.has(n.id || n._id));
+        const merged = [...newNotifications, ...notifications];
+
+        setNotifications(merged);
+        const count = typeof unreadData === "object" ? unreadData.count : unreadData;
+        if (typeof count === "number") {
+          useStore.setState({ unreadCount: count });
+        }
+      } catch (error) {
+        // Silent fail - persisted notifications are nice-to-have, not critical
+        console.warn("Failed to fetch persisted notifications:", error);
+      }
+    };
+
+    fetchPersistedNotifications();
+  }, []);
+
   const handleMarkAllRead = async () => {
     try {
       await notificationsAPI.markAllAsRead();
