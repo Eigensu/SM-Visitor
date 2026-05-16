@@ -8,6 +8,7 @@ import { Button } from "@sm-visitor/ui";
 import { Spinner } from "@sm-visitor/ui";
 import { Plus, User, QrCode, Trash2, Calendar, Clock, Shield, Info } from "lucide-react";
 import { visitorsAPI } from "@/lib/api";
+import SecureImage from "@/components/ui/SecureImage";
 import toast from "react-hot-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { QRCodeSVG } from "qrcode.react";
@@ -171,8 +172,8 @@ export default function RegularVisitorsPage() {
               {/* Header with Photo */}
               <div className="mb-4 flex items-start gap-4">
                 {visitor.photo_url ? (
-                  <img
-                    src={getVisitorPhotoSrc(visitor.photo_url, apiBaseUrl)}
+                  <SecureImage
+                    srcRaw={visitor.photo_url}
                     alt={visitor.name}
                     className="h-16 w-16 rounded-full object-cover ring-2 ring-primary/20"
                   />
@@ -309,8 +310,8 @@ export default function RegularVisitorsPage() {
               {/* Photo + Name */}
               <div className="flex items-center gap-4">
                 {infoVisitor.photo_url ? (
-                  <img
-                    src={getVisitorPhotoSrc(infoVisitor.photo_url, apiBaseUrl)}
+                  <SecureImage
+                    srcRaw={infoVisitor.photo_url}
                     alt={infoVisitor.name}
                     className="h-20 w-20 rounded-full object-cover ring-2 ring-primary/20"
                   />

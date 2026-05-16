@@ -15,6 +15,7 @@ import { formatTime } from "@/lib/utils";
 import { useStore } from "@/lib/store";
 import toast from "react-hot-toast";
 import { ArrowLeft, Search, X, Phone, User, Clock, Shield, CreditCard } from "lucide-react";
+import SecureImage from "@/components/ui/SecureImage";
 
 interface Visit {
   id: string;
@@ -221,8 +222,8 @@ export default function HistoryPage() {
             {filteredVisits.map((visit) => (
               <GlassCard key={visit.id} className="p-4 hover:shadow-lg">
                 <div className="flex items-center gap-4">
-                  <img
-                    src={visit.photo_snapshot_url}
+                  <SecureImage
+                    srcRaw={visit.photo_snapshot_url}
                     alt={visit.name_snapshot}
                     className="h-16 w-16 rounded-full border-2 border-gray-200 object-cover"
                   />
@@ -301,8 +302,8 @@ export default function HistoryPage() {
             <div className="p-4 space-y-4">
               {/* Photo + Name */}
               <div className="flex items-center gap-4">
-                <img
-                  src={selectedVisit.photo_snapshot_url}
+                <SecureImage
+                  srcRaw={selectedVisit.photo_snapshot_url}
                   alt={selectedVisit.name_snapshot}
                   className="h-20 w-20 rounded-full border-2 border-gray-200 object-cover"
                 />
@@ -358,8 +359,8 @@ export default function HistoryPage() {
                 {selectedVisit.id_photo_url && (
                   <div className="pt-1">
                     <p className="mb-1.5 text-sm text-gray-500">ID Card Photo</p>
-                    <img
-                      src={selectedVisit.id_photo_url}
+                    <SecureImage
+                      srcRaw={selectedVisit.id_photo_url}
                       alt="ID card"
                       className="w-full rounded-lg border object-cover"
                     />

@@ -6,6 +6,7 @@ import { Button, Spinner, Input } from "@sm-visitor/ui";
 import { GlassCard } from "@/components/GlassCard";
 import { visitorsAPI } from "@/lib/api";
 import { getPhotoUrl } from "@/lib/utils";
+import SecureImage from "@/components/ui/SecureImage";
 import {
   ArrowLeft,
   Search,
@@ -153,8 +154,8 @@ export default function StaffDirectoryPage() {
                           <div className="flex items-center gap-3">
                             <div className="relative h-16 w-16 flex-shrink-0 overflow-hidden rounded-2xl bg-muted shadow-sm border-2 border-white/50">
                               {person.photo_url ? (
-                                <img
-                                  src={getPhotoUrl(person.photo_url)}
+                                <SecureImage
+                                  srcRaw={person.photo_url}
                                   alt={person.name}
                                   className="h-full w-full object-cover"
                                 />

@@ -3,11 +3,15 @@ Photo Upload Router - Handle photo uploads with validation
 Saves regular visitor photos to GridFS and new visitor photos to local buffer
 """
 
-from fastapi import APIRouter, HTTPException, status, Depends, UploadFile, File
+from fastapi import APIRouter, HTTPException, status, Depends, UploadFile, File, Request
 from pydantic import BaseModel
 
 from middleware.auth import get_current_guard
 from utils.storage import photo_storage
+from config import PANTRY_URL, PHOTO_SIGNING_SECRET
+import hmac
+import hashlib
+from datetime import datetime
 
 
 router = APIRouter(prefix="/uploads", tags=["Uploads"])
@@ -78,23 +82,23 @@ async def upload_new_visitor_photo(
             detail=error_msg
         )
     
-    # Save to local buffer
-    filename = await photo_storage.save_new_visitor_photo_buffer(
+    # Save to deployment-safe temporary GridFS buffer and return its id
+    file_id = await photo_storage.save_new_visitor_photo_buffer(
         photo_data,
-        photo.filename or "new_visitor_photo.jpg"
+        photo.filename or "new_visitor_photo.jpg",
     )
 
     return PhotoUploadResponse(
-        photo_url=f"/uploads/photo/buffer/{filename}",
-        storage_type="local_buffer",
-        message="Photo saved to local buffer temporarily"
+        photo_url=f"/uploads/photo/buffer/{file_id}",
+        storage_type="gridfs_buffer",
+        message="Photo saved to temporary GridFS buffer",
     )
 
 
 @router.get("/photo/regular/{file_id}")
 @router.get("/regular/{file_id}")
 async def get_regular_visitor_photo(
-    file_id: str,
+    file_id: str, request: "Request"
 ):
     """
     Retrieve regular visitor photo from GridFS
@@ -102,15 +106,69 @@ async def get_regular_visitor_photo(
     Returns the image file
     """
     from fastapi.responses import Response
+    # Validate Authorization header first (existing protected behavior)
+    from fastapi.responses import Response
+    auth = request.headers.get("authorization")
 
-    photo_data = await photo_storage.get_regular_visitor_photo(file_id)
+    # Helper to load and return photo bytes
+    async def _load_and_respond(fid: str):
+        photo_data = await photo_storage.get_regular_visitor_photo(fid)
+        if not photo_data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Photo not found"
+            )
+        return Response(content=photo_data, media_type="image/jpeg")
 
-    if not photo_data:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Photo not found"
-        )
+    if auth:
+        # Authorized request: serve directly
+        return await _load_and_respond(file_id)
 
-    return Response(content=photo_data, media_type="image/jpeg")
+    # No Authorization header — check signed query params
+    qs = request.query_params
+    sig = qs.get("sig")
+    exp = qs.get("exp")
+
+    if not sig or not exp:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+
+    try:
+        exp_ts = int(exp)
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid expiry")
+
+    now_ts = int(datetime.utcnow().timestamp())
+    if exp_ts < now_ts:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Signed URL expired")
+
+    # Compute expected signature
+    msg = f"{file_id}:{exp_ts}".encode()
+    expected = hmac.new(PHOTO_SIGNING_SECRET.encode(), msg, hashlib.sha256).hexdigest()
+
+    # Constant-time compare
+    if not hmac.compare_digest(expected, sig):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid signature")
+
+    # Signature valid — serve
+    return await _load_and_respond(file_id)
+
+
+
+@router.get("/photo/regular/{file_id}/signed-url")
+async def get_signed_regular_photo_url(file_id: str, _current_user: dict = Depends(get_current_guard)):
+    """
+    Generate a short-lived signed URL for a GridFS photo. Requires authentication.
+
+    Returns:
+        { signed_url: str }
+    """
+    # Default expiry: 5 minutes
+    expiry_seconds = 300
+    exp_ts = int((datetime.utcnow()).timestamp()) + expiry_seconds
+    msg = f"{file_id}:{exp_ts}".encode()
+    sig = hmac.new(PHOTO_SIGNING_SECRET.encode(), msg, hashlib.sha256).hexdigest()
+
+    signed_url = f"{PANTRY_URL}/uploads/photo/regular/{file_id}?exp={exp_ts}&sig={sig}"
+    return {"signed_url": signed_url}
 
 
 @router.get("/photo/buffer/{filename}")
