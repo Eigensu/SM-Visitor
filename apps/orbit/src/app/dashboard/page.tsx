@@ -22,14 +22,25 @@ import {
 import { StatCard } from "@/components/StatCard";
 import { GlassCard } from "@/components/GlassCard";
 import { NotificationCenter } from "@/components/NotificationCenter";
+import { normalizeApprovalStatus } from "@sm-visitor/hooks";
 import toast from "react-hot-toast";
 
 interface Visit {
   id: string;
-  visitor_id?: string;
+  _id?: string;
+  visitor_id?: string | null;
+  name_snapshot?: string;
+  name?: string;
+  phone_snapshot?: string | null;
+  phone?: string | null;
+  photo_snapshot_url?: string | null;
+  photo?: string | null;
+  purpose?: string;
   entry_time?: string;
   exit_time?: string;
   status: string;
+  approval_status?: string;
+  created_at?: string;
 }
 
 export default function DashboardPage() {
@@ -57,8 +68,10 @@ export default function DashboardPage() {
       ]);
       setTodayVisits(visits);
       setPendingStaffCount(
-        staff.filter((v: any) => v.visitor_type === "regular" && v.approval_status === "pending")
-          .length
+        staff.filter(
+          (v: any) =>
+            v.visitor_type === "regular" && normalizeApprovalStatus(v.approval_status) === "pending"
+        ).length
       );
     } catch (error: any) {
       if (error.name === "AbortError" || error.message?.includes("canceled")) {

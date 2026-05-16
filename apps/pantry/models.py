@@ -8,6 +8,7 @@ class ApprovalStatus(str, Enum):
     PENDING = "pending"
     APPROVED = "approved"
     REJECTED = "rejected"
+    DELETED = "deleted"
 
 class PyObjectId(ObjectId):
     """Custom ObjectId type for Pydantic"""
@@ -34,6 +35,8 @@ class NotificationModel(BaseModel):
     id: Optional[PyObjectId] = Field(default=None, alias="_id")
     title: str
     message: str
+    body: Optional[str] = None
+    text: Optional[str] = None
     type: str  # info, entry_request, approval, rejection, regular_visitor_pending
     recipient_id: str
     is_read: bool = False

@@ -4,6 +4,7 @@ export type StatusType =
   | "approved"
   | "pending"
   | "rejected"
+  | "deleted"
   | "expired"
   | "active"
   | "auto_approved";
@@ -24,6 +25,10 @@ const statusConfig: Record<StatusType, { label: string; className: string }> = {
   },
   rejected: {
     label: "Rejected",
+    className: "bg-destructive/10 text-destructive border-destructive/20",
+  },
+  deleted: {
+    label: "Deleted",
     className: "bg-destructive/10 text-destructive border-destructive/20",
   },
   expired: {
@@ -63,7 +68,7 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
           "h-1.5 w-1.5 rounded-full",
           (status === "approved" || status === "auto_approved") && "bg-success",
           status === "pending" && "animate-pulse bg-pending",
-          status === "rejected" && "bg-destructive",
+          (status === "rejected" || status === "deleted") && "bg-destructive",
           status === "expired" && "bg-muted-foreground",
           (status === "active" || status === "auto_approved") && "bg-primary"
         )}

@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { AnimatePresence } from "framer-motion";
 import { visitsAPI, visitorsAPI } from "@/lib/api";
 import { useStore } from "@/lib/store";
+import { normalizeApprovalStatus } from "@sm-visitor/hooks";
 
 export default function Approvals() {
   const [pendingItems, setPendingItems] = useState<any[]>([]);
@@ -37,7 +38,7 @@ export default function Approvals() {
       purpose: isRegular
         ? `Staff Registration: ${item.category_label || item.category || "Staff"}`
         : item.purpose,
-      status: isRegular ? item.approval_status : item.status,
+      status: normalizeApprovalStatus(isRegular ? item.approval_status : item.status),
       timestamp: item.created_at,
       photo: isRegular ? item.photo_url : item.photo_snapshot_url,
       isRegular,

@@ -3,6 +3,12 @@
  * Handles all HTTP requests to the Pantry backend
  */
 import axios, { AxiosInstance, AxiosError } from "axios";
+import {
+  normalizeNotificationList,
+  normalizeRegularVisitorList,
+  normalizeVisitList,
+  normalizeVisitRecord,
+} from "@sm-visitor/hooks";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -132,12 +138,12 @@ export const visitsAPI = {
 
   getTodayVisits: async (signal?: AbortSignal) => {
     const response = await apiClient.get("/visits/today", { signal });
-    return response.data;
+    return normalizeVisitList(response.data);
   },
 
   getVisit: async (visitId: string, signal?: AbortSignal) => {
     const response = await apiClient.get(`/visits/${visitId}`, { signal });
-    return response.data;
+    return normalizeVisitRecord(response.data);
   },
 
   checkout: async (visitId: string) => {
@@ -159,11 +165,11 @@ export const visitorsAPI = {
   },
   list: async (signal?: AbortSignal) => {
     const response = await apiClient.get("/visitors/", { signal });
-    return response.data;
+    return normalizeRegularVisitorList(response.data);
   },
   getAllVisitors: async (signal?: AbortSignal) => {
     const response = await apiClient.get("/visitors/", { signal });
-    return response.data;
+    return normalizeRegularVisitorList(response.data);
   },
   deleteRegular: async (visitorId: string) => {
     const response = await apiClient.delete(`/visitors/${visitorId}`);
@@ -210,7 +216,7 @@ export const usersAPI = {
 export const notificationsAPI = {
   getNotifications: async (unreadOnly: boolean = false) => {
     const response = await apiClient.get(`/notifications?unread_only=${unreadOnly}`);
-    return response.data;
+    return normalizeNotificationList(response.data);
   },
   getUnreadCount: async () => {
     const response = await apiClient.get("/notifications/unread/count");
