@@ -23,13 +23,15 @@ from database import get_database
 from bson import ObjectId
 from utils.time_utils import get_ist_now, get_utc_now
 from utils.sse_manager import sse_manager
+from config import JWT_SECRET, JWT_ALGORITHM, JWT_EXPIRY_DAYS
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 security = HTTPBearer()
-# JWT Configuration
-JWT_SECRET = os.getenv("JWT_SECRET", "your-secret-key-change-in-production")
-JWT_ALGORITHM = "HS256"
-JWT_EXPIRATION_HOURS = 24 * 7  # 7 days
+# JWT configuration (centralized in config.py)
+JWT_EXPIRATION_HOURS = JWT_EXPIRY_DAYS * 24
 
 
 # Request/Response Models
@@ -130,7 +132,7 @@ async def get_current_user(
     try:
         payload = decode_token(token)
     except Exception as e:
-        print(f"DEBUG: Token decode failed: {e}")
+        logger.debug("Token decode failed: %s", e)
         raise e
     
     try:
@@ -147,7 +149,7 @@ async def get_current_user(
     user = await collection.find_one({"_id": user_id})
     
     if not user:
-        print(f"DEBUG: User not found for ID: {payload.get('user_id')}")
+        logger.debug("User not found for ID from token payload")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found"
@@ -181,7 +183,7 @@ async def _notify_new_user(
         try:
             await sse_manager.broadcast_to_role(target_role, "new_user_registered", payload)
         except Exception as e:
-            print(f"[SSE] broadcast to {target_role} failed: {e}")
+            logger.warning("[SSE] broadcast to %s failed: %s", target_role, e)
 
 
 # Endpoints
