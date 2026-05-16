@@ -89,6 +89,7 @@ class SSEManager:
         try:
             from database import get_notifications_collection
             from models import NotificationModel
+            from services.serializers.notification import build_notification_document
 
             # Map event type to Title/Message
             title = "Notification"
@@ -108,11 +109,13 @@ class SSEManager:
                 message = f"Guard registered: {data.get('name', 'a visitor')}. Approval needed."
 
             notif_doc = NotificationModel(
-                title=title,
-                message=message,
-                type=event_type,
-                recipient_id=user_id,
-                data=data,
+                **build_notification_document(
+                    title=title,
+                    message=message,
+                    type=event_type,
+                    recipient_id=user_id,
+                    data=data,
+                )
             )
 
             # Save to DB - don't await to keep it fast?

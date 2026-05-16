@@ -5,7 +5,7 @@
  */
 
 interface StatusBadgeProps {
-  status: "pending" | "approved" | "rejected" | "auto_approved";
+  status: "pending" | "approved" | "rejected" | "auto_approved" | "deleted";
   getColor?: (status: string) => string;
   getLabel?: (status: string) => string;
 }
@@ -17,6 +17,7 @@ const defaultGetStatusColor = (status: string) => {
     approved: "border-green-300 bg-green-50 text-green-800",
     rejected: "border-red-300 bg-red-50 text-red-800",
     auto_approved: "border-blue-300 bg-blue-50 text-blue-800",
+    deleted: "border-red-300 bg-red-50 text-red-800",
   };
   return colors[status as keyof typeof colors] || "border-gray-300 bg-gray-50 text-gray-800";
 };
@@ -27,6 +28,7 @@ const defaultGetStatusLabel = (status: string) => {
     approved: "Approved",
     rejected: "Rejected",
     auto_approved: "Auto Approved",
+    deleted: "Deleted",
   };
   return labels[status as keyof typeof labels] || status;
 };

@@ -3,6 +3,14 @@
  * Owner-specific state for Horizon app
  */
 import { create } from "zustand";
+import {
+  normalizeNotification,
+  normalizeNotificationList,
+  normalizeRegularVisitorList,
+  normalizeRegularVisitorRecord,
+  normalizeVisitList,
+  normalizeVisitRecord,
+} from "@sm-visitor/hooks";
 
 interface User {
   id: string;
@@ -15,16 +23,21 @@ interface User {
 
 interface Visit {
   id: string;
-  visitor_id?: string;
-  name_snapshot: string;
-  phone_snapshot?: string;
-  photo_snapshot_url: string;
-  purpose: string;
-  owner_id: string;
-  guard_id: string;
+  _id?: string;
+  visitor_id?: string | null;
+  name_snapshot?: string;
+  name?: string;
+  phone_snapshot?: string | null;
+  phone?: string | null;
+  photo_snapshot_url?: string | null;
+  photo?: string | null;
+  purpose?: string;
+  owner_id?: string;
+  guard_id?: string;
   entry_time?: string;
   exit_time?: string;
-  status: "pending" | "approved" | "rejected" | "auto_approved";
+  status: "pending" | "approved" | "rejected" | "auto_approved" | "deleted";
+  approval_status?: "pending" | "approved" | "rejected" | "auto_approved" | "deleted";
   is_all_flats?: boolean;
   valid_flats?: string[];
   target_flat_ids?: string[];
@@ -32,15 +45,18 @@ interface Visit {
 }
 
 interface RegularVisitor {
+  id?: string;
   _id: string;
-  name: string;
-  phone: string;
-  photo_id: string;
-  photo_url: string;
-  qr_token: string;
-  default_purpose: string;
-  created_by: string;
-  is_active: boolean;
+  visitor_id?: string | null;
+  name?: string;
+  phone?: string;
+  photo_id?: string;
+  photo_url?: string;
+  qr_token?: string;
+  default_purpose?: string;
+  created_by?: string;
+  approval_status?: "pending" | "approved" | "rejected" | "auto_approved" | "deleted";
+  is_active?: boolean;
   created_at: string;
 }
 
@@ -61,6 +77,8 @@ export interface AppNotification {
   type: string;
   title: string;
   message: string;
+  body?: string;
+  text?: string;
   created_at?: string;
   is_read?: boolean;
 }
@@ -210,17 +228,17 @@ export const useStore = create<AppState>((set) => ({
   },
 
   // Visit actions
-  setPendingVisits: (visits) => set({ pendingVisits: visits }),
+  setPendingVisits: (visits) => set({ pendingVisits: normalizeVisitList(visits) }),
 
   setPendingCount: (count) => set({ pendingCount: count }),
 
   setTodayCount: (count) => set({ todayCount: count }),
 
-  setRecentActivity: (visits) => set({ recentActivity: visits }),
+  setRecentActivity: (visits) => set({ recentActivity: normalizeVisitList(visits) }),
 
   addPendingVisit: (visit) =>
     set((state) => ({
-      pendingVisits: [visit, ...state.pendingVisits],
+      pendingVisits: [normalizeVisitRecord(visit), ...state.pendingVisits],
       pendingCount: state.pendingCount + 1,
     })),
 
@@ -233,11 +251,11 @@ export const useStore = create<AppState>((set) => ({
   updateVisitStatus: (visitId, status) =>
     set((state) => {
       const updatedPending = state.pendingVisits.map((v) =>
-        v.id === visitId ? { ...v, status } : v
+        v.id === visitId ? { ...v, status, approval_status: status } : v
       );
 
       const updatedRecent = state.recentActivity.map((v) =>
-        v.id === visitId ? { ...v, status } : v
+        v.id === visitId ? { ...v, status, approval_status: status } : v
       );
 
       return {
@@ -247,13 +265,13 @@ export const useStore = create<AppState>((set) => ({
     }),
 
   // Regular visitor actions
-  setRegularVisitors: (visitors) => set({ regularVisitors: visitors }),
+  setRegularVisitors: (visitors) => set({ regularVisitors: normalizeRegularVisitorList(visitors) }),
 
   setRegularCount: (count) => set({ regularCount: count }),
 
   addRegularVisitor: (visitor) =>
     set((state) => ({
-      regularVisitors: [visitor, ...state.regularVisitors],
+      regularVisitors: [normalizeRegularVisitorRecord(visitor), ...state.regularVisitors],
       regularCount: state.regularCount + 1,
     })),
 
@@ -284,10 +302,11 @@ export const useStore = create<AppState>((set) => ({
     })),
 
   // Notification actions
-  setNotifications: (notifications) => set({ notifications }),
+  setNotifications: (notifications) =>
+    set({ notifications: normalizeNotificationList(notifications) }),
   addNotification: (notification) =>
     set((state) => ({
-      notifications: [notification, ...state.notifications],
+      notifications: [normalizeNotification(notification), ...state.notifications],
       unreadCount: state.unreadCount + 1,
     })),
   setUnreadCount: (count) => set({ unreadCount: count }),
