@@ -8,10 +8,11 @@ IST = ZoneInfo("Asia/Kolkata")
 
 def get_utc_now() -> datetime:
     """
-    Returns the current UTC time as a naive datetime object.
-    Used for storage in MongoDB which expects UTC.
+    Returns the current UTC time as a timezone-aware datetime object (UTC zone).
+    Used for storage in MongoDB - always use UTC for storage.
+    Returns: datetime in UTC with tzinfo set to timezone.utc
     """
-    return datetime.utcnow()
+    return datetime.now(timezone.utc).replace(microsecond=0)
 
 def get_ist_now() -> datetime:
     """
@@ -19,15 +20,36 @@ def get_ist_now() -> datetime:
     """
     return datetime.now(timezone.utc).astimezone(IST)
 
-def format_ist(dt: datetime) -> str:
+def normalize_datetime(dt: datetime, assume_utc: bool = True) -> datetime:
     """
-    Format a datetime object to ISO string in IST
+    Normalize a datetime to timezone-aware UTC for safe operations.
+    
+    Args:
+        dt: datetime object (may be naive or aware)
+        assume_utc: if True and dt is naive, treat as UTC; else treat as IST
+    
+    Returns:
+        timezone-aware datetime in UTC
     """
     if dt.tzinfo is None:
-        # Assume UTC if no timezone info
-        dt = dt.replace(tzinfo=timezone.utc)
-    
-    return dt.astimezone(IST).isoformat()
+        # Naive datetime: assume UTC or IST based on flag
+        assumed_tz = timezone.utc if assume_utc else IST
+        return dt.replace(tzinfo=assumed_tz).astimezone(timezone.utc)
+    elif dt.tzinfo != timezone.utc:
+        # Already aware but not UTC: convert to UTC
+        return dt.astimezone(timezone.utc)
+    else:
+        # Already UTC-aware
+        return dt
+
+
+def format_ist(dt: datetime) -> str:
+    """
+    Format a datetime object to ISO string in IST.
+    Safely handles both naive (assumes UTC) and aware datetimes.
+    """
+    normalized = normalize_datetime(dt, assume_utc=True)
+    return normalized.astimezone(IST).isoformat()
 
 def parse_to_ist(iso_string: str) -> datetime:
     """
