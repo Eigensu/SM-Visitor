@@ -19,7 +19,7 @@ from database import (
 from middleware.auth import get_current_guard, get_current_owner, get_current_user
 from utils.jwt_utils import decode_qr_token
 from utils.sse_manager import sse_manager
-from utils.time_utils import get_ist_now, get_utc_now, is_within_schedule
+from utils.time_utils import get_ist_now, get_utc_now, is_within_schedule, normalize_datetime
 
 
 router = APIRouter(prefix="/visits", tags=["Visits"])
@@ -1055,9 +1055,11 @@ async def get_notifications(
             title = "QR Code Used"
             message = f"{visit['name_snapshot']} entered using QR code."
 
-        # Calculate relative time
+        # Calculate relative time - normalize both to aware UTC for safe subtraction
         updated_at = visit.get("updated_at", visit["created_at"])
-        diff = get_ist_now() - updated_at
+        updated_at_aware = normalize_datetime(updated_at, assume_utc=True)
+        now_aware = get_ist_now().astimezone(timezone.utc)
+        diff = now_aware - updated_at_aware
 
         if diff.days > 0:
             timestamp = f"{diff.days}d ago"
@@ -1426,26 +1428,37 @@ async def get_weekly_stats(
     """
     Get weekly visitor statistics for the current owner
     Used by Horizon dashboard weekly activity chart
-    Returns visitor counts for the last 7 days
+    Returns visitor counts for the last 7 days (IST-aware daily boundaries)
     """
     visits_collection = get_visits_collection()
     flat_id = await get_owner_flat_id(current_user["user_id"], db)
 
-    # Get last 7 days
-    today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-    week_ago = today - timedelta(days=6)
+    # Get last 7 days using IST midnight for daily boundaries
+    # This ensures Indian users see correct daily aggregation (midnight in IST, not UTC)
+    today_ist = get_ist_now().replace(hour=0, minute=0, second=0, microsecond=0)
+    week_ago_ist = today_ist - timedelta(days=6)
+    
+    # Convert IST boundaries to UTC for MongoDB query (which stores UTC)
+    week_ago_utc = week_ago_ist.astimezone(timezone.utc)
 
-    # Aggregate by day
+    # Aggregate by day in IST timezone
     pipeline = [
         {
             "$match": {
                 "owner_id": flat_id,
-                "created_at": {"$gte": week_ago},
+                "created_at": {"$gte": week_ago_utc},
             }
         },
         {
             "$group": {
-                "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$created_at"}},
+                # Group by date string in IST - convert UTC to IST, then format as date
+                "_id": {
+                    "$dateToString": {
+                        "format": "%Y-%m-%d",
+                        "date": "$created_at",
+                        "timezone": "Asia/Kolkata"  # Convert to IST for grouping
+                    }
+                },
                 "count": {"$sum": 1},
             }
         },
@@ -1457,12 +1470,12 @@ async def get_weekly_stats(
     # Create a map of date -> count
     counts_by_date = {result["_id"]: result["count"] for result in results}
 
-    # Fill in missing days with 0
+    # Fill in missing days with 0 - use IST dates
     weekly_data = []
     for i in range(7):
-        date = week_ago + timedelta(days=i)
-        date_str = date.strftime("%Y-%m-%d")
-        day_name = date.strftime("%a")  # Mon, Tue, etc.
+        date_ist = week_ago_ist + timedelta(days=i)
+        date_str = date_ist.strftime("%Y-%m-%d")
+        day_name = date_ist.strftime("%a")  # Mon, Tue, etc.
 
         weekly_data.append(
             {
