@@ -48,6 +48,10 @@ ORBIT_URL = os.getenv("ORBIT_URL", "http://localhost:3000")
 HORIZON_URL = os.getenv("HORIZON_URL", "http://localhost:3001")
 PANTRY_URL = os.getenv("PANTRY_URL", "http://localhost:8000")
 
+# Photo signing secret used to generate short-lived signed URLs for browser
+# image loading when Authorization headers are not available.
+PHOTO_SIGNING_SECRET = os.getenv("PHOTO_SIGNING_SECRET", JWT_SECRET)
+
 # Create storage directory if it doesn't exist
 os.makedirs(LOCAL_STORAGE_PATH, exist_ok=True)
 os.makedirs(os.path.join(LOCAL_STORAGE_PATH, "buffer"), exist_ok=True)
