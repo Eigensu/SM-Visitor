@@ -36,6 +36,10 @@ async def upload_regular_visitor_photo(
 
     Returns GridFS file ID for permanent storage
     """
+    # Basic content type whitelist to reject non-image uploads early
+    if photo.content_type not in ("image/jpeg", "image/png"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only JPEG and PNG images are allowed")
+
     # Read photo data
     photo_data = await photo.read()
     
@@ -71,6 +75,10 @@ async def upload_new_visitor_photo(
 
     Returns Cloudinary secure URL for cloud storage
     """
+    # Basic content type whitelist to reject non-image uploads early
+    if photo.content_type not in ("image/jpeg", "image/png"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only JPEG and PNG images are allowed")
+
     # Read photo data
     photo_data = await photo.read()
     
@@ -200,9 +208,14 @@ async def upload_id_card_photo(
     """
     Upload ID card photo (Aadhar/PAN) to Cloudinary
     """
+    # Basic content type whitelist for ID card photos
+    if photo.content_type not in ("image/jpeg", "image/png"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only JPEG and PNG images are allowed")
+
     photo_data = await photo.read()
 
-    is_valid, error_msg = photo_storage.validate_photo(photo_data, max_size_mb=10)
+    # Ensure validation runs (async) and is awaited so invalid files are rejected
+    is_valid, error_msg = await photo_storage.validate_photo(photo_data, max_size_mb=10)
     if not is_valid:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error_msg)
 
