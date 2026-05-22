@@ -19,7 +19,9 @@ from database import (
 from middleware.auth import get_current_guard, get_current_owner, get_current_user
 from utils.jwt_utils import decode_qr_token
 from utils.sse_manager import sse_manager
-from utils.time_utils import get_ist_now, get_utc_now, is_within_schedule
+from utils.time_utils import get_ist_now, get_utc_now, is_within_schedule, normalize_datetime
+from services.serializers.visit import normalize_approval_status
+from services.serializers.notification import serialize_notification
 
 
 router = APIRouter(prefix="/visits", tags=["Visits"])
@@ -108,6 +110,7 @@ class VisitResponse(BaseModel):
     entry_time: Optional[datetime]
     exit_time: Optional[datetime]
     status: str
+    approval_status: Optional[str] = None
     qr_token: Optional[str] = None
     is_all_flats: bool = False
     valid_flats: Optional[List[str]] = None
@@ -117,6 +120,7 @@ class VisitResponse(BaseModel):
 
 def map_visit_to_response(v: dict) -> VisitResponse:
     """Helper to map MongoDB visit document to VisitResponse"""
+    status = normalize_approval_status(v.get("status"))
     return VisitResponse(
         id=str(v["_id"]),
         visitor_id=v.get("visitor_id"),
@@ -128,7 +132,8 @@ def map_visit_to_response(v: dict) -> VisitResponse:
         guard_id=v["guard_id"],
         entry_time=v.get("entry_time"),
         exit_time=v.get("exit_time"),
-        status=v["status"],
+        status=status,
+        approval_status=status,
         qr_token=v.get("qr_token"),
         is_all_flats=v.get("is_all_flats", False),
         valid_flats=v.get("valid_flats"),
@@ -1055,9 +1060,11 @@ async def get_notifications(
             title = "QR Code Used"
             message = f"{visit['name_snapshot']} entered using QR code."
 
-        # Calculate relative time
+        # Calculate relative time - normalize both to aware UTC for safe subtraction
         updated_at = visit.get("updated_at", visit["created_at"])
-        diff = get_ist_now() - updated_at
+        updated_at_aware = normalize_datetime(updated_at, assume_utc=True)
+        now_aware = get_ist_now().astimezone(timezone.utc)
+        diff = now_aware - updated_at_aware
 
         if diff.days > 0:
             timestamp = f"{diff.days}d ago"
@@ -1073,15 +1080,22 @@ async def get_notifications(
         )
 
         notifications.append(
-            {
-                "id": str(visit["_id"]),
-                "type": notif_type,
-                "title": title,
-                "message": message,
-                "timestamp": timestamp,
-                "read": True,  # For now, mark all as read since we don't track read status
-                "is_broadcast": is_broadcast,
-            }
+            serialize_notification(
+                {
+                    "_id": str(visit["_id"]),
+                    "type": notif_type,
+                    "title": title,
+                    "message": message,
+                    "body": message,
+                    "text": message,
+                    "created_at": timestamp,
+                    "is_read": True,
+                    "data": {
+                        "visit_id": str(visit["_id"]),
+                        "is_broadcast": is_broadcast,
+                    },
+                }
+            )
         )
 
     return notifications
@@ -1275,6 +1289,7 @@ async def get_recent_activity(
         merged.append(
             {
                 "id": str(v.get("_id", "unknown")),
+                "_id": str(v.get("_id", "unknown")),
                 "visitor_id": v.get("visitor_id"),
                 "name_snapshot": v.get("name_snapshot", "Unknown"),
                 "phone_snapshot": v.get("phone_snapshot"),
@@ -1282,7 +1297,8 @@ async def get_recent_activity(
                 "purpose": v.get("purpose", "Visit"),
                 "owner_id": v.get("owner_id", flat_id),
                 "guard_id": v.get("guard_id", "system"),
-                "status": v.get("status", "unknown"),
+                "status": normalize_approval_status(v.get("status"), "pending"),
+                "approval_status": normalize_approval_status(v.get("status"), "pending"),
                 "created_at": v.get("created_at") or now,
                 "is_regular": False,
             }
@@ -1293,6 +1309,7 @@ async def get_recent_activity(
         merged.append(
             {
                 "id": str(r.get("_id", "unknown")),
+                "_id": str(r.get("_id", "unknown")),
                 "visitor_id": str(r.get("_id", "unknown")),
                 "name_snapshot": r.get("name", "Unknown"),
                 "phone_snapshot": r.get("phone"),
@@ -1300,7 +1317,8 @@ async def get_recent_activity(
                 "purpose": f"Staff Registration: {r.get('category_label') or r.get('category') or 'Staff'}",
                 "owner_id": flat_id,
                 "guard_id": str(r.get("created_by", "system")),
-                "status": r.get("approval_status", "pending"),
+                "status": normalize_approval_status(r.get("approval_status"), "pending"),
+                "approval_status": normalize_approval_status(r.get("approval_status"), "pending"),
                 "created_at": r.get("created_at") or now,
                 "is_regular": True,
             }
@@ -1426,26 +1444,37 @@ async def get_weekly_stats(
     """
     Get weekly visitor statistics for the current owner
     Used by Horizon dashboard weekly activity chart
-    Returns visitor counts for the last 7 days
+    Returns visitor counts for the last 7 days (IST-aware daily boundaries)
     """
     visits_collection = get_visits_collection()
     flat_id = await get_owner_flat_id(current_user["user_id"], db)
 
-    # Get last 7 days
-    today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-    week_ago = today - timedelta(days=6)
+    # Get last 7 days using IST midnight for daily boundaries
+    # This ensures Indian users see correct daily aggregation (midnight in IST, not UTC)
+    today_ist = get_ist_now().replace(hour=0, minute=0, second=0, microsecond=0)
+    week_ago_ist = today_ist - timedelta(days=6)
+    
+    # Convert IST boundaries to UTC for MongoDB query (which stores UTC)
+    week_ago_utc = week_ago_ist.astimezone(timezone.utc)
 
-    # Aggregate by day
+    # Aggregate by day in IST timezone
     pipeline = [
         {
             "$match": {
                 "owner_id": flat_id,
-                "created_at": {"$gte": week_ago},
+                "created_at": {"$gte": week_ago_utc},
             }
         },
         {
             "$group": {
-                "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$created_at"}},
+                # Group by date string in IST - convert UTC to IST, then format as date
+                "_id": {
+                    "$dateToString": {
+                        "format": "%Y-%m-%d",
+                        "date": "$created_at",
+                        "timezone": "Asia/Kolkata"  # Convert to IST for grouping
+                    }
+                },
                 "count": {"$sum": 1},
             }
         },
@@ -1457,12 +1486,12 @@ async def get_weekly_stats(
     # Create a map of date -> count
     counts_by_date = {result["_id"]: result["count"] for result in results}
 
-    # Fill in missing days with 0
+    # Fill in missing days with 0 - use IST dates
     weekly_data = []
     for i in range(7):
-        date = week_ago + timedelta(days=i)
-        date_str = date.strftime("%Y-%m-%d")
-        day_name = date.strftime("%a")  # Mon, Tue, etc.
+        date_ist = week_ago_ist + timedelta(days=i)
+        date_str = date_ist.strftime("%Y-%m-%d")
+        day_name = date_ist.strftime("%a")  # Mon, Tue, etc.
 
         weekly_data.append(
             {

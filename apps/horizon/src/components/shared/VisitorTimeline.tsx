@@ -15,11 +15,14 @@ interface TimelineEvent {
 
 export interface VisitorTimelineVisit {
   id: string;
-  name_snapshot: string;
+  name_snapshot?: string;
+  name?: string;
   phone_snapshot?: string | null;
+  phone?: string | null;
   photo_snapshot_url?: string | null;
+  photo?: string | null;
   purpose: string;
-  status: "pending" | "approved" | "rejected" | "auto_approved";
+  status: "pending" | "approved" | "rejected" | "auto_approved" | "deleted";
   created_at: string;
   entry_time?: string | null;
   exit_time?: string | null;
@@ -126,10 +129,10 @@ export function VisitorTimeline({ visit }: VisitorTimelineProps) {
     <GlassCard className="p-6">
       {/* Header with Photo */}
       <div className="mb-6 flex items-start gap-4">
-        {visit.photo_snapshot_url ? (
+        {visit.photo || visit.photo_snapshot_url ? (
           <img
-            src={visit.photo_snapshot_url}
-            alt={visit.name_snapshot}
+            src={visit.photo || visit.photo_snapshot_url || undefined}
+            alt={visit.name || visit.name_snapshot || "Visitor"}
             className="h-16 w-16 rounded-full object-cover ring-2 ring-primary/20"
           />
         ) : (
@@ -138,9 +141,11 @@ export function VisitorTimeline({ visit }: VisitorTimelineProps) {
           </div>
         )}
         <div className="flex-1">
-          <h3 className="text-lg font-semibold text-foreground">{visit.name_snapshot}</h3>
+          <h3 className="text-lg font-semibold text-foreground">
+            {visit.name || visit.name_snapshot || "Unknown Visitor"}
+          </h3>
           <p className="text-sm text-muted-foreground">
-            {visit.phone_snapshot || "No phone"} • {visit.purpose}
+            {visit.phone || visit.phone_snapshot || "No phone"} • {visit.purpose}
           </p>
         </div>
       </div>

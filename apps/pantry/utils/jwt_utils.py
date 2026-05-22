@@ -2,14 +2,15 @@
 Utility functions for JWT token generation and validation
 """
 import jwt
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 from config import JWT_SECRET, JWT_ALGORITHM, JWT_EXPIRY_DAYS
+from utils.time_utils import get_utc_now
 
 
 def create_access_token(data: Dict[str, Any]) -> str:
     """
-    Create a JWT access token
+    Create a JWT access token with UTC timestamps.
     
     Args:
         data: Dictionary containing user_id, role, and optional flat_id
@@ -18,10 +19,11 @@ def create_access_token(data: Dict[str, Any]) -> str:
         Encoded JWT token string
     """
     to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(days=JWT_EXPIRY_DAYS)
+    now_utc = get_utc_now()
+    expire = now_utc + timedelta(days=JWT_EXPIRY_DAYS)
     to_encode.update({
         "exp": expire,
-        "iat": datetime.utcnow()
+        "iat": now_utc
     })
     
     encoded_jwt = jwt.encode(to_encode, JWT_SECRET, algorithm=JWT_ALGORITHM)
@@ -49,7 +51,7 @@ def decode_access_token(token: str) -> Optional[Dict[str, Any]]:
 
 def create_qr_token(data: Dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:
     """
-    Create a JWT token for QR codes
+    Create a JWT token for QR codes with UTC timestamps.
     
     Args:
         data: Dictionary containing token data (visitor_id, type, etc.)
@@ -59,10 +61,11 @@ def create_qr_token(data: Dict[str, Any], expires_delta: Optional[timedelta] = N
         Encoded JWT token string
     """
     to_encode = data.copy()
-    to_encode.update({"iat": datetime.utcnow()})
+    now_utc = get_utc_now()
+    to_encode.update({"iat": now_utc})
     
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = now_utc + expires_delta
         to_encode.update({"exp": expire})
     
     encoded_jwt = jwt.encode(to_encode, JWT_SECRET, algorithm=JWT_ALGORITHM)

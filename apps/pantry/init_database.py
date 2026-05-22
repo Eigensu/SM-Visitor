@@ -8,6 +8,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from datetime import datetime
 import os
 from dotenv import load_dotenv
+from utils.time_utils import get_utc_now
 
 load_dotenv()
 
