@@ -3,6 +3,12 @@
  * Handles all HTTP requests to the Pantry backend
  */
 import axios, { AxiosInstance, AxiosError } from "axios";
+import {
+  normalizeNotificationList,
+  normalizeRegularVisitorList,
+  normalizeVisitList,
+  normalizeVisitRecord,
+} from "@sm-visitor/hooks";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -25,13 +31,17 @@ export interface VisitHistoryItem {
   id?: string;
   _id?: string;
   visitor_id?: string | null;
-  name_snapshot: string;
+  name_snapshot?: string;
+  name?: string;
   phone_snapshot?: string | null;
+  phone?: string | null;
   photo_snapshot_url?: string | null;
-  purpose: string;
-  owner_id: string;
+  photo?: string | null;
+  purpose?: string;
+  owner_id?: string;
   guard_id?: string;
-  status: ApiVisitStatus;
+  status: ApiVisitStatus | "deleted";
+  approval_status?: ApiVisitStatus | "deleted";
   created_at: string;
   entry_time?: string | null;
   exit_time?: string | null;
@@ -44,7 +54,7 @@ export interface VisitHistoryItem {
 export interface RegularVisitorHistoryItem {
   id?: string;
   _id?: string;
-  name: string;
+  name?: string;
   phone?: string | null;
   photo_url?: string | null;
   category?: string;
@@ -74,15 +84,20 @@ export interface CreateRegularVisitorInput {
 
 export interface VisitTimelineDetails {
   id: string;
+  _id?: string;
   visitor_id?: string | null;
-  name_snapshot: string;
+  name_snapshot?: string;
+  name?: string;
   phone_snapshot?: string | null;
+  phone?: string | null;
   photo_snapshot_url?: string | null;
+  photo?: string | null;
   purpose: string;
   owner_id: string;
   guard_id: string;
   guard_name?: string;
-  status: ApiVisitStatus;
+  status: ApiVisitStatus | "deleted";
+  approval_status?: ApiVisitStatus | "deleted";
   created_at: string;
   entry_time?: string | null;
   exit_time?: string | null;
@@ -186,17 +201,17 @@ export const visitsAPI = {
     signal?: AbortSignal
   ): Promise<VisitHistoryItem[]> => {
     const response = await apiClient.get(`/visits/recent?limit=${limit}`, { signal });
-    return response.data;
+    return normalizeVisitList(response.data);
   },
 
   getVisitDetails: async (visitId: string, signal?: AbortSignal): Promise<VisitTimelineDetails> => {
     const response = await apiClient.get(`/visits/${visitId}`, { signal });
-    return response.data;
+    return normalizeVisitRecord(response.data) as VisitTimelineDetails;
   },
 
   getHistory: async (signal?: AbortSignal): Promise<VisitHistoryItem[]> => {
     const response = await apiClient.get("/visits/history", { signal });
-    return response.data;
+    return normalizeVisitList(response.data);
   },
 
   exportAll: async () => {
@@ -206,7 +221,7 @@ export const visitsAPI = {
 
   getNotifications: async (signal?: AbortSignal) => {
     const response = await apiClient.get("/visits/notifications", { signal });
-    return response.data;
+    return normalizeNotificationList(response.data);
   },
 
   getDashboardStats: async (signal?: AbortSignal) => {
@@ -232,17 +247,17 @@ export const visitsAPI = {
 export const visitorsAPI = {
   getRegularVisitors: async (signal?: AbortSignal) => {
     const response = await apiClient.get("/visitors/regular", { signal });
-    return response.data;
+    return normalizeRegularVisitorList(response.data);
   },
 
   getPendingRegular: async (signal?: AbortSignal) => {
     const response = await apiClient.get("/visitors/approvals/regular", { signal });
-    return response.data;
+    return normalizeRegularVisitorList(response.data);
   },
 
   getHistoryRegular: async (signal?: AbortSignal): Promise<RegularVisitorHistoryItem[]> => {
     const response = await apiClient.get("/visitors/history/regular", { signal });
-    return response.data;
+    return normalizeRegularVisitorList(response.data);
   },
 
   approveRegular: async (visitorId: string) => {
@@ -331,7 +346,7 @@ export const tempQRAPI = {
 export const notificationsAPI = {
   getNotifications: async (unreadOnly: boolean = false) => {
     const response = await apiClient.get(`/notifications?unread_only=${unreadOnly}`);
-    return response.data;
+    return normalizeNotificationList(response.data);
   },
   getUnreadCount: async () => {
     const response = await apiClient.get("/notifications/unread/count");

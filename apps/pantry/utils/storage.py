@@ -79,27 +79,54 @@ class PhotoStorage:
     
     async def save_new_visitor_photo_buffer(self, photo_data: bytes, filename: str) -> str:
         """
-        Save new visitor photo to local buffer (temporary storage)
+        Save new visitor photo to a temporary GridFS bucket (deployment-safe)
+
+        To avoid loss on container redeploys we store new visitor uploads to a
+        GridFS bucket named 'visitor_photos_buffer'. The returned identifier is
+        the GridFS file id (string). For backward compatibility, if the caller
+        expects a filename we still return the id which frontend helpers treat
+        as a GridFS ObjectId.
         """
+        from bson import ObjectId
         import asyncio
-        # Generate unique filename
-        ext = os.path.splitext(filename)[1]
-        unique_filename = f"{uuid.uuid4()}{ext}"
-        filepath = os.path.join(self.local_buffer_path, unique_filename)
-        
-        # Save to local buffer off-thread
-        def write_file():
-            with open(filepath, 'wb') as f:
-                f.write(photo_data)
-        
-        await asyncio.to_thread(write_file)
-        return unique_filename
+
+        db = get_database()
+        fs = AsyncIOMotorGridFSBucket(db, bucket_name="visitor_photos_buffer")
+
+        metadata = {
+            "uploaded_at": datetime.utcnow(),
+            "original_filename": filename,
+            "content_type": self._get_content_type(filename),
+        }
+
+        # upload and return string id
+        file_id = await fs.upload_from_stream(
+            filename,
+            io.BytesIO(photo_data),
+            metadata=metadata,
+        )
+
+        return str(file_id)
 
     def get_new_visitor_photo_buffer(self, filename: str) -> Optional[bytes]:
         """
         Retrieve new visitor photo from local buffer
         """
         try:
+            # If filename looks like a GridFS ObjectId, attempt to fetch from GridFS
+            if isinstance(filename, str) and len(filename) == 24 and all(c in '0123456789abcdef' for c in filename.lower()):
+                try:
+                    from bson import ObjectId
+                    db = get_database()
+                    fs = AsyncIOMotorGridFSBucket(db, bucket_name="visitor_photos_buffer")
+                    grid_out = fs.open_download_stream(ObjectId(filename))
+                    # grid_out is an AsyncIOMotorGridOut, read() is async; run in loop
+                    import asyncio
+                    return asyncio.get_event_loop().run_until_complete(grid_out.read())
+                except Exception:
+                    # fallback to file system
+                    pass
+
             full_path = os.path.join(self.local_buffer_path, filename)
             if os.path.exists(full_path):
                 with open(full_path, 'rb') as f:

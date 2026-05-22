@@ -15,20 +15,25 @@ import { formatTime } from "@/lib/utils";
 import { useStore } from "@/lib/store";
 import toast from "react-hot-toast";
 import { ArrowLeft, Search, X, Phone, User, Clock, Shield, CreditCard } from "lucide-react";
+import SecureImage from "@/components/ui/SecureImage";
 
 interface Visit {
   id: string;
-  visitor_id?: string;
-  name_snapshot: string;
-  phone_snapshot?: string;
-  photo_snapshot_url: string;
-  purpose: string;
-  owner_id: string;
-  guard_id: string;
+  _id?: string;
+  visitor_id?: string | null;
+  name_snapshot?: string;
+  name?: string;
+  phone_snapshot?: string | null;
+  phone?: string | null;
+  photo_snapshot_url?: string | null;
+  photo?: string | null;
+  purpose?: string;
+  owner_id?: string;
+  guard_id?: string;
   guard_name?: string;
   entry_time?: string;
   exit_time?: string;
-  status: "pending" | "approved" | "rejected" | "auto_approved";
+  status: "pending" | "approved" | "rejected" | "auto_approved" | "deleted";
   is_all_flats?: boolean;
   valid_flats?: string[];
   target_flat_ids?: string[];
@@ -78,7 +83,7 @@ export default function HistoryPage() {
     let filtered = [...todayVisits];
     if (searchQuery) {
       filtered = filtered.filter((v) =>
-        v.name_snapshot.toLowerCase().includes(searchQuery.toLowerCase())
+        (v.name || v.name_snapshot || "").toLowerCase().includes(searchQuery.toLowerCase())
       );
     }
     if (statusFilter !== "all") {
@@ -221,8 +226,8 @@ export default function HistoryPage() {
             {filteredVisits.map((visit) => (
               <GlassCard key={visit.id} className="p-4 hover:shadow-lg">
                 <div className="flex items-center gap-4">
-                  <img
-                    src={visit.photo_snapshot_url}
+                  <SecureImage
+                    srcRaw={visit.photo_snapshot_url}
                     alt={visit.name_snapshot}
                     className="h-16 w-16 rounded-full border-2 border-gray-200 object-cover"
                   />
@@ -301,13 +306,15 @@ export default function HistoryPage() {
             <div className="p-4 space-y-4">
               {/* Photo + Name */}
               <div className="flex items-center gap-4">
-                <img
-                  src={selectedVisit.photo_snapshot_url}
-                  alt={selectedVisit.name_snapshot}
+                <SecureImage
+                  srcRaw={selectedVisit.photo || selectedVisit.photo_snapshot_url}
+                  alt={selectedVisit.name || selectedVisit.name_snapshot || "Visitor"}
                   className="h-20 w-20 rounded-full border-2 border-gray-200 object-cover"
                 />
                 <div>
-                  <h3 className="text-xl font-bold text-gray-900">{selectedVisit.name_snapshot}</h3>
+                  <h3 className="text-xl font-bold text-gray-900">
+                    {selectedVisit.name || selectedVisit.name_snapshot || "Unknown Visitor"}
+                  </h3>
                   <StatusBadge status={selectedVisit.status} />
                 </div>
               </div>
@@ -317,17 +324,19 @@ export default function HistoryPage() {
                 <DetailRow
                   icon={<Phone className="h-4 w-4" />}
                   label="Phone"
-                  value={selectedVisit.phone_snapshot || "N/A"}
+                  value={selectedVisit.phone || selectedVisit.phone_snapshot || "N/A"}
                 />
                 <DetailRow
                   icon={<User className="h-4 w-4" />}
                   label="Purpose"
-                  value={selectedVisit.purpose}
+                  value={selectedVisit.purpose || "Visit"}
                 />
                 <DetailRow
                   icon={<User className="h-4 w-4" />}
                   label="Flat"
-                  value={selectedVisit.target_flat_ids?.join(", ") || selectedVisit.owner_id}
+                  value={
+                    selectedVisit.target_flat_ids?.join(", ") || selectedVisit.owner_id || "N/A"
+                  }
                 />
                 <DetailRow
                   icon={<Shield className="h-4 w-4" />}
@@ -358,8 +367,8 @@ export default function HistoryPage() {
                 {selectedVisit.id_photo_url && (
                   <div className="pt-1">
                     <p className="mb-1.5 text-sm text-gray-500">ID Card Photo</p>
-                    <img
-                      src={selectedVisit.id_photo_url}
+                    <SecureImage
+                      srcRaw={selectedVisit.id_photo_url}
                       alt="ID card"
                       className="w-full rounded-lg border object-cover"
                     />

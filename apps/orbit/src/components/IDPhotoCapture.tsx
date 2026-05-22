@@ -8,6 +8,7 @@ import { useState, useRef, useEffect } from "react";
 import { Button } from "@sm-visitor/ui";
 import { uploadsAPI } from "@/lib/api";
 import { CreditCard, Camera, Upload, CheckCircle, X } from "lucide-react";
+import SecureImage from "@/components/ui/SecureImage";
 import toast from "react-hot-toast";
 
 interface IDPhotoCaptureProps {
@@ -110,7 +111,11 @@ export function IDPhotoCapture({
   if (uploadedUrl) {
     return (
       <div className="flex items-center gap-3 rounded-lg border border-green-200 bg-green-50 p-3">
-        <img src={uploadedUrl} alt="ID card" className="h-14 w-20 rounded object-cover border" />
+        <SecureImage
+          srcRaw={uploadedUrl}
+          alt="ID card"
+          className="h-14 w-20 rounded object-cover border"
+        />
         <div className="flex-1">
           <div className="flex items-center gap-1.5 text-sm font-medium text-green-700">
             <CheckCircle className="h-4 w-4" />

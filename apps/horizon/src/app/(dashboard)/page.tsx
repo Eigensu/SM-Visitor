@@ -128,9 +128,9 @@ export default function Dashboard() {
                     key={visitId}
                     visitor={{
                       id: visitId,
-                      name: visitor.name_snapshot,
-                      phone: visitor.phone_snapshot || "N/A",
-                      purpose: visitor.purpose,
+                      name: visitor.name || visitor.name_snapshot || "Unknown",
+                      phone: visitor.phone || visitor.phone_snapshot || "N/A",
+                      purpose: visitor.purpose || "Visit",
                       // flatNumber omitted as it's redundant for the owner
                       status: visitor.status,
                       timestamp: formatDateTime(visitor.created_at, {

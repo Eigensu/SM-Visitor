@@ -6,6 +6,8 @@ import { Button, Spinner, Input } from "@sm-visitor/ui";
 import { GlassCard } from "@/components/GlassCard";
 import { visitorsAPI } from "@/lib/api";
 import { getPhotoUrl } from "@/lib/utils";
+import SecureImage from "@/components/ui/SecureImage";
+import { normalizeApprovalStatus } from "@sm-visitor/hooks";
 import {
   ArrowLeft,
   Search,
@@ -74,7 +76,7 @@ export default function StaffDirectoryPage() {
     const matchesSearch = nameMatch || flatMatch || roleMatch;
     const matchesFilter =
       filter === "all" ||
-      (filter === "pending" && s.approval_status === "pending") ||
+      (filter === "pending" && normalizeApprovalStatus(s.approval_status) === "pending") ||
       (filter === "active" && s.is_active);
     return matchesSearch && matchesFilter;
   });
@@ -153,8 +155,8 @@ export default function StaffDirectoryPage() {
                           <div className="flex items-center gap-3">
                             <div className="relative h-16 w-16 flex-shrink-0 overflow-hidden rounded-2xl bg-muted shadow-sm border-2 border-white/50">
                               {person.photo_url ? (
-                                <img
-                                  src={getPhotoUrl(person.photo_url)}
+                                <SecureImage
+                                  srcRaw={person.photo_url}
                                   alt={person.name}
                                   className="h-full w-full object-cover"
                                 />
@@ -173,7 +175,7 @@ export default function StaffDirectoryPage() {
                           </div>
 
                           <div className="flex flex-col items-end gap-2">
-                            {person.approval_status === "pending" ? (
+                            {normalizeApprovalStatus(person.approval_status) === "pending" ? (
                               <span className="flex items-center gap-1 rounded-lg bg-orange-100 px-2 py-0.5 text-[9px] font-black text-orange-700 uppercase tracking-tight">
                                 <Clock className="h-3 w-3" />
                                 Review

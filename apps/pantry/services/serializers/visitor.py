@@ -41,9 +41,9 @@ def serialize_visitor(visitor: dict) -> dict:
     expires_at = visitor.get("qr_expires_at")
 
     return {
-        "id": str(
-            visitor["_id"]
-        ),  # 'id' matches VisitorResponse field + frontend req.id
+        "id": str(visitor["_id"]),  # primary stable id field
+        "_id": str(visitor["_id"]),
+        "visitor_id": str(visitor["_id"]),
         "name": visitor.get("name"),
         "phone": visitor.get("phone"),
         "photo_url": visitor.get("photo_url"),
