@@ -9,6 +9,7 @@ from bson.errors import InvalidId
 
 from database import get_notifications_collection
 from middleware.auth import get_current_user
+from services.serializers.notification import serialize_notification
 
 router = APIRouter(prefix="/notifications", tags=["Notifications"])
 
@@ -32,8 +33,7 @@ async def get_notifications(
     cursor = notifications.find(query).sort("created_at", -1).limit(limit)
     results = []
     async for doc in cursor:
-        doc["_id"] = str(doc["_id"])
-        results.append(doc)
+        results.append(serialize_notification(doc))
 
     return results
 

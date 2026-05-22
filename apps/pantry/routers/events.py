@@ -1,7 +1,7 @@
 """
 SSE Events Router - Real-time notifications via Server-Sent Events
 """
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, HTTPException, status
 from fastapi.responses import StreamingResponse
 from middleware.auth import get_current_user
 from utils.sse_manager import sse_manager
@@ -61,6 +61,10 @@ async def test_event(
     
     For development/testing purposes only
     """
+    # Restrict test endpoint to admin users only to prevent unauthorized event injection
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to send test events")
+
     await sse_manager.send_event(
         user_id,
         "test_event",

@@ -6,12 +6,24 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Basic environment mode: development | production
+APP_ENV = os.getenv("APP_ENV", os.getenv("ENV", "development")).lower()
+
 # Database
 MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
 DATABASE_NAME = os.getenv("DATABASE_NAME", "sm_visitor")
 
-# JWT
-JWT_SECRET = os.getenv("JWT_SECRET", "dev-secret-key-change-in-production-12345")
+# JWT - centralized and validated
+# Do NOT set insecure defaults for production. In production the environment
+# must provide a JWT_SECRET; in development we allow a clear local default.
+_jwt_secret = os.getenv("JWT_SECRET")
+if not _jwt_secret:
+    if APP_ENV in ("production", "prod"):
+        raise RuntimeError("JWT_SECRET environment variable must be set in production")
+    # Development fallback (explicit): keep obvious value to encourage change
+    _jwt_secret = "dev-local-secret-change-me"
+
+JWT_SECRET = _jwt_secret
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 JWT_EXPIRY_DAYS = int(os.getenv("JWT_EXPIRY_DAYS", "7"))
 
@@ -50,7 +62,15 @@ PANTRY_URL = os.getenv("PANTRY_URL", "http://localhost:8000")
 
 # Photo signing secret used to generate short-lived signed URLs for browser
 # image loading when Authorization headers are not available.
-PHOTO_SIGNING_SECRET = os.getenv("PHOTO_SIGNING_SECRET", JWT_SECRET)
+# Prefer explicit PHOTO_SIGNING_SECRET in production. Fall back to
+# `JWT_SECRET` only in non-production to preserve backward compatibility.
+_photo_signing_secret = os.getenv("PHOTO_SIGNING_SECRET")
+if not _photo_signing_secret:
+    if APP_ENV in ("production", "prod"):
+        raise RuntimeError("PHOTO_SIGNING_SECRET environment variable must be set in production")
+    _photo_signing_secret = JWT_SECRET
+
+PHOTO_SIGNING_SECRET = _photo_signing_secret
 
 # Create storage directory if it doesn't exist
 os.makedirs(LOCAL_STORAGE_PATH, exist_ok=True)

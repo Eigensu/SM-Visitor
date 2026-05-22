@@ -34,6 +34,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { normalizeApprovalStatus } from "@sm-visitor/hooks";
 import {
   visitsAPI,
   visitorsAPI,
@@ -58,23 +59,14 @@ interface Visit {
   visitor_type?: "adhoc" | "regular";
 }
 
-const toStatusType = (status: string | undefined): StatusType => {
-  switch (status) {
-    case "approved":
-    case "pending":
-    case "rejected":
-    case "auto_approved":
-      return status;
-    default:
-      return "pending";
-  }
-};
+const toStatusType = (status: string | undefined): StatusType =>
+  normalizeApprovalStatus(status) as StatusType;
 
 const mapAdhocVisit = (v: VisitHistoryItem): Visit => ({
   id: v.id || v._id || "",
-  name: v.name_snapshot,
-  phone: v.phone_snapshot || "N/A",
-  purpose: v.purpose,
+  name: v.name || v.name_snapshot || "Unknown",
+  phone: v.phone || v.phone_snapshot || "N/A",
+  purpose: v.purpose || "Visit",
   createdAt: v.created_at,
   date: formatDateTime(v.created_at, {
     hour: "2-digit",
@@ -86,13 +78,13 @@ const mapAdhocVisit = (v: VisitHistoryItem): Visit => ({
   photo: v.photo_snapshot_url || undefined,
   is_all_flats: v.is_all_flats,
   target_flat_ids: v.target_flat_ids,
-  owner_id: v.owner_id,
+  owner_id: v.owner_id || "",
   visitor_type: "adhoc",
 });
 
 const mapRegularVisit = (v: RegularVisitorHistoryItem): Visit => ({
   id: v.id || v._id || "",
-  name: v.name,
+  name: v.name || "Unknown",
   phone: v.phone || "N/A",
   purpose: `Staff Registration: ${v.category_label || v.category || "Staff"}`,
   createdAt: v.created_at,

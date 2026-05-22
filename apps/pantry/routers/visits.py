@@ -20,6 +20,8 @@ from middleware.auth import get_current_guard, get_current_owner, get_current_us
 from utils.jwt_utils import decode_qr_token
 from utils.sse_manager import sse_manager
 from utils.time_utils import get_ist_now, get_utc_now, is_within_schedule, normalize_datetime
+from services.serializers.visit import normalize_approval_status
+from services.serializers.notification import serialize_notification
 
 
 router = APIRouter(prefix="/visits", tags=["Visits"])
@@ -108,6 +110,7 @@ class VisitResponse(BaseModel):
     entry_time: Optional[datetime]
     exit_time: Optional[datetime]
     status: str
+    approval_status: Optional[str] = None
     qr_token: Optional[str] = None
     is_all_flats: bool = False
     valid_flats: Optional[List[str]] = None
@@ -117,6 +120,7 @@ class VisitResponse(BaseModel):
 
 def map_visit_to_response(v: dict) -> VisitResponse:
     """Helper to map MongoDB visit document to VisitResponse"""
+    status = normalize_approval_status(v.get("status"))
     return VisitResponse(
         id=str(v["_id"]),
         visitor_id=v.get("visitor_id"),
@@ -128,7 +132,8 @@ def map_visit_to_response(v: dict) -> VisitResponse:
         guard_id=v["guard_id"],
         entry_time=v.get("entry_time"),
         exit_time=v.get("exit_time"),
-        status=v["status"],
+        status=status,
+        approval_status=status,
         qr_token=v.get("qr_token"),
         is_all_flats=v.get("is_all_flats", False),
         valid_flats=v.get("valid_flats"),
@@ -1075,15 +1080,22 @@ async def get_notifications(
         )
 
         notifications.append(
-            {
-                "id": str(visit["_id"]),
-                "type": notif_type,
-                "title": title,
-                "message": message,
-                "timestamp": timestamp,
-                "read": True,  # For now, mark all as read since we don't track read status
-                "is_broadcast": is_broadcast,
-            }
+            serialize_notification(
+                {
+                    "_id": str(visit["_id"]),
+                    "type": notif_type,
+                    "title": title,
+                    "message": message,
+                    "body": message,
+                    "text": message,
+                    "created_at": timestamp,
+                    "is_read": True,
+                    "data": {
+                        "visit_id": str(visit["_id"]),
+                        "is_broadcast": is_broadcast,
+                    },
+                }
+            )
         )
 
     return notifications
@@ -1277,6 +1289,7 @@ async def get_recent_activity(
         merged.append(
             {
                 "id": str(v.get("_id", "unknown")),
+                "_id": str(v.get("_id", "unknown")),
                 "visitor_id": v.get("visitor_id"),
                 "name_snapshot": v.get("name_snapshot", "Unknown"),
                 "phone_snapshot": v.get("phone_snapshot"),
@@ -1284,7 +1297,8 @@ async def get_recent_activity(
                 "purpose": v.get("purpose", "Visit"),
                 "owner_id": v.get("owner_id", flat_id),
                 "guard_id": v.get("guard_id", "system"),
-                "status": v.get("status", "unknown"),
+                "status": normalize_approval_status(v.get("status"), "pending"),
+                "approval_status": normalize_approval_status(v.get("status"), "pending"),
                 "created_at": v.get("created_at") or now,
                 "is_regular": False,
             }
@@ -1295,6 +1309,7 @@ async def get_recent_activity(
         merged.append(
             {
                 "id": str(r.get("_id", "unknown")),
+                "_id": str(r.get("_id", "unknown")),
                 "visitor_id": str(r.get("_id", "unknown")),
                 "name_snapshot": r.get("name", "Unknown"),
                 "phone_snapshot": r.get("phone"),
@@ -1302,7 +1317,8 @@ async def get_recent_activity(
                 "purpose": f"Staff Registration: {r.get('category_label') or r.get('category') or 'Staff'}",
                 "owner_id": flat_id,
                 "guard_id": str(r.get("created_by", "system")),
-                "status": r.get("approval_status", "pending"),
+                "status": normalize_approval_status(r.get("approval_status"), "pending"),
+                "approval_status": normalize_approval_status(r.get("approval_status"), "pending"),
                 "created_at": r.get("created_at") or now,
                 "is_regular": True,
             }
