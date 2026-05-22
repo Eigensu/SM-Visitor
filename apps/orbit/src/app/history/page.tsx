@@ -19,17 +19,21 @@ import SecureImage from "@/components/ui/SecureImage";
 
 interface Visit {
   id: string;
-  visitor_id?: string;
-  name_snapshot: string;
-  phone_snapshot?: string;
-  photo_snapshot_url: string;
-  purpose: string;
-  owner_id: string;
-  guard_id: string;
+  _id?: string;
+  visitor_id?: string | null;
+  name_snapshot?: string;
+  name?: string;
+  phone_snapshot?: string | null;
+  phone?: string | null;
+  photo_snapshot_url?: string | null;
+  photo?: string | null;
+  purpose?: string;
+  owner_id?: string;
+  guard_id?: string;
   guard_name?: string;
   entry_time?: string;
   exit_time?: string;
-  status: "pending" | "approved" | "rejected" | "auto_approved";
+  status: "pending" | "approved" | "rejected" | "auto_approved" | "deleted";
   is_all_flats?: boolean;
   valid_flats?: string[];
   target_flat_ids?: string[];
@@ -79,7 +83,7 @@ export default function HistoryPage() {
     let filtered = [...todayVisits];
     if (searchQuery) {
       filtered = filtered.filter((v) =>
-        v.name_snapshot.toLowerCase().includes(searchQuery.toLowerCase())
+        (v.name || v.name_snapshot || "").toLowerCase().includes(searchQuery.toLowerCase())
       );
     }
     if (statusFilter !== "all") {
@@ -303,12 +307,14 @@ export default function HistoryPage() {
               {/* Photo + Name */}
               <div className="flex items-center gap-4">
                 <SecureImage
-                  srcRaw={selectedVisit.photo_snapshot_url}
-                  alt={selectedVisit.name_snapshot}
+                  srcRaw={selectedVisit.photo || selectedVisit.photo_snapshot_url}
+                  alt={selectedVisit.name || selectedVisit.name_snapshot || "Visitor"}
                   className="h-20 w-20 rounded-full border-2 border-gray-200 object-cover"
                 />
                 <div>
-                  <h3 className="text-xl font-bold text-gray-900">{selectedVisit.name_snapshot}</h3>
+                  <h3 className="text-xl font-bold text-gray-900">
+                    {selectedVisit.name || selectedVisit.name_snapshot || "Unknown Visitor"}
+                  </h3>
                   <StatusBadge status={selectedVisit.status} />
                 </div>
               </div>
@@ -318,17 +324,19 @@ export default function HistoryPage() {
                 <DetailRow
                   icon={<Phone className="h-4 w-4" />}
                   label="Phone"
-                  value={selectedVisit.phone_snapshot || "N/A"}
+                  value={selectedVisit.phone || selectedVisit.phone_snapshot || "N/A"}
                 />
                 <DetailRow
                   icon={<User className="h-4 w-4" />}
                   label="Purpose"
-                  value={selectedVisit.purpose}
+                  value={selectedVisit.purpose || "Visit"}
                 />
                 <DetailRow
                   icon={<User className="h-4 w-4" />}
                   label="Flat"
-                  value={selectedVisit.target_flat_ids?.join(", ") || selectedVisit.owner_id}
+                  value={
+                    selectedVisit.target_flat_ids?.join(", ") || selectedVisit.owner_id || "N/A"
+                  }
                 />
                 <DetailRow
                   icon={<Shield className="h-4 w-4" />}

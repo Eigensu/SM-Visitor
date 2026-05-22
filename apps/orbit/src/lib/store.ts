@@ -2,6 +2,14 @@
  * Global State Management using Zustand
  */
 import { create } from "zustand";
+import {
+  normalizeNotification,
+  normalizeNotificationList,
+  normalizeRegularVisitorList,
+  normalizeRegularVisitorRecord,
+  normalizeVisitList,
+  normalizeVisitRecord,
+} from "@sm-visitor/hooks";
 
 interface User {
   id: string;
@@ -13,16 +21,21 @@ interface User {
 
 interface Visit {
   id: string;
-  visitor_id?: string;
-  name_snapshot: string;
-  phone_snapshot?: string;
-  photo_snapshot_url: string;
-  purpose: string;
-  owner_id: string;
-  guard_id: string;
+  _id?: string;
+  visitor_id?: string | null;
+  name_snapshot?: string;
+  name?: string;
+  phone_snapshot?: string | null;
+  phone?: string | null;
+  photo_snapshot_url?: string | null;
+  photo?: string | null;
+  purpose?: string;
+  owner_id?: string;
+  guard_id?: string;
   entry_time?: string;
   exit_time?: string;
-  status: "pending" | "approved" | "rejected" | "auto_approved";
+  status: "pending" | "approved" | "rejected" | "auto_approved" | "deleted";
+  approval_status?: "pending" | "approved" | "rejected" | "auto_approved" | "deleted";
   created_at: string;
 }
 
@@ -32,6 +45,8 @@ export interface AppNotification {
   type: string;
   title: string;
   message: string;
+  body?: string;
+  text?: string;
   created_at?: string;
   is_read?: boolean;
 }
@@ -154,33 +169,36 @@ export const useStore = create<AppState>((set, get) => ({
 
   setAuthLoading: (loading) => set({ isAuthLoading: loading }),
 
-  setPendingVisits: (visits) => set({ pendingVisits: visits }),
+  setPendingVisits: (visits) => set({ pendingVisits: normalizeVisitList(visits) }),
 
   // Sync pending visits when setting today's visits
   setTodayVisits: (visits) =>
     set({
-      todayVisits: visits,
-      pendingVisits: visits.filter((v) => v.status === "pending"),
+      todayVisits: normalizeVisitList(visits),
+      pendingVisits: normalizeVisitList(visits).filter((v) => v.status === "pending"),
     }),
 
   addPendingVisit: (visit) =>
     set((state) => ({
-      pendingVisits: [...state.pendingVisits, visit],
-      todayVisits: [...state.todayVisits, visit],
+      pendingVisits: [...state.pendingVisits, normalizeVisitRecord(visit)],
+      todayVisits: [...state.todayVisits, normalizeVisitRecord(visit)],
     })),
 
   addVisit: (visit: Visit) =>
     set((state) => {
+      const normalizedVisit = normalizeVisitRecord(visit);
       // Avoid duplicates
-      if (state.todayVisits.some((v) => v.id === visit.id)) {
+      if (state.todayVisits.some((v) => v.id === normalizedVisit.id)) {
         return state;
       }
 
       const newPending =
-        visit.status === "pending" ? [...state.pendingVisits, visit] : state.pendingVisits;
+        normalizedVisit.status === "pending"
+          ? [...state.pendingVisits, normalizedVisit]
+          : state.pendingVisits;
 
       return {
-        todayVisits: [visit, ...state.todayVisits], // Add to top
+        todayVisits: [normalizedVisit, ...state.todayVisits], // Add to top
         pendingVisits: newPending,
       };
     }),
@@ -194,10 +212,12 @@ export const useStore = create<AppState>((set, get) => ({
       });
 
       const updatedPending = state.pendingVisits.map((v) =>
-        v.id === visitId ? { ...v, status } : v
+        v.id === visitId ? { ...v, status, approval_status: status } : v
       );
 
-      const updatedToday = state.todayVisits.map((v) => (v.id === visitId ? { ...v, status } : v));
+      const updatedToday = state.todayVisits.map((v) =>
+        v.id === visitId ? { ...v, status, approval_status: status } : v
+      );
 
       console.log("✅ Updated arrays:", {
         pendingChanged: updatedPending !== state.pendingVisits,
@@ -211,10 +231,11 @@ export const useStore = create<AppState>((set, get) => ({
       };
     }),
 
-  setNotifications: (notifications) => set({ notifications }),
+  setNotifications: (notifications) =>
+    set({ notifications: normalizeNotificationList(notifications) }),
   addNotification: (notification) =>
     set((state) => ({
-      notifications: [notification, ...state.notifications],
+      notifications: [normalizeNotification(notification), ...state.notifications],
       unreadCount: state.unreadCount + 1,
     })),
   setUnreadCount: (count) => set({ unreadCount: count }),
