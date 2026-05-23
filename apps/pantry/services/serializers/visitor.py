@@ -1,10 +1,31 @@
 from enum import Enum
 
 
+VALID_APPROVAL_STATUSES = {
+    "pending",
+    "approved",
+    "rejected",
+    "auto_approved",
+    "deleted",
+}
+
+
 class ApprovalStatus(str, Enum):
     PENDING = "pending"
     APPROVED = "approved"
     REJECTED = "rejected"
+    AUTO_APPROVED = "auto_approved"
+    DELETED = "deleted"
+
+
+def normalize_approval_status(value, fallback: str = ApprovalStatus.PENDING.value) -> str:
+    if isinstance(value, Enum):
+        value = value.value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in VALID_APPROVAL_STATUSES:
+            return normalized
+    return fallback
 
 
 def serialize_visitor(visitor: dict) -> dict:

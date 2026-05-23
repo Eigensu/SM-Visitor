@@ -22,7 +22,7 @@ type FormStep = "form" | "waiting" | "success" | "rejected";
 
 export default function NewVisitorPage() {
   const router = useRouter();
-  const { pendingVisits, updateVisitStatus } = useStore();
+  const { updateVisitStatus } = useStore();
 
   const [step, setStep] = useState<FormStep>("form");
   const [formData, setFormData] = useState({
@@ -42,13 +42,18 @@ export default function NewVisitorPage() {
   // Listen for visit status changes via store or polling
   useEffect(() => {
     if (visit && step === "waiting") {
+      const getPendingVisitStatus = () => {
+        const pendingVisits = useStore.getState().pendingVisits;
+        return pendingVisits.find((v) => v.id === visit.id)?.status;
+      };
+
       // 1. Check store updates (SSE)
-      const storeVisit = pendingVisits.find((v) => v.id === visit.id);
-      if (storeVisit) {
-        if (storeVisit.status === "approved") {
+      const storeStatus = getPendingVisitStatus();
+      if (storeStatus) {
+        if (storeStatus === "approved") {
           handleApproved();
           return;
-        } else if (storeVisit.status === "rejected") {
+        } else if (storeStatus === "rejected") {
           handleRejected();
           return;
         }
@@ -76,7 +81,7 @@ export default function NewVisitorPage() {
 
       return () => clearInterval(checkStatus);
     }
-  }, [visit, step, pendingVisits]);
+  }, [visit, step]);
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
