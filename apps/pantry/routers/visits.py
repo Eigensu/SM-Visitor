@@ -20,7 +20,7 @@ from middleware.auth import get_current_guard, get_current_owner, get_current_us
 from utils.jwt_utils import decode_qr_token
 from utils.sse_manager import sse_manager
 from utils.time_utils import get_ist_now, get_utc_now, is_within_schedule, normalize_datetime
-from services.serializers.visit import normalize_approval_status
+from services.serializers.visitor import normalize_approval_status
 from services.serializers.notification import serialize_notification
 
 
@@ -101,6 +101,7 @@ class StartVisitNewRequest(BaseModel):
 class VisitResponse(BaseModel):
     id: str
     visitor_id: Optional[str]
+    visitor_type: Optional[str] = None
     name_snapshot: str
     phone_snapshot: Optional[str]
     photo_snapshot_url: Optional[str]  # Made optional to handle temp QR codes
@@ -124,6 +125,7 @@ def map_visit_to_response(v: dict) -> VisitResponse:
     return VisitResponse(
         id=str(v["_id"]),
         visitor_id=v.get("visitor_id"),
+        visitor_type="regular" if v.get("visitor_id") else "guest",
         name_snapshot=v["name_snapshot"],
         phone_snapshot=v.get("phone_snapshot"),
         photo_snapshot_url=v.get("photo_snapshot_url"),
@@ -139,6 +141,43 @@ def map_visit_to_response(v: dict) -> VisitResponse:
         valid_flats=v.get("valid_flats"),
         target_flat_ids=v.get("target_flat_ids"),
         created_at=v["created_at"],
+    )
+
+
+def map_regular_visitor_to_today_response(visitor: dict) -> VisitResponse:
+    """Map an approved regular visitor into the visit-shaped payload Orbit expects."""
+    status = normalize_approval_status(visitor.get("approval_status"), "approved")
+    is_temporary_guest = bool(visitor.get("qr_validity_hours"))
+    owner_id = (
+        visitor.get("flat_id")
+        or visitor.get("assigned_owner_id")
+        or visitor.get("created_by")
+        or visitor["_id"]
+    )
+    created_at = visitor.get("created_at")
+
+    return VisitResponse(
+        id=str(visitor["_id"]),
+        visitor_id=str(visitor["_id"]),
+        # Guest-mode registrations are saved in the visitors collection, but
+        # they are temporary guest passes rather than permanent staff entries.
+        # Orbit needs this distinction to keep guest/staff counts correct.
+        visitor_type="guest" if is_temporary_guest else "regular",
+        name_snapshot=visitor.get("name") or "Unknown",
+        phone_snapshot=visitor.get("phone"),
+        photo_snapshot_url=visitor.get("photo_url"),
+        purpose=visitor.get("default_purpose") or visitor.get("category_label") or "Staff",
+        owner_id=str(owner_id),
+        guard_id=str(visitor.get("created_by") or owner_id or visitor["_id"]),
+        entry_time=created_at,
+        exit_time=None,
+        status=status,
+        approval_status=status,
+        qr_token=visitor.get("qr_token"),
+        is_all_flats=visitor.get("is_all_flats", False),
+        valid_flats=visitor.get("valid_flats"),
+        target_flat_ids=None,
+        created_at=created_at,
     )
 
 
@@ -862,15 +901,20 @@ async def get_todays_visits(
     guard_id: Optional[str] = None,
     owner_id: Optional[str] = None,
     current_user: dict = Depends(get_current_user),
+    db=Depends(get_database),
 ):
     """
     Get today's visits
 
-    - Guards see visits they created
+    - Guards see all society visits for the day
     - Owners see visits for their property
     - Admins can filter by guard_id or owner_id
+
+    Regular staff approvals live in the visitors collection, so a visits-only
+    query would exclude approved regular visitors from Orbit's daily counts.
     """
     visits = get_visits_collection()
+    visitors = get_visitors_collection()
 
     # Build query for today in IST
     # Get today start in IST and convert to UTC for MongoDB query
@@ -879,10 +923,8 @@ async def get_todays_visits(
     query: dict[str, object] = {"created_at": {"$gte": today_start_utc}}
 
     # Apply filters based on role
-    if current_user["role"] == "guard":
-        query["guard_id"] = current_user["user_id"]
-    elif current_user["role"] == "owner":
-        query["owner_id"] = current_user["user_id"]
+    if current_user["role"] == "owner":
+        query["owner_id"] = await get_owner_flat_id(current_user["user_id"], db)
     elif guard_id:
         query["guard_id"] = guard_id
     elif owner_id:
@@ -892,7 +934,39 @@ async def get_todays_visits(
     cursor = visits.find(query).sort("created_at", -1)
     visit_list = await cursor.to_list(length=200)
 
-    return [map_visit_to_response(v) for v in visit_list]
+    # Approved regular visitors are not stored in the visits collection.
+    # Without this second query, Orbit's dashboard would miss active staff and
+    # only show ad-hoc visit rows.
+    regular_query: dict[str, object] = {
+        "visitor_type": "regular",
+        "approval_status": {"$in": ["approved", "auto_approved"]},
+        "is_active": True,
+    }
+
+    if current_user["role"] == "owner":
+        owner_flat_id = await get_owner_flat_id(current_user["user_id"], db)
+        regular_query["$or"] = [
+            {"flat_id": owner_flat_id},
+            {"assigned_owner_id": current_user["user_id"]},
+            {"assigned_owner_id": ObjectId(current_user["user_id"])}
+            if ObjectId.is_valid(current_user["user_id"])
+            else {"assigned_owner_id": current_user["user_id"]},
+        ]
+
+    regular_cursor = visitors.find(regular_query).sort("created_at", -1)
+    regular_list = await regular_cursor.to_list(length=200)
+
+    today_population = [
+        *[map_visit_to_response(v) for v in visit_list],
+        *[map_regular_visitor_to_today_response(v) for v in regular_list],
+    ]
+
+    today_population.sort(
+        key=lambda item: normalize_datetime(item.created_at, assume_utc=True),
+        reverse=True,
+    )
+
+    return today_population
 
 
 @router.patch("/{visit_id}/checkout", response_model=VisitResponse)

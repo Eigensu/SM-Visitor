@@ -29,6 +29,7 @@ interface Visit {
   id: string;
   _id?: string;
   visitor_id?: string | null;
+  visitor_type?: string | null;
   name_snapshot?: string;
   name?: string;
   phone_snapshot?: string | null;
@@ -45,7 +46,7 @@ interface Visit {
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { user, isAuthenticated, isAuthLoading, logout, pendingVisits, refreshMap } = useStore();
+  const { user, isAuthenticated, isAuthLoading, logout, refreshMap } = useStore();
   const [todayVisits, setTodayVisits] = useState<Visit[]>([]);
   const [isLoadingStats, setIsLoadingStats] = useState(true);
   const [pendingStaffCount, setPendingStaffCount] = useState(0);
@@ -66,13 +67,25 @@ export default function DashboardPage() {
         visitsAPI.getTodayVisits(signal),
         visitorsAPI.list(signal),
       ]);
-      setTodayVisits(visits);
-      setPendingStaffCount(
-        staff.filter(
-          (v: any) =>
-            v.visitor_type === "regular" && normalizeApprovalStatus(v.approval_status) === "pending"
-        ).length
-      );
+
+      setTodayVisits((currentVisits) => {
+        if (visits.length === 0 && currentVisits.length > 0) {
+          return currentVisits;
+        }
+        return visits;
+      });
+
+      const nextPendingStaffCount = staff.filter(
+        (v: any) =>
+          v.visitor_type === "regular" && normalizeApprovalStatus(v.approval_status) === "pending"
+      ).length;
+
+      setPendingStaffCount((currentPendingStaffCount) => {
+        if (staff.length === 0 && currentPendingStaffCount > 0) {
+          return currentPendingStaffCount;
+        }
+        return nextPendingStaffCount;
+      });
     } catch (error: any) {
       if (error.name === "AbortError" || error.message?.includes("canceled")) {
         return; // Silent fail for aborted requests
@@ -98,7 +111,10 @@ export default function DashboardPage() {
     }
   }, [isAuthenticated, isAuthLoading, refreshMap.dashboard]);
 
-  const totalPending = pendingVisits.length + pendingStaffCount;
+  const pendingVisitCount = todayVisits.filter((v) => v.status === "pending").length;
+  const totalPending = pendingVisitCount + pendingStaffCount;
+  const totalGuests = todayVisits.filter((v) => v.visitor_type !== "regular").length;
+  const totalDailyStaff = todayVisits.filter((v) => v.visitor_type === "regular").length;
 
   const handleLogout = () => {
     logout();
@@ -183,7 +199,7 @@ export default function DashboardPage() {
         {/* Pending Approvals Badge */}
         <div
           onClick={() => {
-            if (pendingStaffCount > 0 && pendingVisits.length === 0) {
+            if (pendingStaffCount > 0 && pendingVisitCount === 0) {
               router.push("/staff?filter=pending");
             } else {
               router.push("/history?status=pending");
@@ -219,7 +235,7 @@ export default function DashboardPage() {
                 className={`text-xs mt-1 ${totalPending > 0 ? "text-yellow-600" : "text-gray-500"}`}
               >
                 {pendingStaffCount > 0 ? `${pendingStaffCount} staff + ` : ""}
-                {pendingVisits.length} guest{pendingVisits.length !== 1 ? "s" : ""}
+                {pendingVisitCount} guest{pendingVisitCount !== 1 ? "s" : ""}
               </p>
             </div>
           </div>
@@ -261,7 +277,7 @@ export default function DashboardPage() {
             value={isLoadingStats ? "..." : totalPending}
             icon={Clock}
             onClick={() => {
-              if (pendingStaffCount > 0) router.push("/staff");
+              if (pendingStaffCount > 0 && pendingVisitCount === 0) router.push("/staff");
               else router.push("/history?status=pending");
             }}
           />
@@ -283,13 +299,13 @@ export default function DashboardPage() {
           />
           <StatCard
             title="Total Guests"
-            value={isLoadingStats ? "..." : todayVisits.filter((v) => !v.visitor_id).length}
+            value={isLoadingStats ? "..." : totalGuests}
             icon={UserPlus}
             onClick={() => router.push("/history")}
           />
           <StatCard
             title="Total Daily Staff"
-            value={isLoadingStats ? "..." : todayVisits.filter((v) => v.visitor_id).length}
+            value={isLoadingStats ? "..." : totalDailyStaff}
             icon={Users}
             onClick={() => router.push("/history")}
           />

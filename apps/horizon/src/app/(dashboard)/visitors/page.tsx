@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { PageContainer } from "@/components/shared/PageContainer";
 import { GlassCard } from "@/components/shared/GlassCard";
 import { StatusBadge, StatusType } from "@/components/shared/StatusBadge";
@@ -20,6 +21,7 @@ import {
   Search,
   Plus,
   User,
+  Car,
   MoreHorizontal,
   Calendar,
   Download,
@@ -34,6 +36,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import SecureImage from "@/components/ui/SecureImage";
 import { normalizeApprovalStatus } from "@sm-visitor/hooks";
 import {
   visitsAPI,
@@ -43,6 +46,26 @@ import {
 } from "@/lib/api";
 import { formatDateTime, getDateTimestamp } from "@/lib/utils";
 import toast from "react-hot-toast";
+
+interface ExtendedVisitHistoryItem extends VisitHistoryItem {
+  guard_name?: string;
+  id_type?: string;
+  id_number?: string;
+  vehicle_number?: string;
+  vehicle_type?: string;
+}
+
+interface ExtendedRegularVisitorHistoryItem extends RegularVisitorHistoryItem {
+  qr_token?: string | null;
+  default_purpose?: string | null;
+  flat_id?: string | null;
+  category?: string;
+  category_label?: string;
+  visitor_type?: string;
+  created_by_role?: string;
+  pass_type?: string;
+  qr_validity_hours?: number | null;
+}
 
 interface Visit {
   id: string;
@@ -57,12 +80,34 @@ interface Visit {
   target_flat_ids?: string[];
   owner_id: string;
   visitor_type?: "adhoc" | "regular";
+  entry_time?: string | null;
+  exit_time?: string | null;
+  guard_id?: string;
+  qr_token?: string | null;
+}
+
+interface VisitDetailsData {
+  id: string;
+  name: string;
+  phone: string;
+  visitorType: "adhoc" | "regular";
+  status: StatusType;
+  entryTime?: string | null;
+  exitTime?: string | null;
+  purpose?: string;
+  vehicleNumber?: string;
+  vehicleType?: string;
+  photo?: string;
+  qrToken?: string | null;
+  qrPassType?: string;
+  flatNumber?: string;
+  guardInfo?: string;
 }
 
 const toStatusType = (status: string | undefined): StatusType =>
   normalizeApprovalStatus(status) as StatusType;
 
-const mapAdhocVisit = (v: VisitHistoryItem): Visit => ({
+const mapAdhocVisit = (v: ExtendedVisitHistoryItem): Visit => ({
   id: v.id || v._id || "",
   name: v.name || v.name_snapshot || "Unknown",
   phone: v.phone || v.phone_snapshot || "N/A",
@@ -80,13 +125,20 @@ const mapAdhocVisit = (v: VisitHistoryItem): Visit => ({
   target_flat_ids: v.target_flat_ids,
   owner_id: v.owner_id || "",
   visitor_type: "adhoc",
+  entry_time: v.entry_time,
+  exit_time: v.exit_time,
+  guard_id: v.guard_id,
+  qr_token: v.qr_token,
 });
 
-const mapRegularVisit = (v: RegularVisitorHistoryItem): Visit => ({
+const mapRegularVisit = (v: ExtendedRegularVisitorHistoryItem): Visit => ({
   id: v.id || v._id || "",
   name: v.name || "Unknown",
   phone: v.phone || "N/A",
-  purpose: `Staff Registration: ${v.category_label || v.category || "Staff"}`,
+  purpose:
+    v.pass_type === "temporary" || v.qr_validity_hours
+      ? v.default_purpose || "Guest Visit"
+      : v.default_purpose || `Staff Registration: ${v.category_label || v.category || "Staff"}`,
   createdAt: v.created_at,
   date: formatDateTime(v.created_at, {
     hour: "2-digit",
@@ -96,17 +148,44 @@ const mapRegularVisit = (v: RegularVisitorHistoryItem): Visit => ({
   }),
   status: toStatusType(v.approval_status),
   photo: v.photo_url || undefined,
-  owner_id: v.assigned_owner_id || v.created_by || "",
+  owner_id: v.flat_id || v.assigned_owner_id || v.created_by || "",
   visitor_type: "regular",
+  qr_token: v.qr_token,
 });
 
+const csvEscape = (value: unknown): string => {
+  const stringValue = typeof value === "string" ? value : value == null ? "" : String(value);
+  if (stringValue.includes(",") || stringValue.includes('"') || stringValue.includes("\n")) {
+    return `"${stringValue.replace(/\"/g, '""')}"`;
+  }
+  return stringValue;
+};
+
 export default function Visitors() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [searchQuery, setSearchQuery] = useState("");
   const [visits, setVisits] = useState<Visit[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [adhocVisitMap, setAdhocVisitMap] = useState<Record<string, ExtendedVisitHistoryItem>>({});
+  const [regularVisitMap, setRegularVisitMap] = useState<
+    Record<string, ExtendedRegularVisitorHistoryItem>
+  >({});
   const [timelineVisitId, setTimelineVisitId] = useState<string | null>(null);
   const [timelineData, setTimelineData] = useState<VisitorTimelineVisit | null>(null);
   const [isLoadingTimeline, setIsLoadingTimeline] = useState(false);
+  const [detailsVisitId, setDetailsVisitId] = useState<string | null>(null);
+  const [detailsData, setDetailsData] = useState<VisitDetailsData | null>(null);
+  const [isLoadingDetails, setIsLoadingDetails] = useState(false);
+  const [isPreApproveOpen, setIsPreApproveOpen] = useState(false);
+  const [isPreApproveSubmitting, setIsPreApproveSubmitting] = useState(false);
+  const [preApproveForm, setPreApproveForm] = useState({
+    name: "",
+    phone: "",
+    default_purpose: "",
+    category: "other",
+    photo: null as File | null,
+  });
 
   const fetchVisits = async () => {
     try {
@@ -116,9 +195,30 @@ export default function Visitors() {
         visitorsAPI.getHistoryRegular(),
       ]);
 
+      const adhocMap: Record<string, ExtendedVisitHistoryItem> = {};
+      historyVisits.forEach((item) => {
+        const id = item.id || item._id;
+        if (id) {
+          adhocMap[id] = item as ExtendedVisitHistoryItem;
+        }
+      });
+
+      const regularMap: Record<string, ExtendedRegularVisitorHistoryItem> = {};
+      historyRegularVisitors.forEach((item) => {
+        const id = item.id || item._id;
+        if (id) {
+          regularMap[id] = item as ExtendedRegularVisitorHistoryItem;
+        }
+      });
+
+      setAdhocVisitMap(adhocMap);
+      setRegularVisitMap(regularMap);
+
       const transformedVisits: Visit[] = [
-        ...historyVisits.map(mapAdhocVisit),
-        ...historyRegularVisitors.map(mapRegularVisit),
+        ...historyVisits.map((item) => mapAdhocVisit(item as ExtendedVisitHistoryItem)),
+        ...historyRegularVisitors.map((item) =>
+          mapRegularVisit(item as ExtendedRegularVisitorHistoryItem)
+        ),
       ].sort((a, b) => getDateTimestamp(b.createdAt) - getDateTimestamp(a.createdAt));
 
       setVisits(transformedVisits);
@@ -133,6 +233,19 @@ export default function Visitors() {
   useEffect(() => {
     fetchVisits();
   }, []);
+
+  useEffect(() => {
+    if (searchParams.get("action") === "preapprove") {
+      setIsPreApproveOpen(true);
+    }
+  }, [searchParams]);
+
+  const closePreApproveModal = () => {
+    setIsPreApproveOpen(false);
+    if (searchParams.get("action") === "preapprove") {
+      router.replace("/visitors");
+    }
+  };
 
   const handleApprove = async (visitId: string) => {
     try {
@@ -183,6 +296,181 @@ export default function Visitors() {
     setTimelineData(null);
   };
 
+  const handleViewDetails = async (visit: Visit) => {
+    try {
+      setDetailsVisitId(visit.id);
+      setIsLoadingDetails(true);
+
+      if (visit.visitor_type === "adhoc") {
+        const detail = await visitsAPI.getVisitDetails(visit.id);
+        const adhocRaw = adhocVisitMap[visit.id];
+
+        setDetailsData({
+          id: visit.id,
+          name: detail.name || detail.name_snapshot || visit.name,
+          phone: detail.phone || detail.phone_snapshot || visit.phone,
+          visitorType: "adhoc",
+          status: toStatusType(detail.status),
+          entryTime: detail.entry_time || visit.entry_time,
+          exitTime: detail.exit_time || visit.exit_time,
+          purpose: detail.purpose || visit.purpose,
+          vehicleNumber:
+            (adhocRaw?.vehicle_number as string | undefined) ||
+            (detail as ExtendedVisitHistoryItem).vehicle_number ||
+            undefined,
+          vehicleType:
+            (adhocRaw?.vehicle_type as string | undefined) ||
+            (detail as ExtendedVisitHistoryItem).vehicle_type ||
+            undefined,
+          photo: detail.photo || detail.photo_snapshot_url || visit.photo,
+          qrToken: detail.qr_token || visit.qr_token,
+          qrPassType: detail.qr_token ? "QR pass" : "Manual",
+          flatNumber: visit.is_all_flats
+            ? "Society"
+            : visit.target_flat_ids?.join(", ") || detail.owner_id || visit.owner_id,
+          guardInfo: detail.guard_name || detail.guard_id || visit.guard_id,
+        });
+      } else {
+        const regularRaw = regularVisitMap[visit.id] || {};
+
+        setDetailsData({
+          id: visit.id,
+          name: visit.name,
+          phone: visit.phone,
+          visitorType: "regular",
+          status: visit.status,
+          entryTime: undefined,
+          exitTime: undefined,
+          purpose: regularRaw.default_purpose || visit.purpose,
+          vehicleNumber: (regularRaw as { vehicle_number?: string }).vehicle_number,
+          vehicleType: (regularRaw as { vehicle_type?: string }).vehicle_type,
+          photo: visit.photo,
+          qrToken: regularRaw.qr_token || visit.qr_token,
+          qrPassType: regularRaw.pass_type || "Permanent",
+          flatNumber: visit.owner_id,
+          guardInfo: regularRaw.created_by_role || "N/A",
+        });
+      }
+    } catch (error) {
+      console.error("Failed to fetch visitor details:", error);
+      toast.error("Failed to load visitor details");
+      setDetailsVisitId(null);
+      setDetailsData(null);
+    } finally {
+      setIsLoadingDetails(false);
+    }
+  };
+
+  const closeDetails = () => {
+    setDetailsVisitId(null);
+    setDetailsData(null);
+  };
+
+  const handleExportReports = () => {
+    if (filteredVisitors.length === 0) {
+      toast("No records available to export");
+      return;
+    }
+
+    const headers = [
+      "Visitor Name",
+      "Visitor Type",
+      "Flat Number",
+      "Entry Time",
+      "Exit Time",
+      "Approval Status",
+      "Purpose",
+      "Guard Information",
+    ];
+
+    const rows = filteredVisitors.map((visitor) => {
+      const regularRaw = regularVisitMap[visitor.id] || {};
+      const adhocRaw = adhocVisitMap[visitor.id] || {};
+      const flatNumber = visitor.is_all_flats
+        ? "Society"
+        : visitor.target_flat_ids?.join(", ") || visitor.owner_id || regularRaw.flat_id || "N/A";
+
+      const entryRaw = visitor.entry_time || adhocRaw.entry_time || "";
+      const exitRaw = visitor.exit_time || adhocRaw.exit_time || "";
+
+      const guardInfo =
+        (adhocRaw as { guard_name?: string }).guard_name ||
+        visitor.guard_id ||
+        adhocRaw.guard_id ||
+        regularRaw.created_by_role ||
+        "N/A";
+
+      return [
+        visitor.name,
+        visitor.visitor_type || "adhoc",
+        flatNumber,
+        entryRaw ? formatDateTime(entryRaw) : "N/A",
+        exitRaw ? formatDateTime(exitRaw) : "N/A",
+        visitor.status,
+        visitor.purpose,
+        guardInfo,
+      ];
+    });
+
+    const csvContent = [
+      headers.map((header) => csvEscape(header)).join(","),
+      ...rows.map((row) => row.map((cell) => csvEscape(cell)).join(",")),
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const now = new Date();
+    const filename = `visitor-history-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}.csv`;
+
+    link.href = url;
+    link.setAttribute("download", filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    toast.success("History report downloaded");
+  };
+
+  const handlePreApproveSubmit = async () => {
+    if (!preApproveForm.name.trim()) {
+      toast.error("Visitor name is required");
+      return;
+    }
+    if (!preApproveForm.photo) {
+      toast.error("Visitor photo is required");
+      return;
+    }
+
+    try {
+      setIsPreApproveSubmitting(true);
+      await visitorsAPI.createRegular({
+        name: preApproveForm.name.trim(),
+        phone: preApproveForm.phone.trim() || undefined,
+        default_purpose: preApproveForm.default_purpose.trim() || undefined,
+        category: preApproveForm.category,
+        photo: preApproveForm.photo,
+      });
+
+      toast.success("Visitor pre-approved successfully");
+      setPreApproveForm({
+        name: "",
+        phone: "",
+        default_purpose: "",
+        category: "other",
+        photo: null,
+      });
+      closePreApproveModal();
+      await fetchVisits();
+    } catch (error: any) {
+      console.error("Failed to pre-approve visitor:", error);
+      toast.error(error?.response?.data?.detail || "Failed to pre-approve visitor");
+    } finally {
+      setIsPreApproveSubmitting(false);
+    }
+  };
+
   const filteredVisitors = visits.filter(
     (visitor) =>
       visitor.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -195,7 +483,10 @@ export default function Visitors() {
       title="Visitor Management"
       description="View and manage all visitor records"
       action={
-        <Button className="ocean-gradient hover:opacity-90">
+        <Button
+          className="ocean-gradient hover:opacity-90"
+          onClick={() => setIsPreApproveOpen(true)}
+        >
           <Plus className="mr-2 h-4 w-4" strokeWidth={1.5} />
           Pre-approve Visitor
         </Button>
@@ -217,7 +508,7 @@ export default function Visitors() {
             <Button variant="outline" size="icon">
               <Calendar className="h-4 w-4" strokeWidth={1.5} />
             </Button>
-            <Button variant="outline" size="icon">
+            <Button variant="outline" size="icon" onClick={handleExportReports}>
               <Download className="h-4 w-4" strokeWidth={1.5} />
             </Button>
           </div>
@@ -251,8 +542,8 @@ export default function Visitors() {
                       <div className="flex items-center gap-3">
                         <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg bg-primary/10">
                           {visitor.photo ? (
-                            <img
-                              src={visitor.photo}
+                            <SecureImage
+                              srcRaw={visitor.photo}
                               alt={visitor.name}
                               className="h-full w-full object-cover"
                             />
@@ -328,7 +619,9 @@ export default function Visitors() {
                               ? "Timeline Unavailable"
                               : "View Timeline"}
                           </DropdownMenuItem>
-                          <DropdownMenuItem>View Details</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleViewDetails(visitor)}>
+                            View Details
+                          </DropdownMenuItem>
                           {visitor.status !== "pending" && (
                             <DropdownMenuItem>Block Visitor</DropdownMenuItem>
                           )}
@@ -349,8 +642,8 @@ export default function Visitors() {
                   <div className="flex items-center gap-3">
                     <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-lg bg-primary/10">
                       {visitor.photo ? (
-                        <img
-                          src={visitor.photo}
+                        <SecureImage
+                          srcRaw={visitor.photo}
                           alt={visitor.name}
                           className="h-full w-full object-cover"
                         />
@@ -397,6 +690,16 @@ export default function Visitors() {
                     </Button>
                   </div>
                 )}
+                <div className="pt-1">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => handleViewDetails(visitor)}
+                  >
+                    View Details
+                  </Button>
+                </div>
               </GlassCard>
             ))}
           </div>
@@ -422,6 +725,186 @@ export default function Visitors() {
           ) : timelineData ? (
             <VisitorTimeline visit={timelineData} />
           ) : null}
+        </DialogContent>
+      </Dialog>
+
+      {/* Details Modal */}
+      <Dialog open={detailsVisitId !== null} onOpenChange={(open) => !open && closeDetails()}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Visitor Details</DialogTitle>
+          </DialogHeader>
+          {isLoadingDetails ? (
+            <div className="flex h-60 items-center justify-center">
+              <Spinner size="lg" />
+            </div>
+          ) : detailsData ? (
+            <div className="space-y-4">
+              <div className="flex items-center gap-4">
+                <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-full bg-primary/10">
+                  {detailsData.photo ? (
+                    <SecureImage
+                      srcRaw={detailsData.photo}
+                      alt={detailsData.name}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <User className="h-8 w-8 text-primary" />
+                  )}
+                </div>
+                <div>
+                  <h3 className="text-xl font-semibold text-foreground">{detailsData.name}</h3>
+                  <p className="text-sm text-muted-foreground">{detailsData.phone}</p>
+                  <div className="mt-2 flex items-center gap-2">
+                    <span className="rounded bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                      {detailsData.visitorType.toUpperCase()}
+                    </span>
+                    <StatusBadge status={detailsData.status} />
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 rounded-lg border border-border/70 p-4 md:grid-cols-2">
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Purpose
+                  </p>
+                  <p className="mt-1 text-sm text-foreground">{detailsData.purpose || "N/A"}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Flat
+                  </p>
+                  <p className="mt-1 text-sm text-foreground">{detailsData.flatNumber || "N/A"}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Entry Time
+                  </p>
+                  <p className="mt-1 text-sm text-foreground">
+                    {detailsData.entryTime ? formatDateTime(detailsData.entryTime) : "N/A"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Exit Time
+                  </p>
+                  <p className="mt-1 text-sm text-foreground">
+                    {detailsData.exitTime ? formatDateTime(detailsData.exitTime) : "N/A"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Vehicle Number
+                  </p>
+                  <p className="mt-1 text-sm text-foreground">
+                    {detailsData.vehicleNumber || "N/A"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Vehicle Type
+                  </p>
+                  <p className="mt-1 text-sm text-foreground">{detailsData.vehicleType || "N/A"}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    QR Info
+                  </p>
+                  <p className="mt-1 text-sm text-foreground">
+                    {detailsData.qrToken ? `${detailsData.qrPassType || "QR"} available` : "N/A"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Guard Info
+                  </p>
+                  <p className="mt-1 text-sm text-foreground">{detailsData.guardInfo || "N/A"}</p>
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
+      {/* Pre-approve Visitor Modal */}
+      <Dialog open={isPreApproveOpen} onOpenChange={(open) => !open && closePreApproveModal()}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Pre-approve Visitor</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Input
+              label="Visitor Name"
+              value={preApproveForm.name}
+              onChange={(e) => setPreApproveForm((prev) => ({ ...prev, name: e.target.value }))}
+              placeholder="Enter visitor name"
+            />
+            <Input
+              label="Phone Number"
+              value={preApproveForm.phone}
+              onChange={(e) =>
+                setPreApproveForm((prev) => ({
+                  ...prev,
+                  phone: e.target.value.replace(/\D/g, "").slice(0, 10),
+                }))
+              }
+              placeholder="Optional"
+            />
+            <Input
+              label="Purpose"
+              value={preApproveForm.default_purpose}
+              onChange={(e) =>
+                setPreApproveForm((prev) => ({ ...prev, default_purpose: e.target.value }))
+              }
+              placeholder="Optional"
+            />
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground">Category</label>
+              <select
+                value={preApproveForm.category}
+                onChange={(e) =>
+                  setPreApproveForm((prev) => ({ ...prev, category: e.target.value }))
+                }
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="other">Other</option>
+                <option value="maid">Maid</option>
+                <option value="cook">Cook</option>
+                <option value="driver">Driver</option>
+                <option value="delivery">Delivery</option>
+              </select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground">Photo</label>
+              <div className="rounded-md border border-dashed border-border p-3">
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) =>
+                    setPreApproveForm((prev) => ({
+                      ...prev,
+                      photo: e.target.files && e.target.files.length > 0 ? e.target.files[0] : null,
+                    }))
+                  }
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={closePreApproveModal}>
+                Cancel
+              </Button>
+              <Button
+                className="ocean-gradient hover:opacity-90"
+                onClick={handlePreApproveSubmit}
+                disabled={isPreApproveSubmitting}
+              >
+                {isPreApproveSubmitting ? <Spinner size="sm" /> : <Car className="mr-2 h-4 w-4" />}
+                {isPreApproveSubmitting ? "Submitting..." : "Pre-approve"}
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </PageContainer>

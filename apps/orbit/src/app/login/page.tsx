@@ -5,6 +5,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import axios from "axios";
 import { Button } from "@sm-visitor/ui";
 import { Input } from "@sm-visitor/ui";
 import { Spinner } from "@sm-visitor/ui";
@@ -27,6 +28,38 @@ export default function LoginPage() {
   });
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const getApiErrorMessage = (error: unknown, fallback: string): string => {
+    if (!axios.isAxiosError(error)) return fallback;
+
+    const data = error.response?.data as
+      | { detail?: unknown; message?: unknown; error?: unknown }
+      | undefined;
+
+    const detail = data?.detail;
+    if (typeof detail === "string" && detail.trim()) {
+      return detail;
+    }
+
+    if (detail && typeof detail === "object") {
+      const detailObj = detail as { message?: unknown; error?: unknown };
+      if (typeof detailObj.message === "string" && detailObj.message.trim()) {
+        return detailObj.message;
+      }
+      if (typeof detailObj.error === "string" && detailObj.error.trim()) {
+        return detailObj.error;
+      }
+    }
+
+    if (typeof data?.message === "string" && data.message.trim()) {
+      return data.message;
+    }
+    if (typeof data?.error === "string" && data.error.trim()) {
+      return data.error;
+    }
+
+    return fallback;
+  };
 
   // Redirect if already authenticated
   useEffect(() => {
@@ -94,12 +127,10 @@ export default function LoginPage() {
           name: formData.name,
           role: "guard",
         });
-        toast.success("Account created successfully!");
       } else {
         console.log("Attempting login with phone:", formData.phone);
         data = await authAPI.login(formData.phone, formData.password);
         console.log("Login successful:", data);
-        toast.success("Login successful!");
       }
 
       // Check if user is a guard
@@ -108,36 +139,45 @@ export default function LoginPage() {
         return;
       }
 
+      if (mode === "signup") {
+        toast.success("Account created successfully!");
+      } else {
+        toast.success("Login successful!");
+      }
+
       login(data.user, data.access_token);
       router.push("/dashboard");
-    } catch (error: any) {
-      console.error("Login error caught:", error);
-      console.error("Error response:", error.response);
-      console.error("Error status:", error.response?.status);
-      console.error("Error data:", error.response?.data);
+    } catch (error: unknown) {
+      const status = axios.isAxiosError(error) ? error.response?.status : undefined;
+      console.error("Authentication request failed", {
+        mode,
+        status,
+      });
 
       let errorMessage = "Authentication failed. Please check your credentials.";
 
-      if (error.response?.status === 401) {
-        const detail = error.response?.data?.detail;
-        console.log("401 error detail:", detail);
-        if (typeof detail === "string") {
-          errorMessage = detail;
-        } else {
-          errorMessage = "Invalid phone number or password. Please try again.";
-        }
-      } else if (error.response?.status === 422) {
+      if (status === 401) {
+        errorMessage = getApiErrorMessage(
+          error,
+          "Invalid phone number or password. Please try again."
+        );
+      } else if (status === 409) {
+        errorMessage = getApiErrorMessage(
+          error,
+          "Phone number already registered. Please sign in instead."
+        );
+      } else if (status === 422) {
         errorMessage = "Invalid input. Please check your phone number and password.";
-      } else if (error.response?.status >= 500) {
+      } else if (typeof status === "number" && status >= 500) {
         errorMessage = "Server error. Please try again later.";
-      } else if (!error.response) {
+      } else if (!status) {
         errorMessage = "Network error. Please check your connection.";
+      } else {
+        errorMessage = getApiErrorMessage(error, errorMessage);
       }
 
-      console.log("Showing toast with message:", errorMessage);
       toast.error(errorMessage);
     } finally {
-      console.log("Setting loading to false");
       setIsLoading(false);
     }
   };

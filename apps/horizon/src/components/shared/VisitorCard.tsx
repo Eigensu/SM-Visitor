@@ -1,9 +1,10 @@
-import { cn, getPhotoUrl } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { User, Clock, MapPin, Phone } from "lucide-react";
 import { StatusBadge, StatusType } from "./StatusBadge";
 import { GlassCard } from "./GlassCard";
 import { Button } from "@sm-visitor/ui";
 import { motion } from "framer-motion";
+import SecureImage from "@/components/ui/SecureImage";
 
 interface VisitorCardProps {
   visitor: {
@@ -41,8 +42,8 @@ export function VisitorCard({
         <div className="flex items-start gap-4">
           <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl bg-primary/10">
             {visitor.photo ? (
-              <img
-                src={getPhotoUrl(visitor.photo)}
+              <SecureImage
+                srcRaw={visitor.photo}
                 alt={visitor.name}
                 className="h-full w-full object-cover"
               />

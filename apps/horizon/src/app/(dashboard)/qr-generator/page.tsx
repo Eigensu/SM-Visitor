@@ -6,23 +6,53 @@ import { GlassCard } from "@/components/shared/GlassCard";
 import { Button, Input, Spinner } from "@sm-visitor/ui";
 import { Plus, History, Clock, User } from "lucide-react";
 import { useState, useEffect } from "react";
-import { tempQRAPI } from "@/lib/api";
+import { tempQRAPI, visitorsAPI } from "@/lib/api";
+import SecureImage from "@/components/ui/SecureImage";
 import toast from "react-hot-toast";
 
 import { downloadQRCode, downloadQRFromSVG } from "@/lib/download-utils";
 
 export default function QRGenerator() {
+  interface RegularVisitorProfile {
+    id?: string;
+    _id?: string;
+    name?: string;
+    phone?: string | null;
+    photo_url?: string | null;
+    default_purpose?: string | null;
+    visitor_type?: string;
+    category?: string;
+    category_label?: string;
+    vehicle_number?: string;
+    vehicle_type?: string;
+  }
+
   const [activeQR, setActiveQR] = useState<any>(null);
   const [history, setHistory] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isLookupLoading, setIsLookupLoading] = useState(false);
 
   // Form state
   const [guestName, setGuestName] = useState("");
+  const [visitorPhone, setVisitorPhone] = useState("");
+  const [visitorPurpose, setVisitorPurpose] = useState("");
+  const [visitorType, setVisitorType] = useState("temporary");
+  const [vehicleNumber, setVehicleNumber] = useState("");
+  const [visitorPhotoUrl, setVisitorPhotoUrl] = useState("");
   const [validityHours, setValidityHours] = useState(24);
   const [isAllFlats, setIsAllFlats] = useState(false);
   const [selectedFlats, setSelectedFlats] = useState<string[]>([]);
   const [availableFlats, setAvailableFlats] = useState<string[]>([]);
+  const [knownVisitors, setKnownVisitors] = useState<RegularVisitorProfile[]>([]);
+  const [matchingVisitors, setMatchingVisitors] = useState<RegularVisitorProfile[]>([]);
+  const [fieldTouched, setFieldTouched] = useState({
+    guestName: false,
+    visitorPhone: false,
+    visitorPurpose: false,
+    visitorType: false,
+    vehicleNumber: false,
+  });
 
   const fetchHistory = async () => {
     try {
@@ -39,6 +69,19 @@ export default function QRGenerator() {
 
   useEffect(() => {
     fetchHistory();
+
+    const fetchKnownVisitors = async () => {
+      try {
+        setIsLookupLoading(true);
+        const data = await visitorsAPI.getRegularVisitors();
+        setKnownVisitors(data || []);
+      } catch (error) {
+        console.error("Failed to fetch visitors for QR autofill:", error);
+      } finally {
+        setIsLookupLoading(false);
+      }
+    };
+
     const fetchFlats = async () => {
       try {
         const owners = (await tempQRAPI.getAvailableFlats?.()) || [];
@@ -51,8 +94,42 @@ export default function QRGenerator() {
         console.error("Failed to fetch flats:", error);
       }
     };
+    fetchKnownVisitors();
     fetchFlats();
   }, []);
+
+  const applyVisitorAutofill = (visitor: RegularVisitorProfile) => {
+    setGuestName((prev) => (fieldTouched.guestName && prev ? prev : visitor.name || prev));
+    setVisitorPhone((prev) => (fieldTouched.visitorPhone && prev ? prev : visitor.phone || ""));
+    setVisitorPurpose((prev) =>
+      fieldTouched.visitorPurpose && prev ? prev : visitor.default_purpose || ""
+    );
+    setVisitorType((prev) =>
+      fieldTouched.visitorType && prev ? prev : visitor.visitor_type || "regular"
+    );
+    setVehicleNumber((prev) =>
+      fieldTouched.vehicleNumber && prev ? prev : visitor.vehicle_number || ""
+    );
+    setVisitorPhotoUrl(visitor.photo_url || "");
+  };
+
+  useEffect(() => {
+    const query = guestName.trim().toLowerCase();
+    if (!query) {
+      setMatchingVisitors([]);
+      return;
+    }
+
+    const matches = knownVisitors.filter((visitor) => {
+      const name = (visitor.name || "").toLowerCase();
+      return name.includes(query);
+    });
+    setMatchingVisitors(matches);
+
+    if (matches.length === 1) {
+      applyVisitorAutofill(matches[0]);
+    }
+  }, [guestName, knownVisitors]);
 
   const handleGenerate = async () => {
     try {
@@ -70,6 +147,18 @@ export default function QRGenerator() {
 
       // Reset form
       setGuestName("");
+      setVisitorPhone("");
+      setVisitorPurpose("");
+      setVisitorType("temporary");
+      setVehicleNumber("");
+      setVisitorPhotoUrl("");
+      setFieldTouched({
+        guestName: false,
+        visitorPhone: false,
+        visitorPurpose: false,
+        visitorType: false,
+        vehicleNumber: false,
+      });
       setValidityHours(24);
     } catch (error) {
       console.error("Failed to generate QR:", error);
@@ -173,8 +262,109 @@ export default function QRGenerator() {
                 label="Guest Name (Optional)"
                 placeholder="e.g., Delivery Agent, Friend"
                 value={guestName}
-                onChange={(e) => setGuestName(e.target.value)}
+                onChange={(e) => {
+                  setFieldTouched((prev) => ({ ...prev, guestName: true }));
+                  setGuestName(e.target.value);
+                }}
+                list="known-visitor-names"
               />
+              <datalist id="known-visitor-names">
+                {knownVisitors.map((visitor) => {
+                  const key = visitor.id || visitor._id || `${visitor.name}-${visitor.phone}`;
+                  return (
+                    <option key={key} value={visitor.name || ""}>
+                      {visitor.phone || ""}
+                    </option>
+                  );
+                })}
+              </datalist>
+
+              {isLookupLoading ? (
+                <div className="text-xs text-muted-foreground">Loading saved visitors...</div>
+              ) : guestName.trim() ? (
+                matchingVisitors.length === 0 ? (
+                  <div className="text-xs text-muted-foreground">
+                    No existing visitor match found. New visitor details can be entered manually.
+                  </div>
+                ) : matchingVisitors.length > 1 ? (
+                  <div className="rounded-md border border-border/60 bg-muted/20 p-3">
+                    <p className="mb-2 text-xs font-medium text-muted-foreground">
+                      Multiple matches found. Select one profile to auto-fill:
+                    </p>
+                    <div className="space-y-2">
+                      {matchingVisitors.slice(0, 5).map((visitor) => {
+                        const key = visitor.id || visitor._id || `${visitor.name}-${visitor.phone}`;
+                        return (
+                          <button
+                            key={key}
+                            type="button"
+                            className="w-full rounded-md border border-border px-3 py-2 text-left text-xs hover:bg-muted"
+                            onClick={() => applyVisitorAutofill(visitor)}
+                          >
+                            <span className="font-medium text-foreground">
+                              {visitor.name || "Unknown"}
+                            </span>
+                            <span className="ml-2 text-muted-foreground">
+                              {visitor.phone || "No phone"}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null
+              ) : null}
+
+              <Input
+                label="Phone Number"
+                placeholder="Optional"
+                value={visitorPhone}
+                onChange={(e) => {
+                  setFieldTouched((prev) => ({ ...prev, visitorPhone: true }));
+                  setVisitorPhone(e.target.value.replace(/\D/g, "").slice(0, 10));
+                }}
+              />
+
+              <Input
+                label="Purpose"
+                placeholder="Optional"
+                value={visitorPurpose}
+                onChange={(e) => {
+                  setFieldTouched((prev) => ({ ...prev, visitorPurpose: true }));
+                  setVisitorPurpose(e.target.value);
+                }}
+              />
+
+              <Input
+                label="Visitor Type"
+                placeholder="regular / temporary"
+                value={visitorType}
+                onChange={(e) => {
+                  setFieldTouched((prev) => ({ ...prev, visitorType: true }));
+                  setVisitorType(e.target.value);
+                }}
+              />
+
+              <Input
+                label="Vehicle Number"
+                placeholder="Optional"
+                value={vehicleNumber}
+                onChange={(e) => {
+                  setFieldTouched((prev) => ({ ...prev, vehicleNumber: true }));
+                  setVehicleNumber(e.target.value.toUpperCase());
+                }}
+              />
+
+              {visitorPhotoUrl ? (
+                <div className="rounded-md border border-border/60 p-3">
+                  <p className="mb-2 text-xs font-medium text-muted-foreground">Saved Photo</p>
+                  <SecureImage
+                    srcRaw={visitorPhotoUrl}
+                    alt={guestName || "Visitor photo"}
+                    className="h-16 w-16 rounded-full object-cover"
+                  />
+                </div>
+              ) : null}
 
               <div className="space-y-2">
                 <label className="text-sm font-medium text-foreground">Validity</label>
