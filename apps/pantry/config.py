@@ -48,12 +48,23 @@ CLOUDINARY_API_SECRET = os.getenv("CLOUDINARY_API_SECRET", "")
 CLOUDINARY_FOLDER = os.getenv("CLOUDINARY_FOLDER", "sm-visitor/photos")
 
 # CORS
-ALLOWED_ORIGINS = [
-    o.strip() for o in os.getenv(
-        "ALLOWED_ORIGINS",
-        "http://localhost:3000,http://localhost:3001,http://127.0.0.1:3000,http://127.0.0.1:3001"
-    ).split(",") if o.strip()
+DEFAULT_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:3001",
 ]
+
+_env_allowed_origins = [
+    origin.strip()
+    for origin in os.getenv("ALLOWED_ORIGINS", "").split(",")
+    if origin.strip()
+]
+
+# Keep the local dev origins available even if the runtime environment
+# provides a narrower allow-list. This prevents browser CORS failures when
+# Orbit runs on :3000 and Pantry is served from :8000.
+ALLOWED_ORIGINS = list(dict.fromkeys([*_env_allowed_origins, *DEFAULT_ALLOWED_ORIGINS]))
 
 # App URLs
 ORBIT_URL = os.getenv("ORBIT_URL", "http://localhost:3000")

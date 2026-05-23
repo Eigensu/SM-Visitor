@@ -35,6 +35,13 @@ export function SSEProvider({ children, onRefresh }: SSEProviderProps) {
         if (onRefresh) onRefresh();
       },
 
+      new_visit_pending: (data: SSEEventData) => {
+        console.log("🔔 [ORBIT] New pending visit created:", data);
+        triggerRefresh("visitors");
+        triggerRefresh("dashboard");
+        if (onRefresh) onRefresh();
+      },
+
       visit_auto_approved: (data: SSEEventData) => {
         const visitorName = safeString(data, "name_snapshot", "Visitor");
 
@@ -76,6 +83,8 @@ export function SSEProvider({ children, onRefresh }: SSEProviderProps) {
         }
         const visitorName = safeString(data, "visitor_name", "Visitor");
         toast.success(`Visit Approved: ${visitorName}`, { icon: "✅" });
+        triggerRefresh("visitors");
+        triggerRefresh("dashboard");
         if (onRefresh) onRefresh();
       },
 
@@ -86,6 +95,8 @@ export function SSEProvider({ children, onRefresh }: SSEProviderProps) {
         }
         const visitorName = safeString(data, "visitor_name", "Visitor");
         toast.error(`Visit Rejected: ${visitorName}`, { icon: "❌" });
+        triggerRefresh("visitors");
+        triggerRefresh("dashboard");
         if (onRefresh) onRefresh();
       },
     },

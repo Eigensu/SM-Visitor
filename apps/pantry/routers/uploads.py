@@ -6,7 +6,7 @@ Saves regular visitor photos to GridFS and new visitor photos to local buffer
 from fastapi import APIRouter, HTTPException, status, Depends, UploadFile, File, Request
 from pydantic import BaseModel
 
-from middleware.auth import get_current_guard
+from middleware.auth import get_current_user, get_current_guard, require_role
 from utils.storage import photo_storage
 from config import PANTRY_URL, PHOTO_SIGNING_SECRET
 import hmac
@@ -162,13 +162,17 @@ async def get_regular_visitor_photo(
 
 
 @router.get("/photo/regular/{file_id}/signed-url")
-async def get_signed_regular_photo_url(file_id: str, _current_user: dict = Depends(get_current_guard)):
+async def get_signed_regular_photo_url(
+    file_id: str, current_user: dict = Depends(get_current_user)
+):
     """
-    Generate a short-lived signed URL for a GridFS photo. Requires authentication.
+    Generate a short-lived signed URL for a GridFS photo. Requires an authenticated owner, guard, or admin.
 
     Returns:
         { signed_url: str }
     """
+    await require_role(current_user, ["owner", "guard", "admin"])
+
     # Default expiry: 5 minutes
     expiry_seconds = 300
     exp_ts = int((datetime.utcnow()).timestamp()) + expiry_seconds

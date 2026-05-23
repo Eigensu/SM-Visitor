@@ -123,7 +123,7 @@ export default function RegularVisitorsPage() {
       action={
         <Button
           className="ocean-gradient hover:opacity-90"
-          onClick={() => router.push("/visitors/new")}
+          onClick={() => router.push("/visitors?action=preapprove")}
         >
           <Plus className="mr-2 h-4 w-4" strokeWidth={1.5} />
           Add Visitor

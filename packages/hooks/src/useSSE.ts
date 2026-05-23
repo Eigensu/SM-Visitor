@@ -99,8 +99,19 @@ export function useSSE(config: SSEConfig) {
   };
 
   const connect = () => {
-    if (!isAuthenticated || isConnecting.current || eventSourceRef.current) return;
+    if (!isAuthenticated || isConnecting.current) return;
     if (typeof window === "undefined" || typeof EventSource === "undefined") return;
+
+    if (eventSourceRef.current) {
+      if (
+        eventSourceRef.current.readyState === EventSource.OPEN ||
+        eventSourceRef.current.readyState === EventSource.CONNECTING
+      ) {
+        return;
+      }
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+    }
 
     isConnecting.current = true;
     try {
@@ -116,11 +127,19 @@ export function useSSE(config: SSEConfig) {
       eventSourceRef.current = es;
 
       es.onopen = () => {
+        if (reconnectTimeoutRef.current) {
+          clearTimeout(reconnectTimeoutRef.current);
+          reconnectTimeoutRef.current = null;
+        }
         reconnectAttempts.current = 0;
         isConnecting.current = false;
       };
 
       es.onerror = (_error) => {
+        if (eventSourceRef.current) {
+          eventSourceRef.current.close();
+          eventSourceRef.current = null;
+        }
         isConnecting.current = false;
         reconnect();
       };
@@ -148,6 +167,11 @@ export function useSSE(config: SSEConfig) {
       return;
     }
 
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+
     const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), maxReconnectDelay);
     reconnectAttempts.current++;
 
@@ -164,6 +188,7 @@ export function useSSE(config: SSEConfig) {
     }
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
     }
     reconnectAttempts.current = 0;
   };

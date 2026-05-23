@@ -31,12 +31,15 @@ export default function Approvals() {
   // Helper to unify visitor data for the card component
   const unifyItem = (item: any) => {
     const isRegular = item.visitor_type === "regular";
+    const isTemporaryGuest = Boolean(item.pass_type === "temporary" || item.qr_validity_hours);
     return {
       id: item.id || item._id,
       name: isRegular ? item.name : item.name_snapshot,
       phone: (isRegular ? item.phone : item.phone_snapshot) || "N/A",
       purpose: isRegular
-        ? `Staff Registration: ${item.category_label || item.category || "Staff"}`
+        ? isTemporaryGuest
+          ? item.default_purpose || "Guest Visit"
+          : `Staff Registration: ${item.category_label || item.category || "Staff"}`
         : item.purpose,
       status: normalizeApprovalStatus(isRegular ? item.approval_status : item.status),
       timestamp: item.created_at,

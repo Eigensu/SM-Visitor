@@ -10,7 +10,7 @@ import { Button } from "@sm-visitor/ui";
 import { Spinner } from "@/components/shared/Spinner";
 import { cn } from "@/lib/utils";
 import { NotificationCenter } from "../NotificationCenter";
-import { visitsAPI, notificationsAPI } from "@/lib/api";
+import { visitsAPI } from "@/lib/api";
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -21,29 +21,19 @@ export function AppLayout({ children }: AppLayoutProps) {
   const user = useStore((state: any) => state.user);
   const isAuthenticated = useStore((state: any) => state.isAuthenticated);
   const setPendingCount = useStore((state: any) => state.setPendingCount);
-  const setUnreadCount = useStore((state: any) => state.setUnreadCount);
-  const setNotifications = useStore((state: any) => state.setNotifications);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isChecking, setIsChecking] = useState(true);
 
   useEffect(() => {
-    // Check authentication on mount
     const token = typeof window !== "undefined" ? localStorage.getItem("auth_token") : null;
 
     if (!token && !isAuthenticated) {
-      router.push("/login");
+      router.replace("/login");
     } else if (isAuthenticated) {
       setIsChecking(false);
     } else if (token) {
-      const timer = setTimeout(() => {
-        if (!useStore.getState().isAuthenticated) {
-          router.push("/login");
-        } else {
-          setIsChecking(false);
-        }
-      }, 1000);
-      return () => clearTimeout(timer);
+      setIsChecking(false);
     }
   }, [isAuthenticated, router]);
 
@@ -54,12 +44,8 @@ export function AppLayout({ children }: AppLayoutProps) {
     const syncData = async () => {
       try {
         const stats = await visitsAPI.getDashboardStats();
-        const unreadData = await notificationsAPI.getUnreadCount();
-        const notifications = await notificationsAPI.getNotifications(false);
 
         setPendingCount(stats.pendingCount);
-        setUnreadCount(typeof unreadData === "object" ? unreadData.count : unreadData);
-        setNotifications(notifications);
       } catch (error) {
         console.error("Layout sync failed:", error);
       }
@@ -68,7 +54,7 @@ export function AppLayout({ children }: AppLayoutProps) {
     syncData();
     const interval = setInterval(syncData, 30000); // Poll every 30s
     return () => clearInterval(interval);
-  }, [isAuthenticated, user, setPendingCount, setUnreadCount]);
+  }, [isAuthenticated, user, setPendingCount]);
 
   // Show loading spinner while checking auth
   if (isChecking || !user) {
@@ -80,9 +66,9 @@ export function AppLayout({ children }: AppLayoutProps) {
   }
 
   return (
-    <div className="flex min-h-screen w-full bg-background">
+    <div className="flex h-screen w-full overflow-hidden bg-background">
       {/* Desktop Sidebar */}
-      <div className="hidden md:block">
+      <div className="hidden shrink-0 md:block">
         <AppSidebar
           collapsed={sidebarCollapsed}
           onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
@@ -116,7 +102,7 @@ export function AppLayout({ children }: AppLayoutProps) {
       </div>
 
       {/* Main Content */}
-      <div className="flex min-h-screen flex-1 flex-col">
+      <div className="flex min-h-0 flex-1 flex-col">
         {/* Mobile Header */}
         <header className="sticky top-0 z-30 flex items-center justify-between border-b border-sidebar-border bg-background/90 p-4 backdrop-blur-xl md:hidden">
           <Button
@@ -134,7 +120,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 pb-20 md:pb-0">{children}</main>
+        <main className="flex-1 overflow-y-auto pb-20 md:pb-0">{children}</main>
 
         {/* Mobile Bottom Navigation */}
         <MobileNav />
