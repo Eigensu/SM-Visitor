@@ -14,3 +14,8 @@ scripts
 !models.py
 !utils/
 !utils/*.py
+!services/
+!services/__init__.py
+!services/serializers/
+!services/serializers/__init__.py
+!services/serializers/notification.py
