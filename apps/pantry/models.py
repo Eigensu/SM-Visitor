@@ -77,9 +77,21 @@ class VisitorModel(BaseModel):
     visitor_type: str  # regular, new, temporary
     created_by: str  # User ID
     default_purpose: Optional[str] = None
+    category: Optional[str] = None
+    category_label: Optional[str] = None
+    flat_id: Optional[str] = None
+    is_all_flats: bool = False
+    valid_flats: Optional[List[str]] = None
+    id_card_type: Optional[str] = None
+    id_card_number: Optional[str] = None
+    id_card_photo_url: Optional[str] = None
+    vehicle_number: Optional[str] = None
+    vehicle_type: Optional[str] = None
     qr_token: Optional[str] = None
     qr_expires_at: Optional[datetime] = None  # NEW: For temporary visitors
     qr_validity_hours: Optional[int] = None   # NEW: 6, 12, 18, 24
+    pass_type: Optional[str] = None
+    approved_at: Optional[datetime] = None
     is_active: bool = True
     approval_status: ApprovalStatus = ApprovalStatus.PENDING
     assigned_owner_id: Optional[str] = None  # Original resident who needs to approve
@@ -103,10 +115,17 @@ class VisitModel(BaseModel):
     purpose: str
     owner_id: str
     guard_id: str
+    guard_name: Optional[str] = None
     entry_time: Optional[datetime] = None
     exit_time: Optional[datetime] = None
     status: str  # pending, approved, rejected, auto_approved
+    id_type: Optional[str] = None
+    id_number: Optional[str] = None
+    id_photo_url: Optional[str] = None
+    vehicle_number: Optional[str] = None
+    vehicle_type: Optional[str] = None
     qr_token: Optional[str] = None
+    approved_at: Optional[datetime] = None
     created_at: datetime = Field(default_factory=get_utc_now)
     updated_at: datetime = Field(default_factory=get_utc_now)
 

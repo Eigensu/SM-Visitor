@@ -108,10 +108,17 @@ class VisitResponse(BaseModel):
     purpose: str
     owner_id: str
     guard_id: str
+    guard_name: Optional[str] = None
     entry_time: Optional[datetime]
     exit_time: Optional[datetime]
     status: str
     approval_status: Optional[str] = None
+    approved_at: Optional[datetime] = None
+    id_type: Optional[str] = None
+    id_number: Optional[str] = None
+    id_photo_url: Optional[str] = None
+    vehicle_number: Optional[str] = None
+    vehicle_type: Optional[str] = None
     qr_token: Optional[str] = None
     is_all_flats: bool = False
     valid_flats: Optional[List[str]] = None
@@ -136,6 +143,12 @@ def map_visit_to_response(v: dict) -> VisitResponse:
         exit_time=v.get("exit_time"),
         status=status,
         approval_status=status,
+        approved_at=v.get("approved_at"),
+        id_type=v.get("id_type"),
+        id_number=v.get("id_number"),
+        id_photo_url=v.get("id_photo_url"),
+        vehicle_number=v.get("vehicle_number"),
+        vehicle_type=v.get("vehicle_type"),
         qr_token=v.get("qr_token"),
         is_all_flats=v.get("is_all_flats", False),
         valid_flats=v.get("valid_flats"),
@@ -173,6 +186,12 @@ def map_regular_visitor_to_today_response(visitor: dict) -> VisitResponse:
         exit_time=None,
         status=status,
         approval_status=status,
+        approved_at=visitor.get("approved_at") or visitor.get("updated_at") or created_at,
+        id_type=visitor.get("id_card_type"),
+        id_number=visitor.get("id_card_number"),
+        id_photo_url=visitor.get("id_card_photo_url"),
+        vehicle_number=visitor.get("vehicle_number"),
+        vehicle_type=visitor.get("vehicle_type"),
         qr_token=visitor.get("qr_token"),
         is_all_flats=visitor.get("is_all_flats", False),
         valid_flats=visitor.get("valid_flats"),
@@ -769,6 +788,7 @@ async def approve_visit(
                 "status": "approved",
                 "entry_time": get_utc_now(),
                 "updated_at": get_utc_now(),
+                "approved_at": get_utc_now(),
             }
         },
     )
@@ -804,7 +824,13 @@ async def approve_visit(
         entry_time=updated_visit.get("entry_time"),
         exit_time=updated_visit.get("exit_time"),
         status=updated_visit["status"],
+        approved_at=updated_visit.get("approved_at"),
         qr_token=updated_visit.get("qr_token"),
+        id_type=updated_visit.get("id_type"),
+        id_number=updated_visit.get("id_number"),
+        id_photo_url=updated_visit.get("id_photo_url"),
+        vehicle_number=updated_visit.get("vehicle_number"),
+        vehicle_type=updated_visit.get("vehicle_type"),
         created_at=updated_visit["created_at"],
     )
 
@@ -891,7 +917,13 @@ async def reject_visit(
         entry_time=updated_visit.get("entry_time"),
         exit_time=updated_visit.get("exit_time"),
         status=updated_visit["status"],
+        approved_at=updated_visit.get("approved_at"),
         qr_token=updated_visit.get("qr_token"),
+        id_type=updated_visit.get("id_type"),
+        id_number=updated_visit.get("id_number"),
+        id_photo_url=updated_visit.get("id_photo_url"),
+        vehicle_number=updated_visit.get("vehicle_number"),
+        vehicle_type=updated_visit.get("vehicle_type"),
         created_at=updated_visit["created_at"],
     )
 
@@ -1622,6 +1654,7 @@ async def get_visit_details(
     entry_time = visit.get("entry_time")
     exit_time = visit.get("exit_time")
     updated_at = visit.get("updated_at")
+    approved_at = visit.get("approved_at") or updated_at
 
     return {
         "id": str(visit["_id"]),
@@ -1640,6 +1673,9 @@ async def get_visit_details(
         "id_type": visit.get("id_type"),
         "id_number": visit.get("id_number"),
         "id_photo_url": visit.get("id_photo_url"),
+        "vehicle_number": visit.get("vehicle_number"),
+        "vehicle_type": visit.get("vehicle_type"),
+        "approved_at": approved_at.isoformat() if isinstance(approved_at, datetime) else None,
         "created_at": visit["created_at"].isoformat(),
         "updated_at": updated_at.isoformat()
         if isinstance(updated_at, datetime)

@@ -49,6 +49,7 @@ import toast from "react-hot-toast";
 
 interface ExtendedVisitHistoryItem extends VisitHistoryItem {
   guard_name?: string;
+  approved_at?: string | null;
   id_type?: string;
   id_number?: string;
   vehicle_number?: string;
@@ -65,6 +66,13 @@ interface ExtendedRegularVisitorHistoryItem extends RegularVisitorHistoryItem {
   created_by_role?: string;
   pass_type?: string;
   qr_validity_hours?: number | null;
+  updated_at?: string | null;
+  id_card_type?: string | null;
+  id_card_number?: string | null;
+  id_type?: string | null;
+  id_number?: string | null;
+  id_photo_url?: string | null;
+  id_card_photo_url?: string | null;
 }
 
 interface Visit {
@@ -88,21 +96,43 @@ interface Visit {
 
 interface VisitDetailsData {
   id: string;
-  name: string;
-  phone: string;
-  visitorType: "adhoc" | "regular";
-  status: StatusType;
+  fullName: string;
+  phoneNumber: string;
+  visitorTypeLabel: string;
+  purpose?: string;
+  validityPeriod?: string;
+  ownerAssignment?: string;
+  visitorPhoto?: string;
+  cardType?: string;
+  cardNumber?: string;
+  idCardPhoto?: string;
+  createdTime?: string | null;
+  approvedTime?: string | null;
   entryTime?: string | null;
   exitTime?: string | null;
-  purpose?: string;
-  vehicleNumber?: string;
-  vehicleType?: string;
-  photo?: string;
+  status: StatusType;
+  qrInformation?: string;
+  guardInformation?: string;
   qrToken?: string | null;
-  qrPassType?: string;
-  flatNumber?: string;
-  guardInfo?: string;
 }
+
+const formatMaybeDateTime = (value?: string | null, fallback = "N/A") =>
+  value ? formatDateTime(value) : fallback;
+
+const formatEntryDateTime = (value?: string | null) =>
+  value ? formatDateTime(value) : "Not Entered Yet";
+
+const getRegularVisitorTypeLabel = (visitor: {
+  pass_type?: string;
+  qr_validity_hours?: number | null;
+}) => (visitor.pass_type === "temporary" || visitor.qr_validity_hours ? "Guest" : "Staff");
+
+const getValidityLabel = (visitor: { pass_type?: string; qr_validity_hours?: number | null }) => {
+  if (visitor.qr_validity_hours) {
+    return `${visitor.qr_validity_hours}h Pass`;
+  }
+  return "Permanent";
+};
 
 const toStatusType = (status: string | undefined): StatusType =>
   normalizeApprovalStatus(status) as StatusType;
@@ -307,48 +337,61 @@ export default function Visitors() {
 
         setDetailsData({
           id: visit.id,
-          name: detail.name || detail.name_snapshot || visit.name,
-          phone: detail.phone || detail.phone_snapshot || visit.phone,
-          visitorType: "adhoc",
+          fullName: detail.name || detail.name_snapshot || visit.name,
+          phoneNumber: detail.phone || detail.phone_snapshot || visit.phone,
+          visitorTypeLabel: "Guest",
+          validityPeriod: "N/A",
+          ownerAssignment: visit.is_all_flats
+            ? "Society"
+            : visit.target_flat_ids?.join(", ") || detail.owner_id || visit.owner_id,
+          visitorPhoto: detail.photo || detail.photo_snapshot_url || visit.photo,
+          cardType: (detail as ExtendedVisitHistoryItem).id_type || undefined,
+          cardNumber: (detail as ExtendedVisitHistoryItem).id_number || undefined,
+          idCardPhoto: (detail as ExtendedVisitHistoryItem).id_photo_url || undefined,
+          createdTime: detail.created_at,
+          approvedTime: detail.approved_at || detail.updated_at,
           status: toStatusType(detail.status),
           entryTime: detail.entry_time || visit.entry_time,
           exitTime: detail.exit_time || visit.exit_time,
           purpose: detail.purpose || visit.purpose,
-          vehicleNumber:
-            (adhocRaw?.vehicle_number as string | undefined) ||
-            (detail as ExtendedVisitHistoryItem).vehicle_number ||
-            undefined,
-          vehicleType:
-            (adhocRaw?.vehicle_type as string | undefined) ||
-            (detail as ExtendedVisitHistoryItem).vehicle_type ||
-            undefined,
-          photo: detail.photo || detail.photo_snapshot_url || visit.photo,
           qrToken: detail.qr_token || visit.qr_token,
-          qrPassType: detail.qr_token ? "QR pass" : "Manual",
-          flatNumber: visit.is_all_flats
-            ? "Society"
-            : visit.target_flat_ids?.join(", ") || detail.owner_id || visit.owner_id,
-          guardInfo: detail.guard_name || detail.guard_id || visit.guard_id,
+          qrInformation: detail.qr_token ? "QR pass available" : "Manual",
+          guardInformation: detail.guard_name || detail.guard_id || visit.guard_id,
         });
       } else {
         const regularRaw = regularVisitMap[visit.id] || {};
+        const isTemporaryGuest = Boolean(
+          regularRaw.pass_type === "temporary" || regularRaw.qr_validity_hours
+        );
 
         setDetailsData({
           id: visit.id,
-          name: visit.name,
-          phone: visit.phone,
-          visitorType: "regular",
+          fullName: regularRaw.name || visit.name,
+          phoneNumber: regularRaw.phone || visit.phone || "N/A",
+          visitorTypeLabel: getRegularVisitorTypeLabel(regularRaw),
+          validityPeriod: getValidityLabel(regularRaw),
+          ownerAssignment: regularRaw.flat_id || visit.owner_id,
+          visitorPhoto: regularRaw.photo_url || visit.photo,
+          cardType:
+            regularRaw.card_type || regularRaw.id_card_type || regularRaw.id_type || undefined,
+          cardNumber:
+            regularRaw.card_number ||
+            regularRaw.id_card_number ||
+            regularRaw.id_number ||
+            undefined,
+          idCardPhoto: regularRaw.id_card_photo_url || regularRaw.id_photo_url || undefined,
+          createdTime: regularRaw.created_at || visit.createdAt,
+          approvedTime: regularRaw.approved_at || regularRaw.updated_at || visit.createdAt,
           status: visit.status,
           entryTime: undefined,
           exitTime: undefined,
           purpose: regularRaw.default_purpose || visit.purpose,
-          vehicleNumber: (regularRaw as { vehicle_number?: string }).vehicle_number,
-          vehicleType: (regularRaw as { vehicle_type?: string }).vehicle_type,
-          photo: visit.photo,
           qrToken: regularRaw.qr_token || visit.qr_token,
-          qrPassType: regularRaw.pass_type || "Permanent",
-          flatNumber: visit.owner_id,
-          guardInfo: regularRaw.created_by_role || "N/A",
+          qrInformation: regularRaw.qr_token
+            ? `${isTemporaryGuest ? `${regularRaw.qr_validity_hours}h pass` : "QR pass"} available`
+            : "N/A",
+          guardInformation:
+            regularRaw.guard_name || regularRaw.created_by_role || regularRaw.created_by || "N/A",
         });
       }
     } catch (error) {
@@ -373,41 +416,92 @@ export default function Visitors() {
     }
 
     const headers = [
-      "Visitor Name",
+      "Full Name",
+      "Phone Number",
       "Visitor Type",
-      "Flat Number",
+      "Purpose",
+      "Validity Period",
+      "Owner / Flat Assignment",
+      "Visitor Photo",
+      "Card Type",
+      "Card Number",
+      "ID Card Photo",
+      "Created Time",
+      "Approved Time",
       "Entry Time",
       "Exit Time",
-      "Approval Status",
-      "Purpose",
+      "Status",
+      "QR Information",
       "Guard Information",
     ];
 
     const rows = filteredVisitors.map((visitor) => {
       const regularRaw = regularVisitMap[visitor.id] || {};
       const adhocRaw = adhocVisitMap[visitor.id] || {};
-      const flatNumber = visitor.is_all_flats
-        ? "Society"
-        : visitor.target_flat_ids?.join(", ") || visitor.owner_id || regularRaw.flat_id || "N/A";
 
-      const entryRaw = visitor.entry_time || adhocRaw.entry_time || "";
-      const exitRaw = visitor.exit_time || adhocRaw.exit_time || "";
-
+      const isRegular = visitor.visitor_type === "regular";
+      const isTemporaryGuest = Boolean(
+        regularRaw.pass_type === "temporary" || regularRaw.qr_validity_hours
+      );
+      const visitorType = isRegular ? getRegularVisitorTypeLabel(regularRaw) : "Guest";
+      const ownerAssignment = isRegular
+        ? visitor.owner_id || regularRaw.flat_id || regularRaw.assigned_owner_id || "N/A"
+        : visitor.is_all_flats
+          ? "Society"
+          : visitor.target_flat_ids?.join(", ") || visitor.owner_id || adhocRaw.owner_id || "N/A";
+      const visitorPhoto = isRegular
+        ? visitor.photo || regularRaw.photo_url || ""
+        : visitor.photo || adhocRaw.photo_snapshot_url || "";
+      const cardType = isRegular
+        ? regularRaw.card_type || regularRaw.id_card_type || "N/A"
+        : adhocRaw.id_type || "N/A";
+      const cardNumber = isRegular
+        ? regularRaw.card_number || regularRaw.id_card_number || "N/A"
+        : adhocRaw.id_number || "N/A";
+      const idCardPhoto = isRegular
+        ? regularRaw.id_card_photo_url || regularRaw.id_photo_url || "N/A"
+        : adhocRaw.id_photo_url || "N/A";
+      const createdTime = isRegular
+        ? formatMaybeDateTime(regularRaw.created_at || visitor.createdAt, "N/A")
+        : formatMaybeDateTime(adhocRaw.created_at || visitor.createdAt, "N/A");
+      const approvedTime = isRegular
+        ? formatMaybeDateTime(regularRaw.approved_at || regularRaw.updated_at, "N/A")
+        : formatMaybeDateTime(adhocRaw.approved_at || adhocRaw.updated_at, "N/A");
+      const entryRaw = visitor.entry_time || adhocRaw.entry_time || null;
+      const exitRaw = visitor.exit_time || adhocRaw.exit_time || null;
       const guardInfo =
         (adhocRaw as { guard_name?: string }).guard_name ||
-        visitor.guard_id ||
         adhocRaw.guard_id ||
+        visitor.guard_id ||
+        regularRaw.guard_name ||
         regularRaw.created_by_role ||
+        regularRaw.created_by ||
         "N/A";
+      const qrInfo = isRegular
+        ? regularRaw.qr_token
+          ? `${isTemporaryGuest ? `${regularRaw.qr_validity_hours}h pass` : "QR pass"} available`
+          : "N/A"
+        : adhocRaw.qr_token
+          ? "QR pass available"
+          : "N/A";
 
       return [
         visitor.name,
-        visitor.visitor_type || "adhoc",
-        flatNumber,
-        entryRaw ? formatDateTime(entryRaw) : "N/A",
+        visitor.phone,
+        visitorType,
+        isRegular ? regularRaw.default_purpose || visitor.purpose : visitor.purpose,
+        isRegular ? getValidityLabel(regularRaw) : "N/A",
+        ownerAssignment,
+        visitorPhoto,
+        cardType,
+        cardNumber,
+        idCardPhoto,
+        createdTime,
+        approvedTime,
+        entryRaw ? formatDateTime(entryRaw) : "Not Entered Yet",
         exitRaw ? formatDateTime(exitRaw) : "N/A",
         visitor.status,
-        visitor.purpose,
+        qrInfo,
         guardInfo,
       ];
     });
@@ -730,96 +824,221 @@ export default function Visitors() {
 
       {/* Details Modal */}
       <Dialog open={detailsVisitId !== null} onOpenChange={(open) => !open && closeDetails()}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-h-[90vh] w-[95vw] max-w-6xl overflow-hidden p-0 sm:w-[92vw]">
           <DialogHeader>
-            <DialogTitle>Visitor Details</DialogTitle>
+            <DialogTitle className="px-6 pt-6">Visitor Details</DialogTitle>
           </DialogHeader>
           {isLoadingDetails ? (
-            <div className="flex h-60 items-center justify-center">
+            <div className="flex h-60 items-center justify-center px-6 pb-6">
               <Spinner size="lg" />
             </div>
           ) : detailsData ? (
-            <div className="space-y-4">
-              <div className="flex items-center gap-4">
-                <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-full bg-primary/10">
-                  {detailsData.photo ? (
-                    <SecureImage
-                      srcRaw={detailsData.photo}
-                      alt={detailsData.name}
-                      className="h-full w-full object-cover"
-                    />
-                  ) : (
-                    <User className="h-8 w-8 text-primary" />
-                  )}
-                </div>
-                <div>
-                  <h3 className="text-xl font-semibold text-foreground">{detailsData.name}</h3>
-                  <p className="text-sm text-muted-foreground">{detailsData.phone}</p>
-                  <div className="mt-2 flex items-center gap-2">
-                    <span className="rounded bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                      {detailsData.visitorType.toUpperCase()}
-                    </span>
-                    <StatusBadge status={detailsData.status} />
+            <div className="max-h-[calc(90vh-5rem)] overflow-y-auto px-6 pb-6 pr-4">
+              <div className="space-y-4">
+                <div className="flex items-center gap-4">
+                  <div className="flex h-20 w-20 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary/10">
+                    {detailsData.visitorPhoto ? (
+                      <SecureImage
+                        srcRaw={detailsData.visitorPhoto}
+                        alt={detailsData.fullName}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <User className="h-8 w-8 text-primary" />
+                    )}
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-semibold text-foreground">
+                      {detailsData.fullName}
+                    </h3>
+                    <p className="text-sm text-muted-foreground">{detailsData.phoneNumber}</p>
+                    <div className="mt-2 flex items-center gap-2">
+                      <span className="rounded bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                        {detailsData.visitorTypeLabel.toUpperCase()}
+                      </span>
+                      <StatusBadge status={detailsData.status} />
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div className="grid grid-cols-1 gap-3 rounded-lg border border-border/70 p-4 md:grid-cols-2">
-                <div>
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Purpose
-                  </p>
-                  <p className="mt-1 text-sm text-foreground">{detailsData.purpose || "N/A"}</p>
-                </div>
-                <div>
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Flat
-                  </p>
-                  <p className="mt-1 text-sm text-foreground">{detailsData.flatNumber || "N/A"}</p>
-                </div>
-                <div>
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Entry Time
-                  </p>
-                  <p className="mt-1 text-sm text-foreground">
-                    {detailsData.entryTime ? formatDateTime(detailsData.entryTime) : "N/A"}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Exit Time
-                  </p>
-                  <p className="mt-1 text-sm text-foreground">
-                    {detailsData.exitTime ? formatDateTime(detailsData.exitTime) : "N/A"}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Vehicle Number
-                  </p>
-                  <p className="mt-1 text-sm text-foreground">
-                    {detailsData.vehicleNumber || "N/A"}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Vehicle Type
-                  </p>
-                  <p className="mt-1 text-sm text-foreground">{detailsData.vehicleType || "N/A"}</p>
-                </div>
-                <div>
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    QR Info
-                  </p>
-                  <p className="mt-1 text-sm text-foreground">
-                    {detailsData.qrToken ? `${detailsData.qrPassType || "QR"} available` : "N/A"}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Guard Info
-                  </p>
-                  <p className="mt-1 text-sm text-foreground">{detailsData.guardInfo || "N/A"}</p>
+                <div className="space-y-4 rounded-lg border border-border/70 p-4">
+                  <div>
+                    <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Basic Details
+                    </p>
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <div>
+                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          Full Name
+                        </p>
+                        <p className="mt-1 text-sm text-foreground">{detailsData.fullName}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          Phone Number
+                        </p>
+                        <p className="mt-1 text-sm text-foreground">{detailsData.phoneNumber}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          Visitor Type
+                        </p>
+                        <p className="mt-1 text-sm text-foreground">
+                          {detailsData.visitorTypeLabel}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          Purpose
+                        </p>
+                        <p className="mt-1 text-sm text-foreground">
+                          {detailsData.purpose || "N/A"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          Validity Period
+                        </p>
+                        <p className="mt-1 text-sm text-foreground">
+                          {detailsData.validityPeriod || "N/A"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          Owner / Flat Assignment
+                        </p>
+                        <p className="mt-1 text-sm text-foreground">
+                          {detailsData.ownerAssignment || "N/A"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Photos
+                    </p>
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          Visitor Photo
+                        </p>
+                        <div className="flex min-h-44 items-center justify-center overflow-hidden rounded-lg border border-border/60 bg-muted/20">
+                          {detailsData.visitorPhoto ? (
+                            <SecureImage
+                              srcRaw={detailsData.visitorPhoto}
+                              alt={detailsData.fullName}
+                              className="h-44 w-full bg-black/5 object-contain"
+                            />
+                          ) : (
+                            <span className="text-sm text-muted-foreground">N/A</span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          ID Card Photo
+                        </p>
+                        <div className="flex min-h-44 items-center justify-center overflow-hidden rounded-lg border border-border/60 bg-muted/20">
+                          {detailsData.idCardPhoto ? (
+                            <SecureImage
+                              srcRaw={detailsData.idCardPhoto}
+                              alt={`${detailsData.fullName} ID Card`}
+                              className="h-44 w-full bg-black/5 object-contain"
+                            />
+                          ) : (
+                            <span className="text-sm text-muted-foreground">N/A</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Identity Information
+                    </p>
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <div>
+                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          Card Type
+                        </p>
+                        <p className="mt-1 text-sm text-foreground">
+                          {detailsData.cardType || "N/A"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          Card Number
+                        </p>
+                        <p className="mt-1 text-sm text-foreground">
+                          {detailsData.cardNumber || "N/A"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Visit Information
+                    </p>
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <div>
+                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          Created Time
+                        </p>
+                        <p className="mt-1 text-sm text-foreground">
+                          {formatMaybeDateTime(detailsData.createdTime, "N/A")}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          Approved Time
+                        </p>
+                        <p className="mt-1 text-sm text-foreground">
+                          {formatMaybeDateTime(detailsData.approvedTime, "N/A")}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          Entry Time
+                        </p>
+                        <p className="mt-1 text-sm text-foreground">
+                          {formatEntryDateTime(detailsData.entryTime)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          Exit Time
+                        </p>
+                        <p className="mt-1 text-sm text-foreground">
+                          {formatMaybeDateTime(detailsData.exitTime, "N/A")}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          Status
+                        </p>
+                        <p className="mt-1 text-sm text-foreground">{detailsData.status}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          QR Information
+                        </p>
+                        <p className="mt-1 text-sm text-foreground">
+                          {detailsData.qrInformation || "N/A"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          Guard Information
+                        </p>
+                        <p className="mt-1 text-sm text-foreground">
+                          {detailsData.guardInformation || "N/A"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

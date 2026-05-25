@@ -26,6 +26,10 @@ class CreateRegularVisitorRequest(BaseModel):
     default_purpose: Optional[str] = Field(None, max_length=200)
     # Backward compatible with older clients; photo is now uploaded as multipart file.
     photo_id: Optional[str] = None
+    id_card_type: Optional[str] = None
+    id_card_number: Optional[str] = None
+    vehicle_number: Optional[str] = None
+    vehicle_type: Optional[str] = None
 
     # Category
     category: str = Field(
@@ -144,6 +148,10 @@ async def get_visitor_request(
     auto_approval_rule: str = Form("always"),
     qr_validity_hours: Optional[int] = Form(None),
     photo_id: Optional[str] = Form(None),
+    id_card_type: Optional[str] = Form(None),
+    id_card_number: Optional[str] = Form(None),
+    vehicle_number: Optional[str] = Form(None),
+    vehicle_type: Optional[str] = Form(None),
     is_all_flats: bool = Form(False),
     valid_flats: Optional[List[str]] = Form(None),
 ) -> CreateRegularVisitorRequest:
@@ -188,6 +196,10 @@ async def get_visitor_request(
         auto_approval_rule=auto_approval_rule,
         qr_validity_hours=qr_validity_hours,
         photo_id=s_photo_id,
+        id_card_type=id_card_type,
+        id_card_number=id_card_number,
+        vehicle_number=vehicle_number,
+        vehicle_type=vehicle_type,
         is_all_flats=is_all_flats,
         valid_flats=normalized_valid_flats,
     )
@@ -215,6 +227,16 @@ class VisitorResponse(BaseModel):
     visitor_type: str
     created_by: str
     default_purpose: Optional[str] = None
+    category: Optional[str] = None
+    category_label: Optional[str] = None
+    flat_id: Optional[str] = None
+    is_all_flats: bool = False
+    valid_flats: Optional[List[str]] = None
+    card_type: Optional[str] = None
+    card_number: Optional[str] = None
+    id_card_photo_url: Optional[str] = None
+    vehicle_number: Optional[str] = None
+    vehicle_type: Optional[str] = None
     qr_token: Optional[str] = None
     is_active: bool
     approval_status: ApprovalStatus
@@ -223,6 +245,9 @@ class VisitorResponse(BaseModel):
     created_at: datetime
     qr_validity_hours: Optional[int] = None
     qr_expires_at: Optional[datetime] = None
+    pass_type: Optional[str] = None
+    approved_at: Optional[datetime] = None
+    guard_name: Optional[str] = None
 
 
 class VisitorWithQRResponse(VisitorResponse):
@@ -239,6 +264,7 @@ class VisitorWithQRResponse(VisitorResponse):
 async def create_regular_visitor(
     request: CreateRegularVisitorRequest = Depends(get_visitor_request),
     photo: Optional[UploadFile] = File(None),
+    id_card_photo: Optional[UploadFile] = File(None),
     current_user: dict = Depends(get_current_owner),
 ):
     """
@@ -290,6 +316,16 @@ async def create_regular_visitor(
             detail="Either photo upload or photo_id must be provided.",
         )
 
+    id_card_photo_file_id: Optional[str] = None
+    if id_card_photo is not None:
+        id_card_photo_data = await id_card_photo.read()
+        is_valid, error_msg = await photo_storage.validate_photo(id_card_photo_data)
+        if not is_valid:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error_msg)
+        id_card_photo_file_id = await photo_storage.save_regular_visitor_photo(
+            id_card_photo_data, id_card_photo.filename or "id_card_photo.jpg"
+        )
+
     # Create visitor document
     visitor_doc = {
         "name": request.name,
@@ -298,6 +334,11 @@ async def create_regular_visitor(
         "visitor_type": "regular",
         "created_by": get_user_id(current_user),
         "default_purpose": request.default_purpose,
+        "id_card_type": request.id_card_type,
+        "id_card_number": request.id_card_number,
+        "id_card_photo_url": id_card_photo_file_id,
+        "vehicle_number": request.vehicle_number,
+        "vehicle_type": request.vehicle_type,
         # Category
         "category": request.category,
         "category_label": get_category_label(request.category),
@@ -330,6 +371,7 @@ async def create_regular_visitor(
         "valid_flats": request.valid_flats or [],
         "is_active": True,
         "approval_status": "approved",
+        "approved_at": get_utc_now(),
         "assigned_owner_id": get_user_id(current_user),
         "flat_id": owner_flat_id,
         "created_by_role": "owner",
@@ -392,6 +434,7 @@ async def create_regular_visitor(
 async def create_regular_visitor_by_guard(
     request: CreateRegularVisitorRequest = Depends(get_visitor_request),
     photo: UploadFile = File(...),
+    id_card_photo: Optional[UploadFile] = File(None),
     current_user: dict = Depends(get_current_guard),
 ):
     """
@@ -467,6 +510,16 @@ async def create_regular_visitor_by_guard(
         photo_data, photo.filename or "visitor_photo.jpg"
     )
 
+    id_card_photo_file_id: Optional[str] = None
+    if id_card_photo is not None:
+        id_card_photo_data = await id_card_photo.read()
+        is_valid, error_msg = await photo_storage.validate_photo(id_card_photo_data)
+        if not is_valid:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error_msg)
+        id_card_photo_file_id = await photo_storage.save_regular_visitor_photo(
+            id_card_photo_data, id_card_photo.filename or "id_card_photo.jpg"
+        )
+
     # Create visitor document (inactive)
     visitor_doc = {
         "name": request.name,
@@ -482,6 +535,11 @@ async def create_regular_visitor_by_guard(
         "approval_status": "pending",
         "is_active": False,
         "default_purpose": request.default_purpose,
+        "id_card_type": request.id_card_type,
+        "id_card_number": request.id_card_number,
+        "id_card_photo_url": id_card_photo_file_id,
+        "vehicle_number": request.vehicle_number,
+        "vehicle_type": request.vehicle_type,
         "category": request.category,
         "category_label": get_category_label(request.category),
         "schedule": {
@@ -626,6 +684,8 @@ async def approve_regular_visitor(
                 "is_active": True,
                 "qr_token": qr_token,
                 "qr_expires_at": expires_at,
+                "approved_at": get_utc_now(),
+                "updated_at": get_utc_now(),
             }
         },
     )
@@ -665,6 +725,7 @@ async def approve_regular_visitor(
                 "approval_status": ApprovalStatus.APPROVED,
                 "is_active": True,
                 "qr_token": qr_token,
+                    "approved_at": get_utc_now(),
             }
         ),
         qr_image_url=qr_image_url,
