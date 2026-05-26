@@ -101,6 +101,7 @@ class StartVisitNewRequest(BaseModel):
 class VisitResponse(BaseModel):
     id: str
     visitor_id: Optional[str]
+    source_record_type: Optional[str] = None
     visitor_type: Optional[str] = None
     name_snapshot: str
     phone_snapshot: Optional[str]
@@ -132,6 +133,7 @@ def map_visit_to_response(v: dict) -> VisitResponse:
     return VisitResponse(
         id=str(v["_id"]),
         visitor_id=v.get("visitor_id"),
+        source_record_type="visit",
         visitor_type="regular" if v.get("visitor_id") else "guest",
         name_snapshot=v["name_snapshot"],
         phone_snapshot=v.get("phone_snapshot"),
@@ -160,7 +162,7 @@ def map_visit_to_response(v: dict) -> VisitResponse:
 def map_regular_visitor_to_today_response(visitor: dict) -> VisitResponse:
     """Map an approved regular visitor into the visit-shaped payload Orbit expects."""
     status = normalize_approval_status(visitor.get("approval_status"), "approved")
-    is_temporary_guest = bool(visitor.get("qr_validity_hours"))
+    is_temporary_guest = classify_regular_visitor_record(visitor) == "guest"
     owner_id = (
         visitor.get("flat_id")
         or visitor.get("assigned_owner_id")
@@ -172,6 +174,7 @@ def map_regular_visitor_to_today_response(visitor: dict) -> VisitResponse:
     return VisitResponse(
         id=str(visitor["_id"]),
         visitor_id=str(visitor["_id"]),
+        source_record_type="regular_visitor",
         # Guest-mode registrations are saved in the visitors collection, but
         # they are temporary guest passes rather than permanent staff entries.
         # Orbit needs this distinction to keep guest/staff counts correct.
@@ -198,6 +201,28 @@ def map_regular_visitor_to_today_response(visitor: dict) -> VisitResponse:
         target_flat_ids=None,
         created_at=created_at,
     )
+
+
+def classify_regular_visitor_record(visitor: dict) -> str:
+    """Classify a regular visitor using stored registration fields, not label text."""
+    staff_categories = {"maid", "cook", "driver", "delivery"}
+    category = (visitor.get("category") or "").lower()
+    if category in staff_categories:
+        return "staff"
+
+    if visitor.get("qr_validity_hours"):
+        return "guest"
+
+    pass_type = (visitor.get("pass_type") or visitor.get("passType") or "").lower()
+    visitor_type = (visitor.get("visitor_type") or "").lower()
+    if pass_type == "temporary" or visitor_type == "temporary":
+        return "guest"
+
+    default_purpose = (visitor.get("default_purpose") or "").lower()
+    if default_purpose == "visitor" or "guest" in default_purpose:
+        return "guest"
+
+    return "staff"
 
 
 @router.post("/qr-scan", response_model=QRScanResponse)
@@ -969,10 +994,13 @@ async def get_todays_visits(
     # Approved regular visitors are not stored in the visits collection.
     # Without this second query, Orbit's dashboard would miss active staff and
     # only show ad-hoc visit rows.
+    # IMPORTANT: Apply the same date filter as for visits to ensure we only count
+    # today's approved regular visitors, not all-time approved records.
     regular_query: dict[str, object] = {
         "visitor_type": "regular",
         "approval_status": {"$in": ["approved", "auto_approved"]},
         "is_active": True,
+        "created_at": {"$gte": today_start_utc},
     }
 
     if current_user["role"] == "owner":
@@ -1540,6 +1568,71 @@ async def get_dashboard_stats(
         "pending_staff_count": pending_staff_count,
         "approved_count": total_approved,
         "active_qr_count": total_active_qrs,
+    }
+
+
+@router.get("/dashboard/stats")
+async def get_guard_dashboard_stats(
+    current_user: dict = Depends(get_current_guard), db=Depends(get_database)
+):
+    """Get Orbit dashboard stats from live MongoDB data.
+
+    Today's metrics are date-filtered to the current IST calendar day.
+    All-time metrics intentionally have no date filter.
+    """
+    visits_collection = get_visits_collection()
+    visitors_collection = get_visitors_collection()
+
+    today_start_ist = get_ist_now().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start_utc = today_start_ist.astimezone(timezone.utc).replace(tzinfo=None)
+
+    pending_visit_count = await visits_collection.count_documents({"status": "pending"})
+    pending_staff_count = await visitors_collection.count_documents(
+        {"visitor_type": "regular", "approval_status": "pending", "is_active": True}
+    )
+
+    today_visit_count = await visits_collection.count_documents(
+        {"created_at": {"$gte": today_start_utc}}
+    )
+    today_staff_count = await visitors_collection.count_documents(
+        {
+            "visitor_type": "regular",
+            "approval_status": {"$in": ["approved", "auto_approved"]},
+            "is_active": True,
+            "created_at": {"$gte": today_start_utc},
+        }
+    )
+
+    active_now_count = await visits_collection.count_documents(
+        {"entry_time": {"$ne": None}, "exit_time": None}
+    )
+
+    approved_regular_visitors = await visitors_collection.find(
+        {
+            "visitor_type": "regular",
+            "approval_status": {"$in": ["approved", "auto_approved"]},
+            "is_active": True,
+        }
+    ).to_list(length=1000)
+
+    total_guest_count = 0
+    total_staff_count = 0
+    for visitor in approved_regular_visitors:
+        if classify_regular_visitor_record(visitor) == "guest":
+            total_guest_count += 1
+        else:
+            total_staff_count += 1
+
+    return {
+        "pending_actions_count": pending_visit_count + pending_staff_count,
+        "pending_visit_count": pending_visit_count,
+        "pending_staff_count": pending_staff_count,
+        "today_visits_count": today_visit_count + today_staff_count,
+        "today_visit_count": today_visit_count,
+        "today_staff_count": today_staff_count,
+        "active_now_count": active_now_count,
+        "total_guest_count": total_guest_count,
+        "total_staff_count": total_staff_count,
     }
 
 
