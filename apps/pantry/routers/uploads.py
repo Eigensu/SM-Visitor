@@ -176,7 +176,9 @@ async def get_regular_visitor_photo(
 
 @router.get("/photo/regular/{file_id}/signed-url")
 async def get_signed_regular_photo_url(
-    file_id: str, current_user: dict = Depends(get_current_user)
+    file_id: str,
+    request: Request,
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Generate a short-lived signed URL for a GridFS photo. Requires an authenticated owner, guard, or admin.
@@ -192,7 +194,8 @@ async def get_signed_regular_photo_url(
     msg = f"{file_id}:{exp_ts}".encode()
     sig = hmac.new(PHOTO_SIGNING_SECRET.encode(), msg, hashlib.sha256).hexdigest()
 
-    signed_url = f"{PANTRY_URL}/uploads/photo/regular/{file_id}?exp={exp_ts}&sig={sig}"
+    base_url = str(request.base_url).rstrip("/")
+    signed_url = f"{base_url}/uploads/photo/regular/{file_id}?exp={exp_ts}&sig={sig}"
     return {"signed_url": signed_url}
 
 
