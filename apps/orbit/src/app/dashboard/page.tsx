@@ -6,7 +6,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useStore } from "@/lib/store";
-import { visitsAPI, visitorsAPI } from "@/lib/api";
+import { visitsAPI, type DashboardStats } from "@/lib/api";
 import { Button } from "@sm-visitor/ui";
 import { Spinner } from "@sm-visitor/ui";
 import {
@@ -22,34 +22,13 @@ import {
 import { StatCard } from "@/components/StatCard";
 import { GlassCard } from "@/components/GlassCard";
 import { NotificationCenter } from "@/components/NotificationCenter";
-import { normalizeApprovalStatus } from "@sm-visitor/hooks";
 import toast from "react-hot-toast";
-
-interface Visit {
-  id: string;
-  _id?: string;
-  visitor_id?: string | null;
-  visitor_type?: string | null;
-  name_snapshot?: string;
-  name?: string;
-  phone_snapshot?: string | null;
-  phone?: string | null;
-  photo_snapshot_url?: string | null;
-  photo?: string | null;
-  purpose?: string;
-  entry_time?: string;
-  exit_time?: string;
-  status: string;
-  approval_status?: string;
-  created_at?: string;
-}
 
 export default function DashboardPage() {
   const router = useRouter();
   const { user, isAuthenticated, isAuthLoading, logout, refreshMap } = useStore();
-  const [todayVisits, setTodayVisits] = useState<Visit[]>([]);
+  const [stats, setStats] = useState<DashboardStats | null>(null);
   const [isLoadingStats, setIsLoadingStats] = useState(true);
-  const [pendingStaffCount, setPendingStaffCount] = useState(0);
 
   // All hooks must be at the top level - no conditional hooks!
   useEffect(() => {
@@ -60,32 +39,11 @@ export default function DashboardPage() {
     }
   }, [isAuthenticated, isAuthLoading, router]);
 
-  // Fetch today's visits and staff directory for statistics
+  // Fetch dashboard statistics from the backend summary endpoint
   const fetchStats = async (signal?: AbortSignal) => {
     try {
-      const [visits, staff] = await Promise.all([
-        visitsAPI.getTodayVisits(signal),
-        visitorsAPI.list(signal),
-      ]);
-
-      setTodayVisits((currentVisits) => {
-        if (visits.length === 0 && currentVisits.length > 0) {
-          return currentVisits;
-        }
-        return visits;
-      });
-
-      const nextPendingStaffCount = staff.filter(
-        (v: any) =>
-          v.visitor_type === "regular" && normalizeApprovalStatus(v.approval_status) === "pending"
-      ).length;
-
-      setPendingStaffCount((currentPendingStaffCount) => {
-        if (staff.length === 0 && currentPendingStaffCount > 0) {
-          return currentPendingStaffCount;
-        }
-        return nextPendingStaffCount;
-      });
+      const dashboardStats = await visitsAPI.getDashboardStats(signal);
+      setStats(dashboardStats);
     } catch (error: any) {
       if (error.name === "AbortError" || error.message?.includes("canceled")) {
         return; // Silent fail for aborted requests
@@ -111,10 +69,13 @@ export default function DashboardPage() {
     }
   }, [isAuthenticated, isAuthLoading, refreshMap.dashboard]);
 
-  const pendingVisitCount = todayVisits.filter((v) => v.status === "pending").length;
-  const totalPending = pendingVisitCount + pendingStaffCount;
-  const totalGuests = todayVisits.filter((v) => v.visitor_type !== "regular").length;
-  const totalDailyStaff = todayVisits.filter((v) => v.visitor_type === "regular").length;
+  const pendingVisitCount = stats?.pending_visit_count ?? 0;
+  const pendingStaffCount = stats?.pending_staff_count ?? 0;
+  const totalPending = stats?.pending_actions_count ?? 0;
+  const todayVisitCount = stats?.today_visits_count ?? 0;
+  const activeNowCount = stats?.active_now_count ?? 0;
+  const totalGuests = stats?.total_guest_count ?? 0;
+  const totalDailyStaff = stats?.total_staff_count ?? 0;
 
   const handleLogout = () => {
     logout();
@@ -283,17 +244,13 @@ export default function DashboardPage() {
           />
           <StatCard
             title="Today's Visits"
-            value={isLoadingStats ? "..." : todayVisits.length}
+            value={isLoadingStats ? "..." : todayVisitCount}
             icon={CheckCircle2}
             onClick={() => router.push("/history")}
           />
           <StatCard
             title="Active Now"
-            value={
-              isLoadingStats
-                ? "..."
-                : todayVisits.filter((v) => v.entry_time && !v.exit_time).length
-            }
+            value={isLoadingStats ? "..." : activeNowCount}
             icon={Users}
             onClick={() => router.push("/history?status=active")}
           />
