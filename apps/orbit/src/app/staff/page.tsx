@@ -200,8 +200,8 @@ export default function StaffDirectoryPage() {
                   >
                     <GlassCard className="h-full group hover:ring-2 hover:ring-primary/20 transition-all border-none shadow-lg">
                       <div className="p-7">
-                        <div className="flex items-start justify-between mb-4">
-                          <div className="flex items-center gap-3">
+                        <div className="mb-4 flex items-start justify-between gap-3">
+                          <div className="flex min-w-0 flex-1 items-center gap-3 overflow-hidden">
                             <div className="relative h-16 w-16 flex-shrink-0 overflow-hidden rounded-2xl bg-muted shadow-sm border-2 border-white/50">
                               {person.photo_url ? (
                                 <SecureImage
@@ -213,17 +213,17 @@ export default function StaffDirectoryPage() {
                                 <User className="m-auto h-8 w-8 text-muted-foreground/50" />
                               )}
                             </div>
-                            <div className="min-w-0">
-                              <h3 className="truncate font-bold text-foreground text-base leading-tight">
+                            <div className="min-w-0 flex-1 overflow-hidden">
+                              <h3 className="overflow-hidden text-ellipsis whitespace-nowrap font-bold text-base leading-tight text-foreground">
                                 {person.name}
                               </h3>
-                              <p className="truncate text-xs font-medium text-muted-foreground">
+                              <p className="overflow-hidden text-ellipsis whitespace-nowrap text-xs font-medium text-muted-foreground">
                                 {person.phone || "No contact info"}
                               </p>
                             </div>
                           </div>
 
-                          <div className="flex flex-col items-end gap-2">
+                          <div className="flex shrink-0 flex-col items-end gap-2">
                             {normalizeApprovalStatus(person.approval_status) === "pending" ? (
                               <span className="flex items-center gap-1 rounded-lg bg-orange-100 px-2 py-0.5 text-[9px] font-black text-orange-700 uppercase tracking-tight">
                                 <Clock className="h-3 w-3" />
