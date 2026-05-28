@@ -1,11 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Spinner, Input } from "@sm-visitor/ui";
 import { GlassCard } from "@/components/GlassCard";
 import { visitorsAPI } from "@/lib/api";
-import { getPhotoUrl } from "@/lib/utils";
 import SecureImage from "@/components/ui/SecureImage";
 import { normalizeApprovalStatus } from "@sm-visitor/hooks";
 import {
@@ -14,7 +13,7 @@ import {
   User,
   QrCode,
   Clock,
-  CheckCircle2,
+  Download,
   Trash2,
   Home,
   Briefcase,
@@ -23,6 +22,8 @@ import {
 import toast from "react-hot-toast";
 import { motion, AnimatePresence } from "framer-motion";
 import { useStore } from "@/lib/store";
+import { EntryPassCard } from "@/components/EntryPassCard";
+import { normalizeOrbitRecordDetails, type OrbitRecordDetails } from "@/lib/record-details";
 
 export default function StaffDirectoryPage() {
   const router = useRouter();
@@ -31,7 +32,9 @@ export default function StaffDirectoryPage() {
   const [staff, setStaff] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [filter, setFilter] = useState<"all" | "pending" | "active">("all");
-  const [selectedQR, setSelectedQR] = useState<{ name: string; token: string } | null>(null);
+  const [selectedPass, setSelectedPass] = useState<OrbitRecordDetails | null>(null);
+  const [isDownloadingPass, setIsDownloadingPass] = useState(false);
+  const passCardRef = useRef<HTMLDivElement | null>(null);
 
   const fetchData = async (signal?: AbortSignal) => {
     try {
@@ -59,6 +62,52 @@ export default function StaffDirectoryPage() {
       setStaff((prev) => prev.filter((s) => (s.id || s._id) !== id));
     } catch (error: any) {
       toast.error(error.response?.data?.detail || "Failed to delete request");
+    }
+  };
+
+  const handleOpenEntryPass = (person: any) => {
+    setSelectedPass(
+      normalizeOrbitRecordDetails({
+        ...person,
+        source_record_type: "regular_visitor",
+      })
+    );
+  };
+
+  const handleDownloadEntryPass = async () => {
+    if (!passCardRef.current || !selectedPass) return;
+
+    try {
+      setIsDownloadingPass(true);
+      const { default: html2canvas } = await import("html2canvas");
+      await document.fonts?.ready;
+
+      const canvas = await html2canvas(passCardRef.current, {
+        backgroundColor: "#ffffff",
+        scale: 2,
+        useCORS: true,
+      });
+
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+      if (!blob) {
+        toast.error("Unable to generate entry pass");
+        return;
+      }
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `entry-pass-${selectedPass.fullName.replace(/\s+/g, "-").toLowerCase()}.png`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      toast.success("Entry pass downloaded");
+    } catch (error) {
+      console.error("Failed to download entry pass:", error);
+      toast.error("Failed to download entry pass");
+    } finally {
+      setIsDownloadingPass(false);
     }
   };
 
@@ -151,8 +200,8 @@ export default function StaffDirectoryPage() {
                   >
                     <GlassCard className="h-full group hover:ring-2 hover:ring-primary/20 transition-all border-none shadow-lg">
                       <div className="p-7">
-                        <div className="flex items-start justify-between mb-4">
-                          <div className="flex items-center gap-3">
+                        <div className="mb-4 flex items-start justify-between gap-3">
+                          <div className="flex min-w-0 flex-1 items-center gap-3 overflow-hidden">
                             <div className="relative h-16 w-16 flex-shrink-0 overflow-hidden rounded-2xl bg-muted shadow-sm border-2 border-white/50">
                               {person.photo_url ? (
                                 <SecureImage
@@ -164,17 +213,17 @@ export default function StaffDirectoryPage() {
                                 <User className="m-auto h-8 w-8 text-muted-foreground/50" />
                               )}
                             </div>
-                            <div className="min-w-0">
-                              <h3 className="truncate font-bold text-foreground text-base leading-tight">
+                            <div className="min-w-0 flex-1 overflow-hidden">
+                              <h3 className="overflow-hidden text-ellipsis whitespace-nowrap font-bold text-base leading-tight text-foreground">
                                 {person.name}
                               </h3>
-                              <p className="truncate text-xs font-medium text-muted-foreground">
+                              <p className="overflow-hidden text-ellipsis whitespace-nowrap text-xs font-medium text-muted-foreground">
                                 {person.phone || "No contact info"}
                               </p>
                             </div>
                           </div>
 
-                          <div className="flex flex-col items-end gap-2">
+                          <div className="flex shrink-0 flex-col items-end gap-2">
                             {normalizeApprovalStatus(person.approval_status) === "pending" ? (
                               <span className="flex items-center gap-1 rounded-lg bg-orange-100 px-2 py-0.5 text-[9px] font-black text-orange-700 uppercase tracking-tight">
                                 <Clock className="h-3 w-3" />
@@ -233,9 +282,7 @@ export default function StaffDirectoryPage() {
                             variant="secondary"
                             size="lg"
                             className="w-full font-bold bg-white text-primary rounded-xl shadow-md hover:bg-white/90"
-                            onClick={() =>
-                              setSelectedQR({ name: person.name, token: person.qr_token })
-                            }
+                            onClick={() => handleOpenEntryPass(person)}
                           >
                             <QrCode className="mr-2 h-5 w-5" />
                             Entry Pass
@@ -267,44 +314,17 @@ export default function StaffDirectoryPage() {
         )}
       </main>
       {/* QR Modal */}
-      {selectedQR && (
+      {selectedPass && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-          <GlassCard className="w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="ocean-gradient p-6 text-center text-white">
-              <h2 className="text-xl font-bold">{selectedQR.name}</h2>
-              <p className="text-sm opacity-80 underline underline-offset-4">
-                {staff.find((s) => s.qr_token === selectedQR.token)?.qr_validity_hours
-                  ? `Temporary ${staff.find((s) => s.qr_token === selectedQR.token)?.qr_validity_hours}h Pass`
-                  : "Permanent Entry Pass"}
-              </p>
-            </div>
-            <div className="p-8 flex flex-col items-center">
-              <div className="mb-6 flex h-48 w-48 items-center justify-center rounded-2xl bg-white p-4 shadow-xl">
-                <img
-                  src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(selectedQR.token || "invalid")}`}
-                  alt="Staff QR Code"
-                  className="h-40 w-40"
-                  onError={(e) => {
-                    const target = e.target as HTMLImageElement;
-                    target.style.display = "none";
-                    const parent = target.parentElement;
-                    if (parent) {
-                      const icon = document.createElement("div");
-                      icon.innerHTML = "⚠️";
-                      icon.className = "text-4xl";
-                      parent.appendChild(icon);
-                    }
-                  }}
-                />
-              </div>
-              <p className="mb-6 text-center text-sm text-muted-foreground">
-                Staff can use this QR for automatic entry scanner.
-              </p>
-              <Button onClick={() => setSelectedQR(null)} className="w-full">
-                Close Pass
-              </Button>
-            </div>
-          </GlassCard>
+          <div className="w-full max-w-3xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <EntryPassCard
+              ref={passCardRef}
+              record={selectedPass}
+              onDownload={handleDownloadEntryPass}
+              onClose={() => setSelectedPass(null)}
+              isDownloading={isDownloadingPass}
+            />
+          </div>
         </div>
       )}
     </div>

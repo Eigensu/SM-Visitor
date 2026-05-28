@@ -49,6 +49,13 @@ export interface VisitHistoryItem {
   qr_token?: string | null;
   is_all_flats?: boolean;
   target_flat_ids?: string[];
+  guard_name?: string;
+  approved_at?: string | null;
+  id_type?: string | null;
+  id_number?: string | null;
+  id_photo_url?: string | null;
+  vehicle_number?: string | null;
+  vehicle_type?: string | null;
 }
 
 export interface RegularVisitorHistoryItem {
@@ -59,10 +66,24 @@ export interface RegularVisitorHistoryItem {
   photo_url?: string | null;
   category?: string;
   category_label?: string;
+  flat_id?: string | null;
+  is_all_flats?: boolean;
+  valid_flats?: string[] | null;
   created_at: string;
   approval_status: string;
   assigned_owner_id?: string | null;
   created_by?: string | null;
+  card_type?: string | null;
+  card_number?: string | null;
+  id_card_photo_url?: string | null;
+  vehicle_number?: string | null;
+  vehicle_type?: string | null;
+  approved_at?: string | null;
+  guard_name?: string | null;
+  pass_type?: string | null;
+  qr_validity_hours?: number | null;
+  default_purpose?: string | null;
+  created_by_role?: string | null;
 }
 
 export interface CreateRegularVisitorInput {
@@ -103,6 +124,12 @@ export interface VisitTimelineDetails {
   exit_time?: string | null;
   updated_at?: string | null;
   qr_token?: string | null;
+  approved_at?: string | null;
+  id_type?: string | null;
+  id_number?: string | null;
+  id_photo_url?: string | null;
+  vehicle_number?: string | null;
+  vehicle_type?: string | null;
 }
 
 // Create axios instance

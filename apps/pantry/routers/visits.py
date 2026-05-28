@@ -101,6 +101,7 @@ class StartVisitNewRequest(BaseModel):
 class VisitResponse(BaseModel):
     id: str
     visitor_id: Optional[str]
+    source_record_type: Optional[str] = None
     visitor_type: Optional[str] = None
     name_snapshot: str
     phone_snapshot: Optional[str]
@@ -108,10 +109,17 @@ class VisitResponse(BaseModel):
     purpose: str
     owner_id: str
     guard_id: str
+    guard_name: Optional[str] = None
     entry_time: Optional[datetime]
     exit_time: Optional[datetime]
     status: str
     approval_status: Optional[str] = None
+    approved_at: Optional[datetime] = None
+    id_type: Optional[str] = None
+    id_number: Optional[str] = None
+    id_photo_url: Optional[str] = None
+    vehicle_number: Optional[str] = None
+    vehicle_type: Optional[str] = None
     qr_token: Optional[str] = None
     is_all_flats: bool = False
     valid_flats: Optional[List[str]] = None
@@ -125,6 +133,7 @@ def map_visit_to_response(v: dict) -> VisitResponse:
     return VisitResponse(
         id=str(v["_id"]),
         visitor_id=v.get("visitor_id"),
+        source_record_type="visit",
         visitor_type="regular" if v.get("visitor_id") else "guest",
         name_snapshot=v["name_snapshot"],
         phone_snapshot=v.get("phone_snapshot"),
@@ -136,6 +145,12 @@ def map_visit_to_response(v: dict) -> VisitResponse:
         exit_time=v.get("exit_time"),
         status=status,
         approval_status=status,
+        approved_at=v.get("approved_at"),
+        id_type=v.get("id_type"),
+        id_number=v.get("id_number"),
+        id_photo_url=v.get("id_photo_url"),
+        vehicle_number=v.get("vehicle_number"),
+        vehicle_type=v.get("vehicle_type"),
         qr_token=v.get("qr_token"),
         is_all_flats=v.get("is_all_flats", False),
         valid_flats=v.get("valid_flats"),
@@ -147,7 +162,7 @@ def map_visit_to_response(v: dict) -> VisitResponse:
 def map_regular_visitor_to_today_response(visitor: dict) -> VisitResponse:
     """Map an approved regular visitor into the visit-shaped payload Orbit expects."""
     status = normalize_approval_status(visitor.get("approval_status"), "approved")
-    is_temporary_guest = bool(visitor.get("qr_validity_hours"))
+    is_temporary_guest = classify_regular_visitor_record(visitor) == "guest"
     owner_id = (
         visitor.get("flat_id")
         or visitor.get("assigned_owner_id")
@@ -159,6 +174,7 @@ def map_regular_visitor_to_today_response(visitor: dict) -> VisitResponse:
     return VisitResponse(
         id=str(visitor["_id"]),
         visitor_id=str(visitor["_id"]),
+        source_record_type="regular_visitor",
         # Guest-mode registrations are saved in the visitors collection, but
         # they are temporary guest passes rather than permanent staff entries.
         # Orbit needs this distinction to keep guest/staff counts correct.
@@ -173,12 +189,40 @@ def map_regular_visitor_to_today_response(visitor: dict) -> VisitResponse:
         exit_time=None,
         status=status,
         approval_status=status,
+        approved_at=visitor.get("approved_at") or visitor.get("updated_at") or created_at,
+        id_type=visitor.get("id_card_type"),
+        id_number=visitor.get("id_card_number"),
+        id_photo_url=visitor.get("id_card_photo_url"),
+        vehicle_number=visitor.get("vehicle_number"),
+        vehicle_type=visitor.get("vehicle_type"),
         qr_token=visitor.get("qr_token"),
         is_all_flats=visitor.get("is_all_flats", False),
         valid_flats=visitor.get("valid_flats"),
         target_flat_ids=None,
         created_at=created_at,
     )
+
+
+def classify_regular_visitor_record(visitor: dict) -> str:
+    """Classify a regular visitor using stored registration fields, not label text."""
+    staff_categories = {"maid", "cook", "driver", "delivery"}
+    category = (visitor.get("category") or "").lower()
+    if category in staff_categories:
+        return "staff"
+
+    if visitor.get("qr_validity_hours"):
+        return "guest"
+
+    pass_type = (visitor.get("pass_type") or visitor.get("passType") or "").lower()
+    visitor_type = (visitor.get("visitor_type") or "").lower()
+    if pass_type == "temporary" or visitor_type == "temporary":
+        return "guest"
+
+    default_purpose = (visitor.get("default_purpose") or "").lower()
+    if default_purpose == "visitor" or "guest" in default_purpose:
+        return "guest"
+
+    return "staff"
 
 
 @router.post("/qr-scan", response_model=QRScanResponse)
@@ -769,6 +813,7 @@ async def approve_visit(
                 "status": "approved",
                 "entry_time": get_utc_now(),
                 "updated_at": get_utc_now(),
+                "approved_at": get_utc_now(),
             }
         },
     )
@@ -804,7 +849,13 @@ async def approve_visit(
         entry_time=updated_visit.get("entry_time"),
         exit_time=updated_visit.get("exit_time"),
         status=updated_visit["status"],
+        approved_at=updated_visit.get("approved_at"),
         qr_token=updated_visit.get("qr_token"),
+        id_type=updated_visit.get("id_type"),
+        id_number=updated_visit.get("id_number"),
+        id_photo_url=updated_visit.get("id_photo_url"),
+        vehicle_number=updated_visit.get("vehicle_number"),
+        vehicle_type=updated_visit.get("vehicle_type"),
         created_at=updated_visit["created_at"],
     )
 
@@ -891,7 +942,13 @@ async def reject_visit(
         entry_time=updated_visit.get("entry_time"),
         exit_time=updated_visit.get("exit_time"),
         status=updated_visit["status"],
+        approved_at=updated_visit.get("approved_at"),
         qr_token=updated_visit.get("qr_token"),
+        id_type=updated_visit.get("id_type"),
+        id_number=updated_visit.get("id_number"),
+        id_photo_url=updated_visit.get("id_photo_url"),
+        vehicle_number=updated_visit.get("vehicle_number"),
+        vehicle_type=updated_visit.get("vehicle_type"),
         created_at=updated_visit["created_at"],
     )
 
@@ -937,10 +994,13 @@ async def get_todays_visits(
     # Approved regular visitors are not stored in the visits collection.
     # Without this second query, Orbit's dashboard would miss active staff and
     # only show ad-hoc visit rows.
+    # IMPORTANT: Apply the same date filter as for visits to ensure we only count
+    # today's approved regular visitors, not all-time approved records.
     regular_query: dict[str, object] = {
         "visitor_type": "regular",
         "approval_status": {"$in": ["approved", "auto_approved"]},
         "is_active": True,
+        "created_at": {"$gte": today_start_utc},
     }
 
     if current_user["role"] == "owner":
@@ -1511,6 +1571,71 @@ async def get_dashboard_stats(
     }
 
 
+@router.get("/dashboard/stats")
+async def get_guard_dashboard_stats(
+    current_user: dict = Depends(get_current_guard), db=Depends(get_database)
+):
+    """Get Orbit dashboard stats from live MongoDB data.
+
+    Today's metrics are date-filtered to the current IST calendar day.
+    All-time metrics intentionally have no date filter.
+    """
+    visits_collection = get_visits_collection()
+    visitors_collection = get_visitors_collection()
+
+    today_start_ist = get_ist_now().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start_utc = today_start_ist.astimezone(timezone.utc).replace(tzinfo=None)
+
+    pending_visit_count = await visits_collection.count_documents({"status": "pending"})
+    pending_staff_count = await visitors_collection.count_documents(
+        {"visitor_type": "regular", "approval_status": "pending", "is_active": True}
+    )
+
+    today_visit_count = await visits_collection.count_documents(
+        {"created_at": {"$gte": today_start_utc}}
+    )
+    today_staff_count = await visitors_collection.count_documents(
+        {
+            "visitor_type": "regular",
+            "approval_status": {"$in": ["approved", "auto_approved"]},
+            "is_active": True,
+            "created_at": {"$gte": today_start_utc},
+        }
+    )
+
+    active_now_count = await visits_collection.count_documents(
+        {"entry_time": {"$ne": None}, "exit_time": None}
+    )
+
+    approved_regular_visitors = await visitors_collection.find(
+        {
+            "visitor_type": "regular",
+            "approval_status": {"$in": ["approved", "auto_approved"]},
+            "is_active": True,
+        }
+    ).to_list(length=1000)
+
+    total_guest_count = 0
+    total_staff_count = 0
+    for visitor in approved_regular_visitors:
+        if classify_regular_visitor_record(visitor) == "guest":
+            total_guest_count += 1
+        else:
+            total_staff_count += 1
+
+    return {
+        "pending_actions_count": pending_visit_count + pending_staff_count,
+        "pending_visit_count": pending_visit_count,
+        "pending_staff_count": pending_staff_count,
+        "today_visits_count": today_visit_count + today_staff_count,
+        "today_visit_count": today_visit_count,
+        "today_staff_count": today_staff_count,
+        "active_now_count": active_now_count,
+        "total_guest_count": total_guest_count,
+        "total_staff_count": total_staff_count,
+    }
+
+
 @router.get("/stats/weekly")
 async def get_weekly_stats(
     current_user: dict = Depends(get_current_owner), db=Depends(get_database)
@@ -1622,6 +1747,7 @@ async def get_visit_details(
     entry_time = visit.get("entry_time")
     exit_time = visit.get("exit_time")
     updated_at = visit.get("updated_at")
+    approved_at = visit.get("approved_at") or updated_at
 
     return {
         "id": str(visit["_id"]),
@@ -1640,6 +1766,9 @@ async def get_visit_details(
         "id_type": visit.get("id_type"),
         "id_number": visit.get("id_number"),
         "id_photo_url": visit.get("id_photo_url"),
+        "vehicle_number": visit.get("vehicle_number"),
+        "vehicle_type": visit.get("vehicle_type"),
+        "approved_at": approved_at.isoformat() if isinstance(approved_at, datetime) else None,
         "created_at": visit["created_at"].isoformat(),
         "updated_at": updated_at.isoformat()
         if isinstance(updated_at, datetime)

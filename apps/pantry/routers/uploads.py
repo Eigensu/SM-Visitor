@@ -114,6 +114,9 @@ async def get_regular_visitor_photo(
     Returns the image file
     """
     from fastapi.responses import Response
+    from bson import ObjectId
+    from motor.motor_asyncio import AsyncIOMotorGridFSBucket
+    from database import get_database
     # Validate Authorization header first (existing protected behavior)
     from fastapi.responses import Response
     auth = request.headers.get("authorization")
@@ -121,6 +124,16 @@ async def get_regular_visitor_photo(
     # Helper to load and return photo bytes
     async def _load_and_respond(fid: str):
         photo_data = await photo_storage.get_regular_visitor_photo(fid)
+        if not photo_data and ObjectId.is_valid(fid):
+            # Backward compatibility: older ID-card uploads were saved in
+            # visitor_photos_buffer but resolved via the regular photo route.
+            try:
+                db = get_database()
+                fs_buffer = AsyncIOMotorGridFSBucket(db, bucket_name="visitor_photos_buffer")
+                grid_out = await fs_buffer.open_download_stream(ObjectId(fid))
+                photo_data = await grid_out.read()
+            except Exception:
+                photo_data = None
         if not photo_data:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Photo not found"
@@ -163,7 +176,9 @@ async def get_regular_visitor_photo(
 
 @router.get("/photo/regular/{file_id}/signed-url")
 async def get_signed_regular_photo_url(
-    file_id: str, current_user: dict = Depends(get_current_user)
+    file_id: str,
+    request: Request,
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Generate a short-lived signed URL for a GridFS photo. Requires an authenticated owner, guard, or admin.
@@ -179,7 +194,8 @@ async def get_signed_regular_photo_url(
     msg = f"{file_id}:{exp_ts}".encode()
     sig = hmac.new(PHOTO_SIGNING_SECRET.encode(), msg, hashlib.sha256).hexdigest()
 
-    signed_url = f"{PANTRY_URL}/uploads/photo/regular/{file_id}?exp={exp_ts}&sig={sig}"
+    base_url = str(request.base_url).rstrip("/")
+    signed_url = f"{base_url}/uploads/photo/regular/{file_id}?exp={exp_ts}&sig={sig}"
     return {"signed_url": signed_url}
 
 

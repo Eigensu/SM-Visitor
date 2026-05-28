@@ -10,6 +10,18 @@ import {
   normalizeVisitRecord,
 } from "@sm-visitor/hooks";
 
+export interface DashboardStats {
+  pending_actions_count: number;
+  pending_visit_count: number;
+  pending_staff_count: number;
+  today_visits_count: number;
+  today_visit_count: number;
+  today_staff_count: number;
+  active_now_count: number;
+  total_guest_count: number;
+  total_staff_count: number;
+}
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 const isBrowser = typeof window !== "undefined";
@@ -95,6 +107,11 @@ export const authAPI = {
 
 // Visits API
 export const visitsAPI = {
+  getDashboardStats: async (signal?: AbortSignal): Promise<DashboardStats> => {
+    const response = await apiClient.get("/visits/dashboard/stats", { signal });
+    return response.data;
+  },
+
   scanQR: async (qr_token: string) => {
     const response = await apiClient.post("/visits/qr-scan", { qr_token });
     return response.data;
@@ -161,6 +178,10 @@ export const visitsAPI = {
 export const visitorsAPI = {
   createRegularByGuard: async (data: FormData) => {
     const response = await apiClient.post("/visitors/regular/guard", data);
+    return response.data;
+  },
+  getRegularVisitor: async (visitorId: string, signal?: AbortSignal) => {
+    const response = await apiClient.get(`/visitors/${visitorId}`, { signal });
     return response.data;
   },
   list: async (signal?: AbortSignal) => {

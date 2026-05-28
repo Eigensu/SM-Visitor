@@ -14,12 +14,15 @@ import { visitsAPI } from "@/lib/api";
 import { formatTime } from "@/lib/utils";
 import { useStore } from "@/lib/store";
 import toast from "react-hot-toast";
-import { ArrowLeft, Search, X, Phone, User, Clock, Shield, CreditCard } from "lucide-react";
+import { ArrowLeft, Search } from "lucide-react";
 import SecureImage from "@/components/ui/SecureImage";
+import { RecordDetailsModal } from "@/components/RecordDetailsModal";
+import { fetchOrbitRecordDetails, type OrbitRecordDetails } from "@/lib/record-details";
 
 interface Visit {
   id: string;
   _id?: string;
+  source_record_type?: "visit" | "regular_visitor";
   visitor_id?: string | null;
   name_snapshot?: string;
   name?: string;
@@ -50,7 +53,7 @@ export default function HistoryPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [isLoading, setIsLoading] = useState(true);
-  const [selectedVisit, setSelectedVisit] = useState<Visit | null>(null);
+  const [selectedVisit, setSelectedVisit] = useState<OrbitRecordDetails | null>(null);
   const [isLoadingDetails, setIsLoadingDetails] = useState(false);
 
   useEffect(() => {
@@ -96,10 +99,13 @@ export default function HistoryPage() {
     setFilteredVisits(filtered);
   };
 
-  const handleViewDetails = async (visitId: string) => {
+  const handleViewDetails = async (visit: Visit) => {
     setIsLoadingDetails(true);
     try {
-      const details = await visitsAPI.getVisit(visitId);
+      const details = await fetchOrbitRecordDetails({
+        id: visit.id,
+        source_record_type: visit.source_record_type,
+      });
       setSelectedVisit(details);
     } catch (error: any) {
       console.error("Failed to fetch visit details:", error);
@@ -262,7 +268,7 @@ export default function HistoryPage() {
                   </div>
                   <div className="flex flex-col gap-2">
                     <Button
-                      onClick={() => handleViewDetails(visit.id)}
+                      onClick={() => handleViewDetails(visit)}
                       size="sm"
                       variant="secondary"
                       disabled={isLoadingDetails}
@@ -288,103 +294,11 @@ export default function HistoryPage() {
       </main>
 
       {/* Visit Details Modal */}
-      {selectedVisit && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between border-b p-4">
-              <h2 className="text-lg font-semibold text-gray-900">Visit Details</h2>
-              <button
-                onClick={() => setSelectedVisit(null)}
-                className="rounded-full p-1 hover:bg-gray-100"
-              >
-                <X className="h-5 w-5 text-gray-500" />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-4 space-y-4">
-              {/* Photo + Name */}
-              <div className="flex items-center gap-4">
-                <SecureImage
-                  srcRaw={selectedVisit.photo || selectedVisit.photo_snapshot_url}
-                  alt={selectedVisit.name || selectedVisit.name_snapshot || "Visitor"}
-                  className="h-20 w-20 rounded-full border-2 border-gray-200 object-cover"
-                />
-                <div>
-                  <h3 className="text-xl font-bold text-gray-900">
-                    {selectedVisit.name || selectedVisit.name_snapshot || "Unknown Visitor"}
-                  </h3>
-                  <StatusBadge status={selectedVisit.status} />
-                </div>
-              </div>
-
-              {/* Details Grid */}
-              <div className="space-y-3 rounded-xl bg-gray-50 p-4">
-                <DetailRow
-                  icon={<Phone className="h-4 w-4" />}
-                  label="Phone"
-                  value={selectedVisit.phone || selectedVisit.phone_snapshot || "N/A"}
-                />
-                <DetailRow
-                  icon={<User className="h-4 w-4" />}
-                  label="Purpose"
-                  value={selectedVisit.purpose || "Visit"}
-                />
-                <DetailRow
-                  icon={<User className="h-4 w-4" />}
-                  label="Flat"
-                  value={
-                    selectedVisit.target_flat_ids?.join(", ") || selectedVisit.owner_id || "N/A"
-                  }
-                />
-                <DetailRow
-                  icon={<Shield className="h-4 w-4" />}
-                  label="Guard"
-                  value={selectedVisit.guard_name || "Unknown"}
-                />
-                <DetailRow
-                  icon={<Clock className="h-4 w-4" />}
-                  label="Entry"
-                  value={
-                    selectedVisit.entry_time ? formatTime(selectedVisit.entry_time) : "Not yet"
-                  }
-                />
-                {selectedVisit.exit_time && (
-                  <DetailRow
-                    icon={<Clock className="h-4 w-4" />}
-                    label="Exit"
-                    value={formatTime(selectedVisit.exit_time)}
-                  />
-                )}
-                {selectedVisit.id_type && (
-                  <DetailRow
-                    icon={<CreditCard className="h-4 w-4" />}
-                    label={selectedVisit.id_type === "aadhar" ? "Aadhar No." : "PAN No."}
-                    value={selectedVisit.id_number || "N/A"}
-                  />
-                )}
-                {selectedVisit.id_photo_url && (
-                  <div className="pt-1">
-                    <p className="mb-1.5 text-sm text-gray-500">ID Card Photo</p>
-                    <SecureImage
-                      srcRaw={selectedVisit.id_photo_url}
-                      alt="ID card"
-                      className="w-full rounded-lg border object-cover"
-                    />
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="border-t p-4">
-              <Button onClick={() => setSelectedVisit(null)} className="w-full" variant="secondary">
-                Close
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      <RecordDetailsModal
+        record={selectedVisit}
+        open={selectedVisit !== null}
+        onClose={() => setSelectedVisit(null)}
+      />
     </div>
   );
 }
