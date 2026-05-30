@@ -9,6 +9,7 @@ import { Card, CardBody } from "@sm-visitor/ui";
 import { Button } from "@sm-visitor/ui";
 import { Spinner } from "@sm-visitor/ui";
 import { useStore } from "@/lib/store";
+import SecureImage from "@/components/ui/SecureImage";
 
 interface WaitingScreenProps {
   visit: {
@@ -85,8 +86,8 @@ export function WaitingScreen({
             <div className="space-y-2">
               {visit.photo_snapshot_url && (
                 <div className="flex justify-center">
-                  <img
-                    src={visit.photo_snapshot_url}
+                  <SecureImage
+                    srcRaw={visit.photo_snapshot_url}
                     alt={visit.name_snapshot}
                     className="h-24 w-24 rounded-full border-2 border-gray-300 object-cover"
                   />

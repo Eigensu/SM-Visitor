@@ -5,16 +5,24 @@
  */
 "use client";
 
-import { useState, Suspense } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Button } from "@sm-visitor/ui";
-import { Input } from "@sm-visitor/ui";
+import { Button, Input } from "@sm-visitor/ui";
 import { PhotoCapture } from "@/components/PhotoCapture";
 import { OwnerSelect } from "@/components/OwnerSelect";
 import { GlassCard } from "@/components/GlassCard";
 import { visitorsAPI } from "@/lib/api";
 import toast from "react-hot-toast";
-import { ArrowLeft, UserCheck, Clock, CreditCard, Camera } from "lucide-react";
+import { ArrowLeft, UserCheck, Clock, CreditCard, Camera, User } from "lucide-react";
+import {
+  dedupeOrbitAutofillRecords,
+  fetchFileFromUrl,
+  normalizeOrbitAutofillRecord,
+  resolveOrbitStoredPhotoUrl,
+  searchOrbitAutofillRecords,
+  type OrbitAutofillRecord,
+} from "@/lib/autofill";
+import SecureImage from "@/components/ui/SecureImage";
 
 const ID_CARD_TYPES = [
   { id: "aadhaar", label: "Aadhaar" },
@@ -28,25 +36,214 @@ const ID_CARD_TYPES = [
 function RegularVisitorContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const mode = searchParams.get("mode") || "staff"; // default to staff
+  const mode = searchParams.get("mode") || "staff";
   const isGuestMode = mode === "guest";
 
   const [step, setStep] = useState<"form" | "pending">("form");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [photoBlob, setPhotoBlob] = useState<Blob | null>(null);
-  const [idCardPhotoBlob, setIdCardPhotoBlob] = useState<Blob | null>(null);
+  const [photoBlob, setPhotoBlob] = useState<File | null>(null);
+  const [idCardPhotoBlob, setIdCardPhotoBlob] = useState<File | null>(null);
+  const [lookupRecords, setLookupRecords] = useState<OrbitAutofillRecord[]>([]);
+  const [isLookupLoading, setIsLookupLoading] = useState(true);
+  const [nameMatches, setNameMatches] = useState<OrbitAutofillRecord[]>([]);
+  const [phoneMatches, setPhoneMatches] = useState<OrbitAutofillRecord[]>([]);
+  const [idMatches, setIdMatches] = useState<OrbitAutofillRecord[]>([]);
 
   const [formData, setFormData] = useState({
     name: "",
     phone: "",
     owner_id: "",
     default_purpose: "",
-    validity_hours: "24", // Default to 24 for guests
+    validity_hours: "24",
     id_card_type: "aadhaar",
     id_card_number: "",
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const clearMatches = () => {
+    setNameMatches([]);
+    setPhoneMatches([]);
+    setIdMatches([]);
+  };
+
+  const applyLookupRecord = async (record: OrbitAutofillRecord) => {
+    setFormData((prev) => ({
+      ...prev,
+      name: record.name || prev.name,
+      phone: record.phone || prev.phone,
+      owner_id:
+        record.raw.owner_id || record.raw.assigned_owner_id || record.raw.flat_id || prev.owner_id,
+      default_purpose: record.purpose || prev.default_purpose,
+      validity_hours:
+        isGuestMode && record.raw.qr_validity_hours
+          ? String(record.raw.qr_validity_hours)
+          : prev.validity_hours,
+      id_card_type: record.idType || prev.id_card_type,
+      id_card_number: record.idNumber || prev.id_card_number,
+    }));
+
+    if (record.photoUrl) {
+      try {
+        const resolvedPhotoUrl = await resolveOrbitStoredPhotoUrl(record.photoUrl);
+        const file = await fetchFileFromUrl(
+          resolvedPhotoUrl || record.photoUrl,
+          `${record.name || "visitor"}.jpg`
+        );
+        setPhotoBlob(file);
+      } catch (error) {
+        console.error("Failed to load visitor photo for autofill:", error);
+        setPhotoBlob(null);
+      }
+    } else {
+      setPhotoBlob(null);
+    }
+
+    if (record.idCardPhotoUrl) {
+      try {
+        const resolvedIdUrl = await resolveOrbitStoredPhotoUrl(record.idCardPhotoUrl);
+        const file = await fetchFileFromUrl(
+          resolvedIdUrl || record.idCardPhotoUrl,
+          `${record.name || "id-card"}.jpg`
+        );
+        setIdCardPhotoBlob(file);
+      } catch (error) {
+        console.error("Failed to load ID photo for autofill:", error);
+        setIdCardPhotoBlob(null);
+      }
+    } else {
+      setIdCardPhotoBlob(null);
+    }
+
+    clearMatches();
+  };
+
+  const renderMatches = (matches: OrbitAutofillRecord[]) => {
+    if (matches.length <= 1) return null;
+
+    return (
+      <div className="mt-2 space-y-2 rounded-xl border border-border/60 bg-background p-3 shadow-sm">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Multiple matches found
+        </p>
+        <div className="max-h-56 space-y-2 overflow-y-auto">
+          {matches.slice(0, 6).map((record) => (
+            <button
+              key={`${record.source}-${record.id}`}
+              type="button"
+              onClick={() => void applyLookupRecord(record)}
+              className="flex w-full items-center gap-3 rounded-lg border border-border/60 px-3 py-2 text-left transition-colors hover:bg-muted"
+            >
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted">
+                {record.photoUrl ? (
+                  <SecureImage
+                    srcRaw={record.photoUrl}
+                    alt={record.name}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <User className="h-5 w-5 text-muted-foreground" />
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <p className="truncate text-sm font-semibold text-foreground">{record.name}</p>
+                  <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase text-muted-foreground">
+                    {record.typeLabel}
+                  </span>
+                </div>
+                <p className="truncate text-xs text-muted-foreground">
+                  {record.phone || "No phone"}
+                </p>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  useEffect(() => {
+    let isActive = true;
+
+    const loadLookupRecords = async () => {
+      try {
+        setIsLookupLoading(true);
+        const [activeRegular, pendingRegular, historyRegular] = await Promise.all([
+          visitorsAPI.getRegularVisitors(),
+          visitorsAPI.getPendingRegular(),
+          visitorsAPI.getHistoryRegular(),
+        ]);
+
+        const combined = dedupeOrbitAutofillRecords([
+          ...activeRegular.map(normalizeOrbitAutofillRecord),
+          ...pendingRegular.map(normalizeOrbitAutofillRecord),
+          ...historyRegular.map(normalizeOrbitAutofillRecord),
+        ]);
+
+        if (isActive) {
+          setLookupRecords(combined);
+        }
+      } catch (error) {
+        console.error("Failed to load autofill records:", error);
+      } finally {
+        if (isActive) {
+          setIsLookupLoading(false);
+        }
+      }
+    };
+
+    loadLookupRecords();
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const query = formData.name.trim();
+    if (query.length < 3) {
+      setNameMatches([]);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      const matches = searchOrbitAutofillRecords(lookupRecords, query, "name");
+      setNameMatches(matches);
+      if (matches.length === 1) {
+        void applyLookupRecord(matches[0]);
+      }
+    }, 300);
+
+    return () => window.clearTimeout(timer);
+  }, [formData.name, lookupRecords]);
+
+  useEffect(() => {
+    const digits = formData.phone.replace(/\D/g, "");
+    if (digits.length !== 10) {
+      setPhoneMatches([]);
+      return;
+    }
+
+    const matches = searchOrbitAutofillRecords(lookupRecords, digits, "phone");
+    setPhoneMatches(matches);
+    if (matches.length === 1) {
+      void applyLookupRecord(matches[0]);
+    }
+  }, [formData.phone, lookupRecords]);
+
+  useEffect(() => {
+    const value = formData.id_card_number.trim();
+    if (!value) {
+      setIdMatches([]);
+      return;
+    }
+
+    const matches = searchOrbitAutofillRecords(lookupRecords, value, "id");
+    setIdMatches(matches);
+    if (matches.length === 1) {
+      void applyLookupRecord(matches[0]);
+    }
+  }, [formData.id_card_number, lookupRecords]);
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
@@ -80,7 +277,6 @@ function RegularVisitorContent() {
       data.append("id_card_type", formData.id_card_type);
       data.append("id_card_number", formData.id_card_number);
 
-      // Only append qr_validity_hours if in guest mode to avoid sending empty strings
       if (isGuestMode) {
         data.append("qr_validity_hours", formData.validity_hours);
       }
@@ -120,18 +316,18 @@ function RegularVisitorContent() {
       <div className="flex min-h-screen flex-col items-center justify-center bg-background px-4 text-center">
         <GlassCard className="max-w-md p-8">
           <div
-            className={`mb-6 flex h-20 w-20 items-center justify-center rounded-full mx-auto ${isGuestMode ? "bg-orange-500/10 text-orange-500" : "bg-pending/10 text-pending"}`}
+            className={`mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full ${isGuestMode ? "bg-orange-500/10 text-orange-500" : "bg-pending/10 text-pending"}`}
           >
             {isGuestMode ? <Clock className="h-10 w-10" /> : <UserCheck className="h-10 w-10" />}
           </div>
-          <h2 className="text-2xl font-bold text-foreground mb-2">
+          <h2 className="mb-2 text-2xl font-bold text-foreground">
             {isGuestMode ? "Pass Requested" : "Registration Sent"}
           </h2>
-          <p className="text-muted-foreground mb-8">
+          <p className="mb-8 text-muted-foreground">
             The registration request for <strong>{formData.name}</strong> has been sent to the owner
             for approval. Once approved, the visitor will be active.
           </p>
-          <Button onClick={() => router.push("/dashboard")} className="w-full ocean-gradient">
+          <Button onClick={() => router.push("/dashboard")} className="ocean-gradient w-full">
             Back to Dashboard
           </Button>
         </GlassCard>
@@ -160,7 +356,7 @@ function RegularVisitorContent() {
       <main className="mx-auto max-w-2xl px-4 py-8 sm:px-6 lg:px-8">
         <form onSubmit={handleSubmit} className="space-y-6">
           <GlassCard>
-            <h2 className="mb-4 text-lg font-semibold text-foreground border-b pb-2">
+            <h2 className="mb-4 border-b pb-2 text-lg font-semibold text-foreground">
               Basic Details
             </h2>
             <div className="space-y-4">
@@ -172,6 +368,8 @@ function RegularVisitorContent() {
                 error={errors.name}
                 required
               />
+              {!isLookupLoading && renderMatches(nameMatches)}
+
               <Input
                 label="Phone Number"
                 placeholder="Enter 10-digit phone"
@@ -184,6 +382,7 @@ function RegularVisitorContent() {
                   })
                 }
               />
+              {!isLookupLoading && renderMatches(phoneMatches)}
 
               {isGuestMode && (
                 <div className="space-y-1.5 pt-2">
@@ -212,7 +411,7 @@ function RegularVisitorContent() {
           </GlassCard>
 
           <GlassCard>
-            <h2 className="mb-4 text-lg font-semibold text-foreground border-b pb-2">
+            <h2 className="mb-4 border-b pb-2 text-lg font-semibold text-foreground">
               Flat Assignment
             </h2>
             <p className="mb-4 text-sm text-muted-foreground">
@@ -226,15 +425,19 @@ function RegularVisitorContent() {
           </GlassCard>
 
           <GlassCard>
-            <h2 className="mb-4 text-lg font-semibold text-foreground border-b pb-2">
+            <h2 className="mb-4 border-b pb-2 text-lg font-semibold text-foreground">
               Visitor Photo
             </h2>
-            <PhotoCapture autoUpload={false} onFileSelected={(file) => setPhotoBlob(file)} />
+            <PhotoCapture
+              initialFile={photoBlob}
+              autoUpload={false}
+              onFileSelected={(file) => setPhotoBlob(file)}
+            />
             {errors.photo && <p className="mt-2 text-xs text-destructive">{errors.photo}</p>}
           </GlassCard>
 
           <GlassCard>
-            <h2 className="mb-4 text-lg font-semibold text-foreground border-b pb-2 flex items-center gap-2">
+            <h2 className="mb-4 flex items-center gap-2 border-b pb-2 text-lg font-semibold text-foreground">
               <CreditCard className="h-5 w-5 text-primary" />
               Identity Card
             </h2>
@@ -271,9 +474,10 @@ function RegularVisitorContent() {
                 error={errors.id_card_number}
                 required
               />
+              {!isLookupLoading && renderMatches(idMatches)}
 
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
+                <label className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
                   <Camera className="h-4 w-4" />
                   Photo of ID Card <span className="text-red-500">*</span>
                 </label>
@@ -281,6 +485,7 @@ function RegularVisitorContent() {
                   Take a clear photo of the identity card.
                 </p>
                 <PhotoCapture
+                  initialFile={idCardPhotoBlob}
                   autoUpload={false}
                   onFileSelected={(file) => setIdCardPhotoBlob(file)}
                 />
@@ -293,7 +498,7 @@ function RegularVisitorContent() {
 
           <Button
             type="submit"
-            className={`w-full h-12 text-lg font-semibold ${isGuestMode ? "bg-orange-600 hover:bg-orange-700" : "ocean-gradient"}`}
+            className={`h-12 w-full text-lg font-semibold ${isGuestMode ? "bg-orange-600 hover:bg-orange-700" : "ocean-gradient"}`}
             disabled={isSubmitting}
           >
             {isSubmitting ? "Submitting..." : isGuestMode ? "Issue 24h Pass" : "Send for Approval"}
