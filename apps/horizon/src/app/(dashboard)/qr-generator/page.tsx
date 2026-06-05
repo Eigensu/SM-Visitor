@@ -9,24 +9,16 @@ import { useState, useEffect } from "react";
 import { tempQRAPI, visitorsAPI } from "@/lib/api";
 import SecureImage from "@/components/ui/SecureImage";
 import toast from "react-hot-toast";
+import {
+  dedupeHorizonAutofillRecords,
+  normalizeHorizonAutofillRecord,
+  searchHorizonAutofillRecords,
+  type HorizonAutofillRecord,
+} from "@/lib/autofill";
 
 import { downloadQRCode, downloadQRFromSVG } from "@/lib/download-utils";
 
 export default function QRGenerator() {
-  interface RegularVisitorProfile {
-    id?: string;
-    _id?: string;
-    name?: string;
-    phone?: string | null;
-    photo_url?: string | null;
-    default_purpose?: string | null;
-    visitor_type?: string;
-    category?: string;
-    category_label?: string;
-    vehicle_number?: string;
-    vehicle_type?: string;
-  }
-
   const [activeQR, setActiveQR] = useState<any>(null);
   const [history, setHistory] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -44,8 +36,8 @@ export default function QRGenerator() {
   const [isAllFlats, setIsAllFlats] = useState(false);
   const [selectedFlats, setSelectedFlats] = useState<string[]>([]);
   const [availableFlats, setAvailableFlats] = useState<string[]>([]);
-  const [knownVisitors, setKnownVisitors] = useState<RegularVisitorProfile[]>([]);
-  const [matchingVisitors, setMatchingVisitors] = useState<RegularVisitorProfile[]>([]);
+  const [knownVisitors, setKnownVisitors] = useState<HorizonAutofillRecord[]>([]);
+  const [matchingVisitors, setMatchingVisitors] = useState<HorizonAutofillRecord[]>([]);
   const [fieldTouched, setFieldTouched] = useState({
     guestName: false,
     visitorPhone: false,
@@ -73,8 +65,19 @@ export default function QRGenerator() {
     const fetchKnownVisitors = async () => {
       try {
         setIsLookupLoading(true);
-        const data = await visitorsAPI.getRegularVisitors();
-        setKnownVisitors(data || []);
+        const [activeRegular, pendingRegular, historyRegular] = await Promise.all([
+          visitorsAPI.getRegularVisitors(),
+          visitorsAPI.getPendingRegular(),
+          visitorsAPI.getHistoryRegular(),
+        ]);
+
+        const combined = dedupeHorizonAutofillRecords([
+          ...activeRegular.map(normalizeHorizonAutofillRecord),
+          ...pendingRegular.map(normalizeHorizonAutofillRecord),
+          ...historyRegular.map(normalizeHorizonAutofillRecord),
+        ]);
+
+        setKnownVisitors(combined);
       } catch (error) {
         console.error("Failed to fetch visitors for QR autofill:", error);
       } finally {
@@ -98,38 +101,50 @@ export default function QRGenerator() {
     fetchFlats();
   }, []);
 
-  const applyVisitorAutofill = (visitor: RegularVisitorProfile) => {
+  const applyVisitorAutofill = (visitor: HorizonAutofillRecord) => {
     setGuestName((prev) => (fieldTouched.guestName && prev ? prev : visitor.name || prev));
     setVisitorPhone((prev) => (fieldTouched.visitorPhone && prev ? prev : visitor.phone || ""));
     setVisitorPurpose((prev) =>
-      fieldTouched.visitorPurpose && prev ? prev : visitor.default_purpose || ""
+      fieldTouched.visitorPurpose && prev ? prev : visitor.purpose || ""
     );
     setVisitorType((prev) =>
-      fieldTouched.visitorType && prev ? prev : visitor.visitor_type || "regular"
+      fieldTouched.visitorType && prev ? prev : visitor.raw.visitor_type || "regular"
     );
     setVehicleNumber((prev) =>
-      fieldTouched.vehicleNumber && prev ? prev : visitor.vehicle_number || ""
+      fieldTouched.vehicleNumber && prev ? prev : visitor.vehicleNumber || ""
     );
-    setVisitorPhotoUrl(visitor.photo_url || "");
+    setVisitorPhotoUrl(visitor.photoUrl || "");
   };
 
   useEffect(() => {
-    const query = guestName.trim().toLowerCase();
-    if (!query) {
+    const query = guestName.trim();
+    if (query.length < 3) {
       setMatchingVisitors([]);
       return;
     }
 
-    const matches = knownVisitors.filter((visitor) => {
-      const name = (visitor.name || "").toLowerCase();
-      return name.includes(query);
-    });
-    setMatchingVisitors(matches);
+    const timer = window.setTimeout(() => {
+      const matches = searchHorizonAutofillRecords(knownVisitors, query, "name");
+      setMatchingVisitors(matches);
+      if (matches.length === 1) {
+        applyVisitorAutofill(matches[0]);
+      }
+    }, 300);
 
+    return () => window.clearTimeout(timer);
+  }, [guestName, knownVisitors]);
+
+  useEffect(() => {
+    const digits = visitorPhone.replace(/\D/g, "");
+    if (digits.length !== 10) {
+      return;
+    }
+
+    const matches = searchHorizonAutofillRecords(knownVisitors, digits, "phone");
     if (matches.length === 1) {
       applyVisitorAutofill(matches[0]);
     }
-  }, [guestName, knownVisitors]);
+  }, [visitorPhone, knownVisitors]);
 
   const handleGenerate = async () => {
     try {
@@ -266,18 +281,7 @@ export default function QRGenerator() {
                   setFieldTouched((prev) => ({ ...prev, guestName: true }));
                   setGuestName(e.target.value);
                 }}
-                list="known-visitor-names"
               />
-              <datalist id="known-visitor-names">
-                {knownVisitors.map((visitor) => {
-                  const key = visitor.id || visitor._id || `${visitor.name}-${visitor.phone}`;
-                  return (
-                    <option key={key} value={visitor.name || ""}>
-                      {visitor.phone || ""}
-                    </option>
-                  );
-                })}
-              </datalist>
 
               {isLookupLoading ? (
                 <div className="text-xs text-muted-foreground">Loading saved visitors...</div>
@@ -293,19 +297,32 @@ export default function QRGenerator() {
                     </p>
                     <div className="space-y-2">
                       {matchingVisitors.slice(0, 5).map((visitor) => {
-                        const key = visitor.id || visitor._id || `${visitor.name}-${visitor.phone}`;
+                        const key = visitor.id;
                         return (
                           <button
                             key={key}
                             type="button"
-                            className="w-full rounded-md border border-border px-3 py-2 text-left text-xs hover:bg-muted"
+                            className="flex w-full items-center gap-3 rounded-md border border-border px-3 py-2 text-left text-xs hover:bg-muted"
                             onClick={() => applyVisitorAutofill(visitor)}
                           >
-                            <span className="font-medium text-foreground">
-                              {visitor.name || "Unknown"}
-                            </span>
-                            <span className="ml-2 text-muted-foreground">
-                              {visitor.phone || "No phone"}
+                            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted">
+                              {visitor.photoUrl ? (
+                                <SecureImage
+                                  srcRaw={visitor.photoUrl}
+                                  alt={visitor.name || "Visitor"}
+                                  className="h-full w-full object-cover"
+                                />
+                              ) : (
+                                <User className="h-5 w-5 text-muted-foreground" />
+                              )}
+                            </div>
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate font-medium text-foreground">
+                                {visitor.name || "Unknown"}
+                              </span>
+                              <span className="block truncate text-muted-foreground">
+                                {visitor.phone || "No phone"}
+                              </span>
                             </span>
                           </button>
                         );

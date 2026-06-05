@@ -112,6 +112,11 @@ export const visitsAPI = {
     return response.data;
   },
 
+  getHistory: async (signal?: AbortSignal) => {
+    const response = await apiClient.get("/visits/history", { signal });
+    return response.data;
+  },
+
   scanQR: async (qr_token: string) => {
     const response = await apiClient.post("/visits/qr-scan", { qr_token });
     return response.data;
@@ -179,6 +184,26 @@ export const visitorsAPI = {
   createRegularByGuard: async (data: FormData) => {
     const response = await apiClient.post("/visitors/regular/guard", data);
     return response.data;
+  },
+  getRegularVisitors: async (signal?: AbortSignal) => {
+    const response = await apiClient.get("/visitors/", { signal });
+    return normalizeRegularVisitorList(response.data).filter(
+      (visitor) => visitor.visitor_type === "regular" && visitor.approval_status === "approved"
+    );
+  },
+  getPendingRegular: async (signal?: AbortSignal) => {
+    const response = await apiClient.get("/visitors/", { signal });
+    return normalizeRegularVisitorList(response.data).filter(
+      (visitor) => visitor.visitor_type === "regular" && visitor.approval_status === "pending"
+    );
+  },
+  getHistoryRegular: async (signal?: AbortSignal) => {
+    const response = await apiClient.get("/visitors/", { signal });
+    return normalizeRegularVisitorList(response.data).filter(
+      (visitor) =>
+        visitor.visitor_type === "regular" &&
+        (visitor.approval_status === "approved" || visitor.approval_status === "rejected")
+    );
   },
   getRegularVisitor: async (visitorId: string, signal?: AbortSignal) => {
     const response = await apiClient.get(`/visitors/${visitorId}`, { signal });

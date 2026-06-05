@@ -7,12 +7,15 @@
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@sm-visitor/ui";
 import { uploadsAPI } from "@/lib/api";
+import { resolveOrbitStoredPhotoUrl } from "@/lib/autofill";
 import toast from "react-hot-toast";
 
 interface PhotoCaptureProps {
   onPhotoUploaded?: (photoUrl: string) => void;
   onFileSelected?: (file: File) => void;
   autoUpload?: boolean;
+  initialPreviewUrl?: string;
+  initialFile?: File | null;
 }
 
 type CameraState = "idle" | "camera" | "preview";
@@ -21,6 +24,8 @@ export function PhotoCapture({
   onPhotoUploaded,
   onFileSelected,
   autoUpload = true,
+  initialPreviewUrl,
+  initialFile,
 }: PhotoCaptureProps) {
   const [cameraState, setCameraState] = useState<CameraState>("idle");
   const [photoFile, setPhotoFile] = useState<File | null>(null);
@@ -66,6 +71,45 @@ export function PhotoCapture({
 
   const [isUploaded, setIsUploaded] = useState(false);
   const [photoName, setPhotoName] = useState<string>("");
+
+  useEffect(() => {
+    let objectUrl: string | null = null;
+    let cancelled = false;
+
+    const loadPreview = async () => {
+      if (initialFile) {
+        objectUrl = URL.createObjectURL(initialFile);
+        if (cancelled) return;
+        setPhotoFile(initialFile);
+        setPhotoPreview(objectUrl);
+        setPhotoName(initialFile.name);
+        setCameraState("preview");
+        setIsUploaded(false);
+        return;
+      }
+
+      if (initialPreviewUrl) {
+        const resolvedUrl = await resolveOrbitStoredPhotoUrl(initialPreviewUrl).catch(
+          () => initialPreviewUrl
+        );
+        if (cancelled) return;
+        setPhotoFile(null);
+        setPhotoPreview(resolvedUrl || initialPreviewUrl);
+        setPhotoName("Saved photo");
+        setCameraState("preview");
+        setIsUploaded(true);
+      }
+    };
+
+    void loadPreview();
+
+    return () => {
+      cancelled = true;
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [initialFile, initialPreviewUrl]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

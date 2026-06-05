@@ -46,6 +46,14 @@ import {
 } from "@/lib/api";
 import { formatDateTime, getDateTimestamp } from "@/lib/utils";
 import toast from "react-hot-toast";
+import {
+  dedupeHorizonAutofillRecords,
+  fetchFileFromUrl,
+  normalizeHorizonAutofillRecord,
+  resolveHorizonStoredPhotoUrl,
+  searchHorizonAutofillRecords,
+  type HorizonAutofillRecord,
+} from "@/lib/autofill";
 
 interface ExtendedVisitHistoryItem extends VisitHistoryItem {
   guard_name?: string;
@@ -209,6 +217,13 @@ export default function Visitors() {
   const [isLoadingDetails, setIsLoadingDetails] = useState(false);
   const [isPreApproveOpen, setIsPreApproveOpen] = useState(false);
   const [isPreApproveSubmitting, setIsPreApproveSubmitting] = useState(false);
+  const [preApproveLookupRecords, setPreApproveLookupRecords] = useState<HorizonAutofillRecord[]>(
+    []
+  );
+  const [preApproveLookupLoading, setPreApproveLookupLoading] = useState(true);
+  const [preApproveNameMatches, setPreApproveNameMatches] = useState<HorizonAutofillRecord[]>([]);
+  const [preApprovePhoneMatches, setPreApprovePhoneMatches] = useState<HorizonAutofillRecord[]>([]);
+  const [preApprovePhotoPreviewUrl, setPreApprovePhotoPreviewUrl] = useState<string | null>(null);
   const [preApproveForm, setPreApproveForm] = useState({
     name: "",
     phone: "",
@@ -216,6 +231,78 @@ export default function Visitors() {
     category: "other",
     photo: null as File | null,
   });
+
+  const applyPreApproveRecord = async (record: HorizonAutofillRecord) => {
+    setPreApproveForm((prev) => ({
+      ...prev,
+      name: record.name || prev.name,
+      phone: record.phone || prev.phone,
+      default_purpose: record.purpose || prev.default_purpose,
+      category: record.category || prev.category,
+    }));
+
+    if (record.photoUrl) {
+      try {
+        const resolvedPhotoUrl = await resolveHorizonStoredPhotoUrl(record.photoUrl);
+        const file = await fetchFileFromUrl(
+          resolvedPhotoUrl || record.photoUrl,
+          `${record.name || "visitor"}.jpg`
+        );
+        setPreApproveForm((prev) => ({ ...prev, photo: file }));
+        setPreApprovePhotoPreviewUrl(URL.createObjectURL(file));
+      } catch (error) {
+        console.error("Failed to load pre-approve photo:", error);
+      }
+    }
+
+    setPreApproveNameMatches([]);
+    setPreApprovePhoneMatches([]);
+  };
+
+  const renderPreApproveMatches = (matches: HorizonAutofillRecord[]) => {
+    if (matches.length <= 1) return null;
+
+    return (
+      <div className="mt-2 space-y-2 rounded-xl border border-border/60 bg-background p-3 shadow-sm">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Multiple matches found
+        </p>
+        <div className="max-h-56 space-y-2 overflow-y-auto">
+          {matches.slice(0, 6).map((record) => (
+            <button
+              key={`${record.source}-${record.id}`}
+              type="button"
+              onClick={() => void applyPreApproveRecord(record)}
+              className="flex w-full items-center gap-3 rounded-lg border border-border/60 px-3 py-2 text-left transition-colors hover:bg-muted"
+            >
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted">
+                {record.photoUrl ? (
+                  <SecureImage
+                    srcRaw={record.photoUrl}
+                    alt={record.name}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <User className="h-5 w-5 text-muted-foreground" />
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <p className="truncate text-sm font-semibold text-foreground">{record.name}</p>
+                  <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase text-muted-foreground">
+                    {record.typeLabel}
+                  </span>
+                </div>
+                <p className="truncate text-xs text-muted-foreground">
+                  {record.phone || "No phone"}
+                </p>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  };
 
   const fetchVisits = async () => {
     try {
@@ -263,6 +350,70 @@ export default function Visitors() {
   useEffect(() => {
     fetchVisits();
   }, []);
+
+  useEffect(() => {
+    let isActive = true;
+
+    const loadLookupRecords = async () => {
+      try {
+        setPreApproveLookupLoading(true);
+        const [activeRegular, pendingRegular, historyRegular] = await Promise.all([
+          visitorsAPI.getRegularVisitors(),
+          visitorsAPI.getPendingRegular(),
+          visitorsAPI.getHistoryRegular(),
+        ]);
+
+        const combined = dedupeHorizonAutofillRecords([
+          ...activeRegular.map(normalizeHorizonAutofillRecord),
+          ...pendingRegular.map(normalizeHorizonAutofillRecord),
+          ...historyRegular.map(normalizeHorizonAutofillRecord),
+        ]);
+
+        if (isActive) setPreApproveLookupRecords(combined);
+      } catch (error) {
+        console.error("Failed to load pre-approve lookup records:", error);
+      } finally {
+        if (isActive) setPreApproveLookupLoading(false);
+      }
+    };
+
+    loadLookupRecords();
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const query = preApproveForm.name.trim();
+    if (query.length < 3) {
+      setPreApproveNameMatches([]);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      const matches = searchHorizonAutofillRecords(preApproveLookupRecords, query, "name");
+      setPreApproveNameMatches(matches);
+      if (matches.length === 1) {
+        void applyPreApproveRecord(matches[0]);
+      }
+    }, 300);
+
+    return () => window.clearTimeout(timer);
+  }, [preApproveForm.name, preApproveLookupRecords]);
+
+  useEffect(() => {
+    const digits = preApproveForm.phone.replace(/\D/g, "");
+    if (digits.length !== 10) {
+      setPreApprovePhoneMatches([]);
+      return;
+    }
+
+    const matches = searchHorizonAutofillRecords(preApproveLookupRecords, digits, "phone");
+    setPreApprovePhoneMatches(matches);
+    if (matches.length === 1) {
+      void applyPreApproveRecord(matches[0]);
+    }
+  }, [preApproveForm.phone, preApproveLookupRecords]);
 
   useEffect(() => {
     if (searchParams.get("action") === "preapprove") {
@@ -555,6 +706,7 @@ export default function Visitors() {
         category: "other",
         photo: null,
       });
+      setPreApprovePhotoPreviewUrl(null);
       closePreApproveModal();
       await fetchVisits();
     } catch (error: any) {
@@ -1059,6 +1211,7 @@ export default function Visitors() {
               onChange={(e) => setPreApproveForm((prev) => ({ ...prev, name: e.target.value }))}
               placeholder="Enter visitor name"
             />
+            {!preApproveLookupLoading && renderPreApproveMatches(preApproveNameMatches)}
             <Input
               label="Phone Number"
               value={preApproveForm.phone}
@@ -1070,6 +1223,7 @@ export default function Visitors() {
               }
               placeholder="Optional"
             />
+            {!preApproveLookupLoading && renderPreApproveMatches(preApprovePhoneMatches)}
             <Input
               label="Purpose"
               value={preApproveForm.default_purpose}
@@ -1096,17 +1250,32 @@ export default function Visitors() {
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium text-foreground">Photo</label>
-              <div className="rounded-md border border-dashed border-border p-3">
+              <div className="space-y-3 rounded-md border border-dashed border-border p-3">
                 <input
                   type="file"
                   accept="image/*"
-                  onChange={(e) =>
+                  onChange={(e) => {
+                    const file =
+                      e.target.files && e.target.files.length > 0 ? e.target.files[0] : null;
                     setPreApproveForm((prev) => ({
                       ...prev,
-                      photo: e.target.files && e.target.files.length > 0 ? e.target.files[0] : null,
-                    }))
-                  }
+                      photo: file,
+                    }));
+                    setPreApprovePhotoPreviewUrl(file ? URL.createObjectURL(file) : null);
+                  }}
                 />
+                {preApprovePhotoPreviewUrl && (
+                  <div className="flex items-center gap-3">
+                    <div className="h-16 w-16 overflow-hidden rounded-lg bg-muted">
+                      <img
+                        src={preApprovePhotoPreviewUrl}
+                        alt={preApproveForm.name || "Visitor photo preview"}
+                        className="h-full w-full object-cover"
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground">Selected visitor photo</p>
+                  </div>
+                )}
               </div>
             </div>
 

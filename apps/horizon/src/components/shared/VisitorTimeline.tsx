@@ -3,6 +3,7 @@
 import { UserPlus, CheckCircle, XCircle, LogOut, Clock } from "lucide-react";
 import { GlassCard } from "./GlassCard";
 import { formatDateTime, parseDateTime } from "@/lib/utils";
+import SecureImage from "@/components/ui/SecureImage";
 
 interface TimelineEvent {
   type: "created" | "approved" | "rejected" | "exited";
@@ -130,8 +131,8 @@ export function VisitorTimeline({ visit }: VisitorTimelineProps) {
       {/* Header with Photo */}
       <div className="mb-6 flex items-start gap-4">
         {visit.photo || visit.photo_snapshot_url ? (
-          <img
-            src={visit.photo || visit.photo_snapshot_url || undefined}
+          <SecureImage
+            srcRaw={visit.photo || visit.photo_snapshot_url}
             alt={visit.name || visit.name_snapshot || "Visitor"}
             className="h-16 w-16 rounded-full object-cover ring-2 ring-primary/20"
           />

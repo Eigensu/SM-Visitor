@@ -13,10 +13,17 @@ import { IDPhotoCapture } from "@/components/IDPhotoCapture";
 import { OwnerSelect } from "@/components/OwnerSelect";
 import { WaitingScreen } from "@/components/WaitingScreen";
 import { GlassCard } from "@/components/GlassCard";
-import { visitsAPI } from "@/lib/api";
+import SecureImage from "@/components/ui/SecureImage";
+import { visitsAPI, visitorsAPI } from "@/lib/api";
 import { useStore } from "@/lib/store";
 import toast from "react-hot-toast";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, User, Phone, CreditCard } from "lucide-react";
+import {
+  dedupeOrbitAutofillRecords,
+  normalizeOrbitAutofillRecord,
+  searchOrbitAutofillRecords,
+  type OrbitAutofillRecord,
+} from "@/lib/autofill";
 
 type FormStep = "form" | "waiting" | "success" | "rejected";
 
@@ -38,6 +45,74 @@ export default function NewVisitorPage() {
   const [visit, setVisit] = useState<any>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [lookupRecords, setLookupRecords] = useState<OrbitAutofillRecord[]>([]);
+  const [isLookupLoading, setIsLookupLoading] = useState(true);
+  const [nameMatches, setNameMatches] = useState<OrbitAutofillRecord[]>([]);
+  const [phoneMatches, setPhoneMatches] = useState<OrbitAutofillRecord[]>([]);
+  const [idMatches, setIdMatches] = useState<OrbitAutofillRecord[]>([]);
+
+  const applyLookupRecord = (record: OrbitAutofillRecord) => {
+    setFormData((prev) => ({
+      ...prev,
+      name: record.name || prev.name,
+      phone: record.phone || prev.phone,
+      purpose: record.purpose || prev.purpose,
+      owner_id:
+        record.raw.owner_id || record.raw.assigned_owner_id || record.raw.flat_id || prev.owner_id,
+      photo_url: record.photoUrl || prev.photo_url,
+      id_type: record.idType || prev.id_type,
+      id_number: record.idNumber || prev.id_number,
+      id_photo_url: record.idCardPhotoUrl || prev.id_photo_url,
+    }));
+    setNameMatches([]);
+    setPhoneMatches([]);
+    setIdMatches([]);
+  };
+
+  const renderLookupMatches = (matches: OrbitAutofillRecord[]) => {
+    if (matches.length <= 1) return null;
+
+    return (
+      <div className="mt-2 space-y-2 rounded-xl border border-border/60 bg-background p-3 shadow-sm">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Multiple matches found
+        </p>
+        <div className="max-h-56 space-y-2 overflow-y-auto">
+          {matches.slice(0, 6).map((record) => (
+            <button
+              key={`${record.source}-${record.id}`}
+              type="button"
+              onClick={() => applyLookupRecord(record)}
+              className="flex w-full items-center gap-3 rounded-lg border border-border/60 px-3 py-2 text-left transition-colors hover:bg-muted"
+            >
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted">
+                {record.photoUrl ? (
+                  <SecureImage
+                    srcRaw={record.photoUrl}
+                    alt={record.name}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <User className="h-5 w-5 text-muted-foreground" />
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <p className="truncate text-sm font-semibold text-foreground">{record.name}</p>
+                  <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase text-muted-foreground">
+                    {record.typeLabel}
+                  </span>
+                </div>
+                <p className="truncate text-xs text-muted-foreground">
+                  {record.phone || "No phone"}
+                </p>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  };
 
   // Listen for visit status changes via store or polling
   useEffect(() => {
@@ -82,6 +157,88 @@ export default function NewVisitorPage() {
       return () => clearInterval(checkStatus);
     }
   }, [visit, step]);
+
+  useEffect(() => {
+    let isActive = true;
+
+    const loadLookupRecords = async () => {
+      try {
+        setIsLookupLoading(true);
+        const [historyVisits, regularVisitors, pendingVisitors, regularHistory] = await Promise.all(
+          [
+            visitsAPI.getHistory(),
+            visitorsAPI.getRegularVisitors(),
+            visitorsAPI.getPendingRegular(),
+            visitorsAPI.getHistoryRegular(),
+          ]
+        );
+
+        const combined = dedupeOrbitAutofillRecords([
+          ...historyVisits.map(normalizeOrbitAutofillRecord),
+          ...regularVisitors.map(normalizeOrbitAutofillRecord),
+          ...pendingVisitors.map(normalizeOrbitAutofillRecord),
+          ...regularHistory.map(normalizeOrbitAutofillRecord),
+        ]);
+
+        if (isActive) setLookupRecords(combined);
+      } catch (error) {
+        console.error("Failed to load autofill records:", error);
+      } finally {
+        if (isActive) setIsLookupLoading(false);
+      }
+    };
+
+    loadLookupRecords();
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const query = formData.name.trim();
+    if (query.length < 3) {
+      setNameMatches([]);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      const matches = searchOrbitAutofillRecords(lookupRecords, query, "name");
+      setNameMatches(matches);
+      if (matches.length === 1) {
+        applyLookupRecord(matches[0]);
+      }
+    }, 300);
+
+    return () => window.clearTimeout(timer);
+  }, [formData.name, lookupRecords]);
+
+  useEffect(() => {
+    const digits = formData.phone.replace(/\D/g, "");
+    if (digits.length !== 10) {
+      setPhoneMatches([]);
+      return;
+    }
+
+    const matches = searchOrbitAutofillRecords(lookupRecords, digits, "phone");
+    setPhoneMatches(matches);
+    if (matches.length === 1) {
+      applyLookupRecord(matches[0]);
+    }
+  }, [formData.phone, lookupRecords]);
+
+  useEffect(() => {
+    const value = formData.id_number.trim();
+    if (!value) {
+      setIdMatches([]);
+      return;
+    }
+
+    const matches = searchOrbitAutofillRecords(lookupRecords, value, "id");
+    setIdMatches(matches);
+    if (matches.length === 1) {
+      applyLookupRecord(matches[0]);
+    }
+  }, [formData.id_number, lookupRecords]);
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
@@ -208,6 +365,7 @@ export default function NewVisitorPage() {
                   required
                   placeholder="Enter visitor name"
                 />
+                {!isLookupLoading && renderLookupMatches(nameMatches)}
 
                 <Input
                   label="Phone"
@@ -222,6 +380,7 @@ export default function NewVisitorPage() {
                   error={errors.phone}
                   placeholder="Enter 10-digit phone number (optional)"
                 />
+                {!isLookupLoading && renderLookupMatches(phoneMatches)}
 
                 <Input
                   label="Purpose"
@@ -290,6 +449,7 @@ export default function NewVisitorPage() {
                         }
                         maxLength={formData.id_type === "aadhar" ? 12 : 10}
                       />
+                      {!isLookupLoading && renderLookupMatches(idMatches)}
                       <IDPhotoCapture
                         uploadedUrl={formData.id_photo_url}
                         onPhotoUploaded={(url) => setFormData({ ...formData, id_photo_url: url })}
@@ -312,6 +472,7 @@ export default function NewVisitorPage() {
                 Visitor Photo <span className="text-destructive">*</span>
               </h2>
               <PhotoCapture
+                initialPreviewUrl={formData.photo_url || undefined}
                 onPhotoUploaded={(photoUrl) => setFormData({ ...formData, photo_url: photoUrl })}
               />
               {errors.photo_url && (
