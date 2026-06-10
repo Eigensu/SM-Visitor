@@ -79,7 +79,7 @@ export default function SecureImage({ srcRaw, alt = "", className, fallback }: P
       }
 
       // For other relative paths, assume NEXT_PUBLIC_API_URL base
-      const base = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+      const base = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
       if (mounted) setSrc(`${base}${srcRaw.startsWith("/") ? "" : "/"}${srcRaw}`);
     };
 
