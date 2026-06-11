@@ -133,7 +133,20 @@ export const resolveHorizonStoredPhotoUrl = async (srcRaw: string) => {
 
   if (isObjectId(value)) {
     const response = await apiClient.get(`/uploads/photo/regular/${value}/signed-url`);
-    return response?.data?.signed_url || "";
+    let signedUrl = response?.data?.signed_url || "";
+    if (signedUrl) {
+      try {
+        const urlObj = new URL(signedUrl);
+        const base = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(
+          /\/$/,
+          ""
+        );
+        signedUrl = `${base}${urlObj.pathname}${urlObj.search}`;
+      } catch (e) {
+        // Fallback
+      }
+    }
+    return signedUrl;
   }
 
   const base = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/$/, "");

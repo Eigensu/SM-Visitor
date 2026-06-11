@@ -67,7 +67,19 @@ export default function SecureImage({ srcRaw, alt = "", className, fallback }: P
       if (isObjectId(srcRaw)) {
         try {
           const resp = await apiClient.get(`/uploads/photo/regular/${srcRaw}/signed-url`);
-          const signedUrl = resp?.data?.signed_url;
+          let signedUrl = resp?.data?.signed_url || "";
+          if (signedUrl) {
+            try {
+              const urlObj = new URL(signedUrl);
+              const base = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(
+                /\/$/,
+                ""
+              );
+              signedUrl = `${base}${urlObj.pathname}${urlObj.search}`;
+            } catch (e) {
+              // Fallback
+            }
+          }
           if (signedUrl) {
             cachePhotoUrl(srcRaw, signedUrl);
             if (mounted) setSrc(signedUrl);
