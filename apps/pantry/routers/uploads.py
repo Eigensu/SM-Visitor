@@ -211,7 +211,7 @@ async def get_buffer_photo(
     """
     from fastapi.responses import Response
     
-    photo_data = photo_storage.get_new_visitor_photo_buffer(filename)
+    photo_data = await photo_storage.get_new_visitor_photo_buffer(filename)
     
     if not photo_data:
         raise HTTPException(

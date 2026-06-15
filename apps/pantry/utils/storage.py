@@ -108,7 +108,7 @@ class PhotoStorage:
 
         return str(file_id)
 
-    def get_new_visitor_photo_buffer(self, filename: str) -> Optional[bytes]:
+    async def get_new_visitor_photo_buffer(self, filename: str) -> Optional[bytes]:
         """
         Retrieve new visitor photo from local buffer
         """
@@ -119,10 +119,8 @@ class PhotoStorage:
                     from bson import ObjectId
                     db = get_database()
                     fs = AsyncIOMotorGridFSBucket(db, bucket_name="visitor_photos_buffer")
-                    grid_out = fs.open_download_stream(ObjectId(filename))
-                    # grid_out is an AsyncIOMotorGridOut, read() is async; run in loop
-                    import asyncio
-                    return asyncio.get_event_loop().run_until_complete(grid_out.read())
+                    grid_out = await fs.open_download_stream(ObjectId(filename))
+                    return await grid_out.read()
                 except Exception:
                     # fallback to file system
                     pass
