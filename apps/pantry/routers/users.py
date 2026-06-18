@@ -56,14 +56,15 @@ async def list_users(
         
         users = residents + guards + admins
     
+    from datetime import datetime, timezone
     return [
         {
             "id": str(user["_id"]),
-            "name": user["name"],
-            "phone": user["phone"],
-            "role": user.get("role", "owner" if "flat_id" in user else "guard"),  # Infer role if missing
+            "name": user.get("name", ""),
+            "phone": user.get("phone", ""),
+            "role": user.get("role", "owner" if "flat_id" in user else "guard"),
             "flat_id": user.get("flat_id"),
-            "created_at": user["created_at"]
+            "created_at": user.get("created_at") or datetime.now(timezone.utc),
         }
         for user in users
     ]
