@@ -421,8 +421,6 @@ async def create_regular_visitor(
     return VisitorWithQRResponse(
         **serialize_visitor(created_visitor),
         qr_image_url=qr_image_url,
-        is_all_flats=created_visitor.get("is_all_flats", False),
-        valid_flats=created_visitor.get("valid_flats"),
     )
 
 

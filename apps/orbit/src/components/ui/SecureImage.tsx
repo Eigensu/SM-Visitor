@@ -29,14 +29,27 @@ export default function SecureImage({ srcRaw, alt = "", className, fallback }: P
       if (isObjectId(srcRaw)) {
         try {
           const resp = await apiClient.get(`/uploads/photo/regular/${srcRaw}/signed-url`);
-          if (mounted && resp?.data?.signed_url) setSrc(resp.data.signed_url);
+          let signedUrl = resp?.data?.signed_url || "";
+          if (signedUrl) {
+            try {
+              const urlObj = new URL(signedUrl);
+              const base = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(
+                /\/$/,
+                ""
+              );
+              signedUrl = `${base}${urlObj.pathname}${urlObj.search}`;
+            } catch (e) {
+              // Fallback
+            }
+          }
+          if (mounted && signedUrl) setSrc(signedUrl);
           return;
         } catch (err) {
           console.error("Failed to fetch signed photo URL", err);
         }
       }
 
-      const base = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+      const base = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
       if (mounted) setSrc(`${base}${srcRaw.startsWith("/") ? "" : "/"}${srcRaw}`);
     };
 

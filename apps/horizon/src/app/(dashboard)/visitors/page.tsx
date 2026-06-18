@@ -688,6 +688,11 @@ export default function Visitors() {
       return;
     }
 
+    if (preApproveForm.phone && preApproveForm.phone.replace(/\D/g, "").length < 10) {
+      toast.error("Phone number must be at least 10 digits");
+      return;
+    }
+
     try {
       setIsPreApproveSubmitting(true);
       await visitorsAPI.createRegular({
@@ -711,7 +716,16 @@ export default function Visitors() {
       await fetchVisits();
     } catch (error: any) {
       console.error("Failed to pre-approve visitor:", error);
-      toast.error(error?.response?.data?.detail || "Failed to pre-approve visitor");
+      const detail = error?.response?.data?.detail;
+      let errorMessage = "Failed to pre-approve visitor";
+      if (typeof detail === "string") {
+        errorMessage = detail;
+      } else if (Array.isArray(detail)) {
+        errorMessage = detail.map((d: any) => `${d.loc?.join(".")} - ${d.msg}`).join(", ");
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      toast.error(errorMessage);
     } finally {
       setIsPreApproveSubmitting(false);
     }
@@ -960,7 +974,7 @@ export default function Visitors() {
 
       {/* Timeline Modal */}
       <Dialog open={timelineVisitId !== null} onOpenChange={(open) => !open && closeTimeline()}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl" aria-describedby={undefined}>
           <DialogHeader>
             <DialogTitle>Visitor Timeline</DialogTitle>
           </DialogHeader>
@@ -976,7 +990,10 @@ export default function Visitors() {
 
       {/* Details Modal */}
       <Dialog open={detailsVisitId !== null} onOpenChange={(open) => !open && closeDetails()}>
-        <DialogContent className="max-h-[90vh] w-[95vw] max-w-6xl overflow-hidden p-0 sm:w-[92vw]">
+        <DialogContent
+          className="max-h-[90vh] w-[95vw] max-w-6xl overflow-hidden p-0 sm:w-[92vw]"
+          aria-describedby={undefined}
+        >
           <DialogHeader>
             <DialogTitle className="px-6 pt-6">Visitor Details</DialogTitle>
           </DialogHeader>
@@ -1200,7 +1217,7 @@ export default function Visitors() {
 
       {/* Pre-approve Visitor Modal */}
       <Dialog open={isPreApproveOpen} onOpenChange={(open) => !open && closePreApproveModal()}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg" aria-describedby={undefined}>
           <DialogHeader>
             <DialogTitle>Pre-approve Visitor</DialogTitle>
           </DialogHeader>
