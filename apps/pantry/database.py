@@ -67,52 +67,69 @@ def get_database() -> AsyncIOMotorDatabase:
 
 async def create_indexes():
     """
-    Create database indexes for optimal query performance
+    Create database indexes for optimal query performance.
+    Failures are non-fatal (e.g. Atlas quota exceeded) so the app can still
+    serve reads with pre-existing indexes.
     """
+    import logging
+    logger = logging.getLogger(__name__)
+
     database = get_database()
 
-    # Users collection indexes (for admins)
-    await database.users.create_index("phone", unique=True)
-    await database.users.create_index("role")
+    index_ops = [
+        (database.users, "phone", {"unique": True}),
+        (database.users, "role", {}),
+        (database.residents, "phone", {"unique": True}),
+        (database.residents, "flat_id", {}),
+        (database.residents, "created_at", {}),
+        (database.guards, "phone", {"unique": True}),
+        (database.guards, "created_at", {}),
+        (database.visitors, "phone", {}),
+        (database.visitors, "created_by", {}),
+        (database.visitors, "qr_token", {"unique": True, "sparse": True}),
+        (database.visitors, "is_active", {}),
+        (database.visits, "visitor_id", {}),
+        (database.visits, "owner_id", {}),
+        (database.visits, "guard_id", {}),
+        (database.visits, "status", {}),
+        (database.visits, "entry_time", {}),
+        (database.temporary_qr, "token", {"unique": True}),
+        (database.temporary_qr, "owner_id", {}),
+        (database.temporary_qr, "expires_at", {}),
+        (database.temporary_qr, "used_at", {}),
+        (database.notifications, "recipient_id", {}),
+        (database.notifications, "is_read", {}),
+        (database.notifications, "created_at", {}),
+    ]
 
-    # Residents collection indexes (for owners from Horizon)
-    await database.residents.create_index("phone", unique=True)
-    await database.residents.create_index("flat_id")
-    await database.residents.create_index("created_at")
+    compound_ops = [
+        (database.visits, [("owner_id", 1), ("entry_time", -1)], {}),
+        (database.notifications, [("recipient_id", 1), ("is_read", 1)], {}),
+    ]
 
-    # Guards collection indexes (for guards from Orbit)
-    await database.guards.create_index("phone", unique=True)
-    await database.guards.create_index("created_at")
+    failed = 0
+    for collection, key, kwargs in index_ops:
+        try:
+            await collection.create_index(key, **kwargs)
+        except Exception as e:
+            failed += 1
+            logger.warning(f"[!] Index creation skipped on {collection.name}.{key}: {e}")
 
-    # Visitors collection indexes
-    await database.visitors.create_index("phone")
-    await database.visitors.create_index("created_by")
-    await database.visitors.create_index("qr_token", unique=True, sparse=True)
-    await database.visitors.create_index("is_active")
+    for collection, keys, kwargs in compound_ops:
+        try:
+            await collection.create_index(keys, **kwargs)
+        except Exception as e:
+            failed += 1
+            logger.warning(f"[!] Compound index creation skipped on {collection.name}: {e}")
 
-    # Visits collection indexes
-    await database.visits.create_index("visitor_id")
-    await database.visits.create_index("owner_id")
-    await database.visits.create_index("guard_id")
-    await database.visits.create_index("status")
-    await database.visits.create_index("entry_time")
-    await database.visits.create_index(
-        [("owner_id", 1), ("entry_time", -1)]
-    )  # Compound index
-
-    # Temporary QR collection indexes
-    await database.temporary_qr.create_index("token", unique=True)
-    await database.temporary_qr.create_index("owner_id")
-    await database.temporary_qr.create_index("expires_at")
-    await database.temporary_qr.create_index("used_at")
-
-    # Notifications collection indexes
-    await database.notifications.create_index("recipient_id")
-    await database.notifications.create_index("is_read")
-    await database.notifications.create_index([("recipient_id", 1), ("is_read", 1)])
-    await database.notifications.create_index("created_at")
-
-    print("[+] Database indexes created")
+    if failed:
+        logger.warning(
+            f"[!] {failed} index(es) could not be created — this is usually caused by "
+            "the Atlas storage quota being full. Free up space or upgrade your cluster. "
+            "Existing indexes are still active; reads will work normally."
+        )
+    else:
+        print("[+] Database indexes created")
 
 
 # Collection getters for type safety
