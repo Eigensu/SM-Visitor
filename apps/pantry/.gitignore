@@ -6,7 +6,6 @@ env
 .turbo
 uploads
 tests
-scripts
 *.py
 !main.py
 !config.py
@@ -19,3 +18,5 @@ scripts
 !services/serializers/
 !services/serializers/__init__.py
 !services/serializers/notification.py
+!scripts/
+!scripts/*.py
