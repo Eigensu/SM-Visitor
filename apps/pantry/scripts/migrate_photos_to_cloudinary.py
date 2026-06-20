@@ -4,17 +4,21 @@ One-time migration: move all GridFS photos to Cloudinary.
 
 Run from the pantry app directory:
     cd apps/pantry
+
+    # Phase 1: Upload all photos to Cloudinary, save mapping locally
     python scripts/migrate_photos_to_cloudinary.py
 
-After a successful migration:
-  - All visitor.photo_url / visitor.id_card_photo_url fields will be Cloudinary URLs
-  - All visit.photo_snapshot_url / visit.id_photo_url fields will be Cloudinary URLs
-  - The script will offer to drop the GridFS collections to free MongoDB storage
+    # Phase 2 (if MongoDB writes were blocked in Phase 1):
+    # After freeing Atlas storage, apply the saved mapping
+    python scripts/migrate_photos_to_cloudinary.py --apply-mapping
 
-Safe to re-run: already-migrated documents (Cloudinary URLs) are skipped.
+Safe to re-run: already-migrated Cloudinary URLs are skipped.
+The local mapping file (migration_mapping.json) acts as a checkpoint —
+photos already uploaded to Cloudinary are not re-uploaded.
 """
 
 import asyncio
+import json
 import os
 import re
 import sys
@@ -31,6 +35,7 @@ from bson import ObjectId
 
 MONGODB_URL = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
 DATABASE_NAME = os.getenv("DATABASE_NAME", "sm_visitor")
+MAPPING_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "migration_mapping.json")
 
 GRIDFS_ID_RE = re.compile(r"^[a-f0-9]{24}$", re.IGNORECASE)
 PATH_ID_RE = re.compile(r"/(?:photo/)?(?:regular|buffer)/([a-f0-9]{24})$", re.IGNORECASE)
@@ -41,10 +46,7 @@ def is_cloudinary_url(value: Optional[str]) -> bool:
 
 
 def extract_gridfs_id(value: Optional[str]) -> Optional[str]:
-    """Return a bare 24-char GridFS ObjectId from a raw ID or legacy path."""
-    if not value:
-        return None
-    if is_cloudinary_url(value):
+    if not value or is_cloudinary_url(value):
         return None
     if GRIDFS_ID_RE.match(value):
         return value
@@ -52,8 +54,19 @@ def extract_gridfs_id(value: Optional[str]) -> Optional[str]:
     return m.group(1) if m else None
 
 
+def load_mapping() -> dict:
+    if os.path.exists(MAPPING_FILE):
+        with open(MAPPING_FILE) as f:
+            return json.load(f)
+    return {}
+
+
+def save_mapping(mapping: dict):
+    with open(MAPPING_FILE, "w") as f:
+        json.dump(mapping, f, indent=2)
+
+
 async def download_from_gridfs(db, file_id: str) -> Optional[bytes]:
-    """Try visitor_photos first, then visitor_photos_buffer."""
     oid = ObjectId(file_id)
     for bucket_name in ("visitor_photos", "visitor_photos_buffer"):
         try:
@@ -68,7 +81,6 @@ async def download_from_gridfs(db, file_id: str) -> Optional[bytes]:
 
 
 async def upload_to_cloudinary(photo_data: bytes, public_id: str) -> Optional[str]:
-    """Upload bytes to Cloudinary synchronously (run in thread). Returns URL or None."""
     import cloudinary
     import cloudinary.uploader
     from config import (
@@ -101,88 +113,98 @@ async def upload_to_cloudinary(photo_data: bytes, public_id: str) -> Optional[st
     return await asyncio.to_thread(_upload)
 
 
-async def migrate_field(db, collection_name: str, doc_id, field: str, value: str) -> bool:
-    """Download from GridFS, upload to Cloudinary, update the document. Returns True on success."""
-    file_id = extract_gridfs_id(value)
-    if not file_id:
-        return False
+async def upload_phase(db, mapping: dict) -> tuple[int, int, int]:
+    """
+    Phase 1: scan all documents, upload GridFS photos to Cloudinary,
+    save gridfs_id → cloudinary_url to local mapping file.
+    Does NOT write to MongoDB (avoids quota error).
+    Returns (uploaded, skipped, failed).
+    """
+    uploaded = skipped = failed = 0
 
-    photo_data = await download_from_gridfs(db, file_id)
-    if not photo_data:
-        print(f"    [WARN] GridFS file not found: {file_id} ({field})")
-        return False
+    for collection_name, fields in [
+        ("visitors", ["photo_url", "id_card_photo_url"]),
+        ("visits",   ["photo_snapshot_url", "id_photo_url"]),
+    ]:
+        print(f"\n=== Scanning {collection_name} ===")
+        projection = {f: 1 for f in fields}
+        async for doc in db[collection_name].find({}, projection):
+            for field in fields:
+                value = doc.get(field)
+                file_id = extract_gridfs_id(value)
+                if not file_id:
+                    if value:
+                        skipped += 1
+                    continue
 
-    public_id = f"migration_{file_id}"
-    cloudinary_url = await upload_to_cloudinary(photo_data, public_id)
-    if not cloudinary_url:
-        print(f"    [ERROR] Cloudinary upload failed for {file_id}")
-        return False
+                # Already uploaded in a previous run
+                if file_id in mapping:
+                    print(f"  [cached] {collection_name}/{doc['_id']} → {field}")
+                    skipped += 1
+                    continue
 
-    collection = db[collection_name]
-    await collection.update_one({"_id": doc_id}, {"$set": {field: cloudinary_url}})
-    return True
+                print(f"  [upload] {collection_name}/{doc['_id']} → {field}")
+                photo_data = await download_from_gridfs(db, file_id)
+                if not photo_data:
+                    print(f"    [WARN] GridFS file not found: {file_id}")
+                    failed += 1
+                    continue
 
+                cloudinary_url = await upload_to_cloudinary(photo_data, f"migration_{file_id}")
+                if not cloudinary_url:
+                    print(f"    [ERROR] Cloudinary upload failed for {file_id}")
+                    failed += 1
+                    continue
 
-async def migrate_visitors(db) -> tuple[int, int, int]:
-    """Migrate photo_url and id_card_photo_url on the visitors collection."""
-    collection = db.visitors
-    migrated = skipped = failed = 0
+                mapping[file_id] = cloudinary_url
+                save_mapping(mapping)  # checkpoint after every successful upload
+                uploaded += 1
+                print(f"    → {cloudinary_url[:60]}...")
 
-    async for doc in collection.find({}, {"photo_url": 1, "id_card_photo_url": 1}):
-        doc_id = doc["_id"]
-
-        for field in ("photo_url", "id_card_photo_url"):
-            value = doc.get(field)
-            if not value:
-                continue
-            if is_cloudinary_url(value):
-                skipped += 1
-                continue
-            if not extract_gridfs_id(value):
-                skipped += 1
-                continue
-
-            print(f"  visitors/{doc_id} → {field}")
-            ok = await migrate_field(db, "visitors", doc_id, field, value)
-            if ok:
-                migrated += 1
-            else:
-                failed += 1
-
-    return migrated, skipped, failed
+    return uploaded, skipped, failed
 
 
-async def migrate_visits(db) -> tuple[int, int, int]:
-    """Migrate photo_snapshot_url and id_photo_url on the visits collection."""
-    collection = db.visits
-    migrated = skipped = failed = 0
+async def apply_phase(db, mapping: dict) -> tuple[int, int]:
+    """
+    Phase 2: read the local mapping, update MongoDB documents.
+    Run this after freeing Atlas storage.
+    Returns (updated, failed).
+    """
+    if not mapping:
+        print("No mapping file found. Run without --apply-mapping first.")
+        return 0, 0
 
-    async for doc in collection.find({}, {"photo_snapshot_url": 1, "id_photo_url": 1}):
-        doc_id = doc["_id"]
+    updated = failed = 0
 
-        for field in ("photo_snapshot_url", "id_photo_url"):
-            value = doc.get(field)
-            if not value:
-                continue
-            if is_cloudinary_url(value):
-                skipped += 1
-                continue
-            if not extract_gridfs_id(value):
-                skipped += 1
-                continue
+    for collection_name, fields in [
+        ("visitors", ["photo_url", "id_card_photo_url"]),
+        ("visits",   ["photo_snapshot_url", "id_photo_url"]),
+    ]:
+        print(f"\n=== Applying to {collection_name} ===")
+        projection = {f: 1 for f in fields}
+        async for doc in db[collection_name].find({}, projection):
+            for field in fields:
+                value = doc.get(field)
+                file_id = extract_gridfs_id(value)
+                if not file_id or file_id not in mapping:
+                    continue
 
-            print(f"  visits/{doc_id} → {field}")
-            ok = await migrate_field(db, "visits", doc_id, field, value)
-            if ok:
-                migrated += 1
-            else:
-                failed += 1
+                cloudinary_url = mapping[file_id]
+                try:
+                    await db[collection_name].update_one(
+                        {"_id": doc["_id"]},
+                        {"$set": {field: cloudinary_url}},
+                    )
+                    print(f"  [ok] {collection_name}/{doc['_id']} → {field}")
+                    updated += 1
+                except Exception as e:
+                    print(f"  [ERROR] {collection_name}/{doc['_id']}: {e}")
+                    failed += 1
 
-    return migrated, skipped, failed
+    return updated, failed
 
 
 async def drop_gridfs_collections(db):
-    """Drop GridFS chunks/files collections to free Atlas storage."""
     buckets = ["visitor_photos", "visitor_photos_buffer"]
     for bucket in buckets:
         for suffix in (".files", ".chunks"):
@@ -195,55 +217,58 @@ async def drop_gridfs_collections(db):
 
 
 async def main():
-    from config import CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET
+    apply_mode = "--apply-mapping" in sys.argv
 
+    from config import CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET
     if not all([CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET]):
-        print("[ERROR] Cloudinary env vars not set. Check CLOUDINARY_CLOUD_NAME, "
-              "CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET.")
+        print("[ERROR] Cloudinary env vars not set.")
         sys.exit(1)
 
     print(f"Connecting to MongoDB: {DATABASE_NAME}")
     client = AsyncIOMotorClient(MONGODB_URL)
     db = client[DATABASE_NAME]
-
     await client.admin.command("ping")
-    print("Connected.\n")
+    print("Connected.")
 
-    # ── Visitors ──────────────────────────────────────────────────────────────
-    print("=== Migrating visitors collection ===")
-    v_migrated, v_skipped, v_failed = await migrate_visitors(db)
-    print(f"  Done: {v_migrated} migrated, {v_skipped} skipped, {v_failed} failed\n")
+    mapping = load_mapping()
 
-    # ── Visits ────────────────────────────────────────────────────────────────
-    print("=== Migrating visits collection ===")
-    vi_migrated, vi_skipped, vi_failed = await migrate_visits(db)
-    print(f"  Done: {vi_migrated} migrated, {vi_skipped} skipped, {vi_failed} failed\n")
+    if apply_mode:
+        # ── Phase 2: write Cloudinary URLs into MongoDB ───────────────────────
+        print(f"\nApply mode: reading {len(mapping)} entries from {MAPPING_FILE}")
+        updated, failed = await apply_phase(db, mapping)
+        print(f"\nDone: {updated} updated, {failed} failed")
 
-    total_migrated = v_migrated + vi_migrated
-    total_failed = v_failed + vi_failed
-
-    print("=" * 50)
-    print(f"Total migrated: {total_migrated}")
-    print(f"Total failed:   {total_failed}")
-    print("=" * 50)
-
-    if total_failed > 0:
-        print("\n[WARN] Some files failed to migrate. Do NOT drop GridFS yet.")
-        print("Check the errors above and re-run before dropping GridFS collections.")
-        client.close()
-        return
-
-    if total_migrated == 0:
-        print("\nNothing to migrate — all records already point to Cloudinary.")
-
-    print("\nAll photos migrated successfully.")
-    answer = input("\nDrop GridFS collections now to free MongoDB storage? [y/N]: ").strip().lower()
-    if answer == "y":
-        print("\nDropping GridFS collections...")
-        await drop_gridfs_collections(db)
-        print("Done. MongoDB storage has been freed.")
+        if failed == 0 and updated > 0:
+            answer = input("\nDrop GridFS collections to free MongoDB storage? [y/N]: ").strip().lower()
+            if answer == "y":
+                print("\nDropping GridFS collections...")
+                await drop_gridfs_collections(db)
+                print("Done. MongoDB storage freed.")
+                # Clean up local mapping file
+                if os.path.exists(MAPPING_FILE):
+                    os.remove(MAPPING_FILE)
+                    print(f"Removed local mapping file: {MAPPING_FILE}")
     else:
-        print("GridFS collections kept. Re-run and choose 'y' when ready.")
+        # ── Phase 1: upload to Cloudinary, save mapping locally ───────────────
+        print(f"\nUpload mode: uploading GridFS photos to Cloudinary.")
+        print(f"Mapping checkpoint: {MAPPING_FILE}\n")
+        uploaded, skipped, failed = await upload_phase(db, mapping)
+
+        print(f"\n{'='*50}")
+        print(f"Uploaded to Cloudinary: {uploaded}")
+        print(f"Skipped (already done): {skipped}")
+        print(f"Failed:                 {failed}")
+        print(f"{'='*50}")
+
+        if failed > 0:
+            print("\n[WARN] Some uploads failed. Fix the errors and re-run.")
+            print("Successfully uploaded photos are checkpointed in the mapping file.")
+        elif uploaded == 0 and not mapping:
+            print("\nNothing to migrate — all records already point to Cloudinary.")
+        else:
+            print(f"\n{uploaded + len(mapping)} photos are now in Cloudinary.")
+            print("\nNext step: free MongoDB storage, then run:")
+            print("  python scripts/migrate_photos_to_cloudinary.py --apply-mapping")
 
     client.close()
 
