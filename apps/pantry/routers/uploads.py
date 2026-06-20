@@ -1,6 +1,6 @@
 """
-Photo Upload Router - Handle photo uploads with validation
-Saves regular visitor photos to GridFS and new visitor photos to local buffer
+Photo Upload Router - stores all new uploads in Cloudinary.
+GET endpoints retain GridFS backward-compat for pre-migration records.
 """
 
 from fastapi import APIRouter, HTTPException, status, Depends, UploadFile, File, Request
@@ -16,6 +16,22 @@ from datetime import datetime
 
 router = APIRouter(prefix="/uploads", tags=["Uploads"])
 
+_GRIDFS_ID_RE = __import__("re").compile(r"^[a-f0-9]{24}$", __import__("re").IGNORECASE)
+
+
+def _is_gridfs_id(value: str) -> bool:
+    return bool(_GRIDFS_ID_RE.match(value))
+
+
+def _extract_gridfs_id(value: str) -> str | None:
+    """Return a GridFS ObjectId from a raw ID or a /uploads/photo/*/id path."""
+    for prefix in ("/uploads/photo/regular/", "/uploads/photo/buffer/",
+                   "/uploads/regular/", "/uploads/buffer/"):
+        if value.startswith(prefix):
+            value = value[len(prefix):]
+            break
+    return value if _is_gridfs_id(value) else None
+
 
 class PhotoUploadResponse(BaseModel):
     photo_url: str
@@ -23,128 +39,118 @@ class PhotoUploadResponse(BaseModel):
     message: str
 
 
+# ── Upload endpoints (Cloudinary) ────────────────────────────────────────────
+
 @router.post("/photo/regular", response_model=PhotoUploadResponse)
 @router.post("/photo/regular-visitor", response_model=PhotoUploadResponse)
 async def upload_regular_visitor_photo(
     photo: UploadFile = File(...),
     _current_user: dict = Depends(get_current_guard),
 ):
-    """
-    Upload photo for regular visitor (saved to MongoDB GridFS)
-
-    - **photo**: Image file (JPEG/PNG, max 5MB)
-
-    Returns GridFS file ID for permanent storage
-    """
-    # Basic content type whitelist to reject non-image uploads early
+    """Upload a regular visitor photo to Cloudinary."""
     if photo.content_type not in ("image/jpeg", "image/png"):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only JPEG and PNG images are allowed")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Only JPEG and PNG images are allowed")
 
-    # Read photo data
     photo_data = await photo.read()
-    
-    # Validate photo
     is_valid, error_msg = await photo_storage.validate_photo(photo_data)
     if not is_valid:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=error_msg,
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error_msg)
 
-    # Save to GridFS
-    file_id = await photo_storage.save_regular_visitor_photo(
-        photo_data,
-        photo.filename or "visitor_photo.jpg",
+    cloudinary_url = await photo_storage.save_regular_visitor_photo(
+        photo_data, photo.filename or "visitor_photo.jpg"
     )
 
     return PhotoUploadResponse(
-        photo_url=f"/uploads/photo/regular/{file_id}",
-        storage_type="gridfs",
-        message="Photo saved to MongoDB GridFS",
+        photo_url=cloudinary_url,
+        storage_type="cloudinary",
+        message="Photo uploaded to Cloudinary",
     )
 
 
 @router.post("/photo/new-visitor", response_model=PhotoUploadResponse)
 async def upload_new_visitor_photo(
-    photo: UploadFile = File(...), _current_user: dict = Depends(get_current_guard)
+    photo: UploadFile = File(...),
+    _current_user: dict = Depends(get_current_guard),
 ):
-    """
-    Upload photo for new visitor (saved to Cloudinary cloud storage)
-
-    - **photo**: Image file (JPEG/PNG, max 5MB)
-
-    Returns Cloudinary secure URL for cloud storage
-    """
-    # Basic content type whitelist to reject non-image uploads early
+    """Upload a new visitor photo to Cloudinary."""
     if photo.content_type not in ("image/jpeg", "image/png"):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only JPEG and PNG images are allowed")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Only JPEG and PNG images are allowed")
 
-    # Read photo data
     photo_data = await photo.read()
-    
-    # Validate photo
     is_valid, error_msg = await photo_storage.validate_photo(photo_data)
     if not is_valid:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=error_msg
-        )
-    
-    # Save to deployment-safe temporary GridFS buffer and return its id
-    file_id = await photo_storage.save_new_visitor_photo_buffer(
-        photo_data,
-        photo.filename or "new_visitor_photo.jpg",
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error_msg)
+
+    cloudinary_url = await photo_storage.save_new_visitor_photo_buffer(
+        photo_data, photo.filename or "new_visitor_photo.jpg"
     )
 
     return PhotoUploadResponse(
-        photo_url=f"/uploads/photo/buffer/{file_id}",
-        storage_type="gridfs_buffer",
-        message="Photo saved to temporary GridFS buffer",
+        photo_url=cloudinary_url,
+        storage_type="cloudinary",
+        message="Photo uploaded to Cloudinary",
     )
+
+
+@router.post("/photo/id-card", response_model=PhotoUploadResponse)
+async def upload_id_card_photo(
+    photo: UploadFile = File(...),
+    _current_user: dict = Depends(get_current_guard),
+):
+    """Upload an ID card photo to Cloudinary."""
+    if photo.content_type not in ("image/jpeg", "image/png"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Only JPEG and PNG images are allowed")
+
+    photo_data = await photo.read()
+    is_valid, error_msg = await photo_storage.validate_photo(photo_data, max_size_mb=10)
+    if not is_valid:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error_msg)
+
+    cloudinary_url = await photo_storage.save_new_visitor_photo_buffer(
+        photo_data, photo.filename or "id_card_photo.jpg"
+    )
+
+    return PhotoUploadResponse(
+        photo_url=cloudinary_url,
+        storage_type="cloudinary",
+        message="ID card photo uploaded to Cloudinary",
+    )
+
+
+# ── Retrieval endpoints (backward compat for pre-migration GridFS records) ───
+
+async def _serve_from_gridfs(file_id: str):
+    """Try visitor_photos then visitor_photos_buffer. Raises 404 if not found."""
+    from fastapi.responses import Response
+    photo_data = await photo_storage.get_regular_visitor_photo(file_id)
+    if not photo_data:
+        photo_data = await photo_storage.get_gridfs_buffer_photo(file_id)
+    if not photo_data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Photo not found")
+    return Response(content=photo_data, media_type="image/jpeg")
 
 
 @router.get("/photo/regular/{file_id}")
 @router.get("/regular/{file_id}")
-async def get_regular_visitor_photo(
-    file_id: str, request: "Request"
-):
+async def get_regular_visitor_photo(file_id: str, request: "Request"):
     """
-    Retrieve regular visitor photo from GridFS
+    Serve a photo from GridFS (pre-migration records only).
+    New records store Cloudinary URLs; the frontend loads those directly.
+    """
+    # If caller somehow passes a full URL as the path param, redirect isn't
+    # possible here — just 404 so the frontend falls back gracefully.
+    if not _is_gridfs_id(file_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail="Not a valid GridFS ID")
 
-    Returns the image file
-    """
-    from fastapi.responses import Response
-    from bson import ObjectId
-    from motor.motor_asyncio import AsyncIOMotorGridFSBucket
-    from database import get_database
-    # Validate Authorization header first (existing protected behavior)
-    from fastapi.responses import Response
     auth = request.headers.get("authorization")
-
-    # Helper to load and return photo bytes
-    async def _load_and_respond(fid: str):
-        photo_data = await photo_storage.get_regular_visitor_photo(fid)
-        if not photo_data and ObjectId.is_valid(fid):
-            # Backward compatibility: older ID-card uploads were saved in
-            # visitor_photos_buffer but resolved via the regular photo route.
-            try:
-                db = get_database()
-                fs_buffer = AsyncIOMotorGridFSBucket(db, bucket_name="visitor_photos_buffer")
-                grid_out = await fs_buffer.open_download_stream(ObjectId(fid))
-                photo_data = await grid_out.read()
-            except Exception:
-                photo_data = None
-        if not photo_data:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Photo not found"
-            )
-        return Response(content=photo_data, media_type="image/jpeg")
-
     if auth:
-        # Authorized request: serve directly
-        return await _load_and_respond(file_id)
+        return await _serve_from_gridfs(file_id)
 
-    # No Authorization header — check signed query params
+    # No auth header — validate signed query params
     qs = request.query_params
     sig = qs.get("sig")
     exp = qs.get("exp")
@@ -157,21 +163,15 @@ async def get_regular_visitor_photo(
     except Exception:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid expiry")
 
-    now_ts = int(datetime.utcnow().timestamp())
-    if exp_ts < now_ts:
+    if exp_ts < int(datetime.utcnow().timestamp()):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Signed URL expired")
 
-    # Compute expected signature
     msg = f"{file_id}:{exp_ts}".encode()
     expected = hmac.new(PHOTO_SIGNING_SECRET.encode(), msg, hashlib.sha256).hexdigest()
-
-    # Constant-time compare
     if not hmac.compare_digest(expected, sig):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid signature")
 
-    # Signature valid — serve
-    return await _load_and_respond(file_id)
-
+    return await _serve_from_gridfs(file_id)
 
 
 @router.get("/photo/regular/{file_id}/signed-url")
@@ -181,19 +181,20 @@ async def get_signed_regular_photo_url(
     current_user: dict = Depends(get_current_user),
 ):
     """
-    Generate a short-lived signed URL for a GridFS photo. Requires an authenticated owner, guard, or admin.
-
-    Returns:
-        { signed_url: str }
+    Generate a signed URL for a GridFS photo (pre-migration records).
+    For Cloudinary URLs the frontend loads them directly — this endpoint
+    is only reached for legacy 24-char hex IDs.
     """
     await require_role(current_user, ["owner", "guard", "admin"])
 
-    # Default expiry: 5 minutes
+    if not _is_gridfs_id(file_id):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Not a valid GridFS ID")
+
     expiry_seconds = 300
-    exp_ts = int((datetime.utcnow()).timestamp()) + expiry_seconds
+    exp_ts = int(datetime.utcnow().timestamp()) + expiry_seconds
     msg = f"{file_id}:{exp_ts}".encode()
     sig = hmac.new(PHOTO_SIGNING_SECRET.encode(), msg, hashlib.sha256).hexdigest()
-
     base_url = str(request.base_url).rstrip("/")
     signed_url = f"{base_url}/uploads/photo/regular/{file_id}?exp={exp_ts}&sig={sig}"
     return {"signed_url": signed_url}
@@ -201,49 +202,19 @@ async def get_signed_regular_photo_url(
 
 @router.get("/photo/buffer/{filename}")
 @router.get("/buffer/{filename}")
-async def get_buffer_photo(
-    filename: str,
-):
-    """
-    Retrieve new visitor photo from local buffer
-
-    Returns the image file
-    """
+async def get_buffer_photo(filename: str):
+    """Serve a photo from the GridFS buffer (pre-migration records)."""
     from fastapi.responses import Response
-    
-    photo_data = await photo_storage.get_new_visitor_photo_buffer(filename)
-    
+
+    file_id = _extract_gridfs_id(filename)
+    if file_id:
+        photo_data = await photo_storage.get_gridfs_buffer_photo(file_id)
+        if photo_data:
+            return Response(content=photo_data, media_type="image/jpeg")
+
+    # Fallback to local filesystem buffer
+    photo_data = photo_storage.get_new_visitor_photo_buffer(filename)
     if not photo_data:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Photo not found in buffer"
-        )
-
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail="Photo not found in buffer")
     return Response(content=photo_data, media_type="image/jpeg")
-
-
-@router.post("/photo/id-card", response_model=PhotoUploadResponse)
-async def upload_id_card_photo(
-    photo: UploadFile = File(...), _current_user: dict = Depends(get_current_guard)
-):
-    """
-    Upload ID card photo (Aadhar/PAN) to Cloudinary
-    """
-    # Basic content type whitelist for ID card photos
-    if photo.content_type not in ("image/jpeg", "image/png"):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only JPEG and PNG images are allowed")
-
-    photo_data = await photo.read()
-
-    # Ensure validation runs (async) and is awaited so invalid files are rejected
-    is_valid, error_msg = await photo_storage.validate_photo(photo_data, max_size_mb=10)
-    if not is_valid:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error_msg)
-
-    photo_url = await photo_storage.save_new_visitor_photo_buffer(
-        photo_data, photo.filename or "id_card_photo.jpg"
-    )
-
-    storage_type = "cloudinary" if photo_url.startswith("http") else "local_buffer"
-    return PhotoUploadResponse(
-        photo_url=photo_url, storage_type=storage_type, message="ID card photo uploaded"
-    )

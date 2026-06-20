@@ -1,143 +1,85 @@
 """
-Photo storage utility supporting MongoDB GridFS for regular visitors
-and local buffer storage for new visitors
+Photo storage utility - uploads to Cloudinary for permanent storage.
+GridFS read methods are kept for the migration script and backward compat.
 """
-import os
+import asyncio
 import io
-from typing import Optional, BinaryIO
-from datetime import datetime
-from motor.motor_asyncio import AsyncIOMotorGridFSBucket
-from database import get_database
-from config import LOCAL_STORAGE_PATH
+import os
 import uuid
+from typing import Optional
+
+from config import LOCAL_STORAGE_PATH
 
 
 class PhotoStorage:
-    """
-    Handles photo storage with two strategies:
-    - Regular visitors: MongoDB GridFS (permanent storage)
-    - New visitors: Local buffer (temporary storage)
-    """
-    
+    """Handles photo storage via Cloudinary. GridFS reads kept for migration."""
+
     def __init__(self):
         self.local_buffer_path = os.path.join(LOCAL_STORAGE_PATH, "buffer")
         os.makedirs(self.local_buffer_path, exist_ok=True)
-    
-    async def save_regular_visitor_photo(self, photo_data: bytes, filename: str) -> str:
-        """
-        Save regular visitor photo to MongoDB GridFS
-        
-        Args:
-            photo_data: Photo binary data
-            filename: Original filename
-        
-        Returns:
-            GridFS file ID as string
-        """
-        db = get_database()
-        fs = AsyncIOMotorGridFSBucket(db, bucket_name="visitor_photos")
-        
-        # Create metadata
-        metadata = {
-            "uploaded_at": datetime.utcnow(),
-            "original_filename": filename,
-            "content_type": self._get_content_type(filename)
-        }
-        
-        # Upload to GridFS
-        file_id = await fs.upload_from_stream(
-            filename,
-            io.BytesIO(photo_data),
-            metadata=metadata
+
+    async def _upload_to_cloudinary(self, photo_data: bytes, filename: str) -> str:
+        """Upload bytes to Cloudinary and return the secure URL."""
+        from utils.cloudinary_storage import cloudinary_storage
+        unique_id = f"{uuid.uuid4().hex}_{os.path.splitext(filename)[0]}"
+        success, result = await asyncio.to_thread(
+            cloudinary_storage.upload_photo, photo_data, f"{unique_id}.jpg", unique_id
         )
-        
-        return str(file_id)
-    
+        if not success:
+            raise RuntimeError(f"Cloudinary upload failed: {result}")
+        return result
+
+    async def save_regular_visitor_photo(self, photo_data: bytes, filename: str) -> str:
+        """Upload regular visitor photo to Cloudinary. Returns Cloudinary URL."""
+        return await self._upload_to_cloudinary(photo_data, filename)
+
+    async def save_new_visitor_photo_buffer(self, photo_data: bytes, filename: str) -> str:
+        """Upload new visitor/buffer photo to Cloudinary. Returns Cloudinary URL."""
+        return await self._upload_to_cloudinary(photo_data, filename)
+
+    # ── Backward-compat GridFS reads (used by migration script) ──────────────
+
     async def get_regular_visitor_photo(self, file_id: str) -> Optional[bytes]:
-        """
-        Retrieve regular visitor photo from MongoDB GridFS
-        
-        Args:
-            file_id: GridFS file ID
-        
-        Returns:
-            Photo binary data or None
-        """
+        """Download photo from GridFS visitor_photos bucket."""
         try:
             from bson import ObjectId
+            from motor.motor_asyncio import AsyncIOMotorGridFSBucket
+            from database import get_database
             db = get_database()
             fs = AsyncIOMotorGridFSBucket(db, bucket_name="visitor_photos")
-            
-            # Download from GridFS
             grid_out = await fs.open_download_stream(ObjectId(file_id))
-            photo_data = await grid_out.read()
-            
-            return photo_data
+            return await grid_out.read()
         except Exception as e:
-            print(f"Error retrieving photo: {e}")
+            print(f"[GridFS] Error retrieving visitor_photos/{file_id}: {e}")
             return None
-    
-    async def save_new_visitor_photo_buffer(self, photo_data: bytes, filename: str) -> str:
-        """
-        Save new visitor photo to a temporary GridFS bucket (deployment-safe)
 
-        To avoid loss on container redeploys we store new visitor uploads to a
-        GridFS bucket named 'visitor_photos_buffer'. The returned identifier is
-        the GridFS file id (string). For backward compatibility, if the caller
-        expects a filename we still return the id which frontend helpers treat
-        as a GridFS ObjectId.
-        """
-        from bson import ObjectId
-        import asyncio
-
-        db = get_database()
-        fs = AsyncIOMotorGridFSBucket(db, bucket_name="visitor_photos_buffer")
-
-        metadata = {
-            "uploaded_at": datetime.utcnow(),
-            "original_filename": filename,
-            "content_type": self._get_content_type(filename),
-        }
-
-        # upload and return string id
-        file_id = await fs.upload_from_stream(
-            filename,
-            io.BytesIO(photo_data),
-            metadata=metadata,
-        )
-
-        return str(file_id)
-
-    async def get_new_visitor_photo_buffer(self, filename: str) -> Optional[bytes]:
-        """
-        Retrieve new visitor photo from local buffer
-        """
+    async def get_gridfs_buffer_photo(self, file_id: str) -> Optional[bytes]:
+        """Download photo from GridFS visitor_photos_buffer bucket."""
         try:
-            # If filename looks like a GridFS ObjectId, attempt to fetch from GridFS
-            if isinstance(filename, str) and len(filename) == 24 and all(c in '0123456789abcdef' for c in filename.lower()):
-                try:
-                    from bson import ObjectId
-                    db = get_database()
-                    fs = AsyncIOMotorGridFSBucket(db, bucket_name="visitor_photos_buffer")
-                    grid_out = await fs.open_download_stream(ObjectId(filename))
-                    return await grid_out.read()
-                except Exception:
-                    # fallback to file system
-                    pass
+            from bson import ObjectId
+            from motor.motor_asyncio import AsyncIOMotorGridFSBucket
+            from database import get_database
+            db = get_database()
+            fs = AsyncIOMotorGridFSBucket(db, bucket_name="visitor_photos_buffer")
+            grid_out = await fs.open_download_stream(ObjectId(file_id))
+            return await grid_out.read()
+        except Exception as e:
+            print(f"[GridFS] Error retrieving visitor_photos_buffer/{file_id}: {e}")
+            return None
 
+    def get_new_visitor_photo_buffer(self, filename: str) -> Optional[bytes]:
+        """Local filesystem buffer read (legacy fallback only)."""
+        try:
             full_path = os.path.join(self.local_buffer_path, filename)
             if os.path.exists(full_path):
-                with open(full_path, 'rb') as f:
+                with open(full_path, "rb") as f:
                     return f.read()
             return None
         except Exception as e:
-            print(f"Error reading buffer photo: {e}")
+            print(f"Error reading local buffer photo: {e}")
             return None
-    
+
     def delete_buffer_photo(self, filename: str) -> bool:
-        """
-        Delete photo from local buffer
-        """
         try:
             full_path = os.path.join(self.local_buffer_path, filename)
             if os.path.exists(full_path):
@@ -147,59 +89,59 @@ class PhotoStorage:
         except Exception as e:
             print(f"Error deleting buffer photo: {e}")
             return False
-    
-    async def delete_regular_visitor_photo(self, file_id: str) -> bool:
-        """
-        Delete regular visitor photo from GridFS
-        """
-        try:
-            from bson import ObjectId
-            db = get_database()
-            fs = AsyncIOMotorGridFSBucket(db, bucket_name="visitor_photos")
-            
-            await fs.delete(ObjectId(file_id))
-            return True
-        except Exception as e:
-            print(f"Error deleting GridFS photo: {e}")
-            return False
-    
+
+    async def delete_regular_visitor_photo(self, file_id_or_url: str) -> bool:
+        """Delete from Cloudinary (URL) or GridFS (24-char hex ID)."""
+        if file_id_or_url.startswith("http"):
+            try:
+                import cloudinary.uploader
+                parts = file_id_or_url.split("/upload/")
+                if len(parts) == 2:
+                    segment = parts[1]
+                    if "/" in segment and segment.split("/")[0].startswith("v"):
+                        segment = segment.split("/", 1)[1]
+                    public_id = segment.rsplit(".", 1)[0]
+                    await asyncio.to_thread(cloudinary.uploader.destroy, public_id)
+                return True
+            except Exception as e:
+                print(f"Error deleting Cloudinary photo: {e}")
+                return False
+        else:
+            try:
+                from bson import ObjectId
+                from motor.motor_asyncio import AsyncIOMotorGridFSBucket
+                from database import get_database
+                db = get_database()
+                fs = AsyncIOMotorGridFSBucket(db, bucket_name="visitor_photos")
+                await fs.delete(ObjectId(file_id_or_url))
+                return True
+            except Exception as e:
+                print(f"Error deleting GridFS photo: {e}")
+                return False
+
     def _get_content_type(self, filename: str) -> str:
-        """Get content type from filename extension"""
         ext = os.path.splitext(filename)[1].lower()
-        content_types = {
-            '.jpg': 'image/jpeg',
-            '.jpeg': 'image/jpeg',
-            '.png': 'image/png',
-        }
-        return content_types.get(ext, 'application/octet-stream')
-    
+        return {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png"}.get(
+            ext, "application/octet-stream"
+        )
+
     async def validate_photo(self, photo_data: bytes, max_size_mb: int = 5) -> tuple[bool, str]:
-        """
-        Validate photo data (Non-blocking)
-        """
-        import asyncio
-        # Check size
         size_mb = len(photo_data) / (1024 * 1024)
         if size_mb > max_size_mb:
             return False, f"Photo size exceeds {max_size_mb}MB limit"
-        
-        # Process image off-thread
+
         def verify_image():
             try:
                 from PIL import Image
                 img = Image.open(io.BytesIO(photo_data))
                 img.verify()
-                
-                # Check format
-                if img.format not in ['JPEG', 'PNG']:
+                if img.format not in ["JPEG", "PNG"]:
                     return False, "Only JPEG and PNG formats are supported"
-                
                 return True, ""
             except Exception as e:
                 return False, f"Invalid image file: {str(e)}"
-        
+
         return await asyncio.to_thread(verify_image)
 
 
-# Global instance
 photo_storage = PhotoStorage()

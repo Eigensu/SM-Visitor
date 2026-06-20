@@ -6,7 +6,7 @@ that `PhotoStorage` can use.
 """
 
 import io
-from typing import Tuple
+from typing import Optional, Tuple
 
 import cloudinary
 import cloudinary.uploader
@@ -43,13 +43,16 @@ class CloudinaryStorage:
             return False, "CLOUDINARY_API_SECRET is not set"
         return True, ""
 
-    def upload_photo(self, photo_data: bytes, filename: str) -> Tuple[bool, str]:
+    def upload_photo(
+        self, photo_data: bytes, filename: str, public_id: Optional[str] = None
+    ) -> Tuple[bool, str]:
         """
         Upload a photo to Cloudinary.
 
         Args:
             photo_data: Raw image bytes
-            filename: Original filename (used for public_id base)
+            filename: Original filename (used as public_id base if public_id not given)
+            public_id: Explicit Cloudinary public_id (optional)
 
         Returns:
             (True, secure_url) on success
@@ -60,16 +63,13 @@ class CloudinaryStorage:
             return False, error
 
         try:
-            # Use a BytesIO wrapper so Cloudinary can read the bytes
             file_obj = io.BytesIO(photo_data)
-
-            # Derive a base public_id from the filename (extension stripped)
-            public_id_base = filename.rsplit(".", 1)[0]
+            pid = public_id if public_id else filename.rsplit(".", 1)[0]
 
             upload_result = cloudinary.uploader.upload(
                 file_obj,
                 folder=CLOUDINARY_FOLDER,
-                public_id=public_id_base,
+                public_id=pid,
                 overwrite=True,
                 resource_type="image",
             )
@@ -80,7 +80,6 @@ class CloudinaryStorage:
 
             return True, secure_url
         except Exception as e:  # noqa: BLE001
-            # Return error so caller can decide fallback behavior
             return False, f"Cloudinary upload failed: {e}"
 
 
