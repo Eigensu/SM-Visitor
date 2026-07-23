@@ -631,7 +631,7 @@ async def get_regular_history_visitors(current_user: dict = Depends(get_current_
     }
 
     results = []
-    async for visitor in visitors.find(query).sort("created_at", -1).limit(50):
+    async for visitor in visitors.find(query).sort("created_at", -1).limit(1000):
         results.append(serialize_visitor(visitor))
 
     return results

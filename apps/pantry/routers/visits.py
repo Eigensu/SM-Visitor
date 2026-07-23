@@ -1300,7 +1300,7 @@ async def get_history_visits(
     query = {"owner_id": flat_id, "status": {"$in": ["approved", "rejected"]}}
 
     visits = []
-    async for visit in visits_collection.find(query).sort("created_at", -1).limit(50):
+    async for visit in visits_collection.find(query).sort("created_at", -1).limit(1000):
         visits.append(map_visit_to_response(visit))
     return visits
 
