@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, status, Depends, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, status, Depends, UploadFile, File, Form, Query
 from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import datetime
@@ -831,7 +831,16 @@ async def get_visitor(visitor_id: str, current_user: dict = Depends(get_current_
 
 @router.get("/", response_model=List[VisitorResponse])
 async def list_visitors(
-    owner_id: Optional[str] = None, current_user: dict = Depends(get_current_user)
+    owner_id: Optional[str] = None,
+    include_inactive: bool = Query(
+        False,
+        description=(
+            "Include deactivated/rejected regular visitors. Used by autofill lookups "
+            "that need historical records, not just currently active ones."
+        ),
+    ),
+    limit: int = Query(1000, ge=1, le=5000),
+    current_user: dict = Depends(get_current_user),
 ):
     """
     List visitors
@@ -839,16 +848,36 @@ async def list_visitors(
     - Owners see only their visitors
     - Admins can filter by owner_id or see all
     - Guards can see all active visitors
+    - include_inactive additionally returns historical (rejected/deactivated)
+      regular visitors so guard autofill can recall past registrations
     """
     visitors = get_visitors_collection()
 
     # Build query
     if current_user["role"] == "guard":
         # Guards can see active ones OR pending regulars
+        status_clauses = [
+            {"is_active": True},
+            {"visitor_type": "regular", "approval_status": "pending"},
+        ]
+        if include_inactive:
+            # Past registrations stay useful for autofill even once deactivated.
+            # "deleted" records are intentionally left out.
+            status_clauses.append(
+                {
+                    "visitor_type": "regular",
+                    "approval_status": {"$in": ["approved", "rejected"]},
+                }
+            )
+        query = {"$or": status_clauses}
+    elif include_inactive:
         query = {
             "$or": [
                 {"is_active": True},
-                {"visitor_type": "regular", "approval_status": "pending"},
+                {
+                    "visitor_type": "regular",
+                    "approval_status": {"$in": ["pending", "approved", "rejected"]},
+                },
             ]
         }
     else:
@@ -865,7 +894,7 @@ async def list_visitors(
 
     # Fetch visitors
     cursor = visitors.find(query).sort("created_at", -1)
-    visitor_list = await cursor.to_list(length=100)
+    visitor_list = await cursor.to_list(length=limit)
 
     return [serialize_visitor(v) for v in visitor_list]
 

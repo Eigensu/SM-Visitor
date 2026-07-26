@@ -164,25 +164,30 @@ export default function NewVisitorPage() {
     const loadLookupRecords = async () => {
       try {
         setIsLookupLoading(true);
-        const [historyVisits, regularVisitors, pendingVisitors, regularHistory] = await Promise.all(
-          [
-            visitsAPI.getHistory(),
-            visitorsAPI.getRegularVisitors(),
-            visitorsAPI.getPendingRegular(),
-            visitorsAPI.getHistoryRegular(),
-          ]
-        );
+        // allSettled, not all: one failing source must not discard the others,
+        // which would leave autofill with no records at all.
+        const [pastVisits, regularVisitors] = await Promise.allSettled([
+          visitsAPI.getLookupHistory(),
+          visitorsAPI.getLookupVisitors(),
+        ]);
+
+        if (pastVisits.status === "rejected") {
+          console.error("Failed to load visit autofill records:", pastVisits.reason);
+        }
+        if (regularVisitors.status === "rejected") {
+          console.error("Failed to load visitor autofill records:", regularVisitors.reason);
+        }
 
         const combined = dedupeOrbitAutofillRecords([
-          ...historyVisits.map(normalizeOrbitAutofillRecord),
-          ...regularVisitors.map(normalizeOrbitAutofillRecord),
-          ...pendingVisitors.map(normalizeOrbitAutofillRecord),
-          ...regularHistory.map(normalizeOrbitAutofillRecord),
+          ...(pastVisits.status === "fulfilled" ? pastVisits.value : []).map(
+            normalizeOrbitAutofillRecord
+          ),
+          ...(regularVisitors.status === "fulfilled" ? regularVisitors.value : []).map(
+            normalizeOrbitAutofillRecord
+          ),
         ]);
 
         if (isActive) setLookupRecords(combined);
-      } catch (error) {
-        console.error("Failed to load autofill records:", error);
       } finally {
         if (isActive) setIsLookupLoading(false);
       }

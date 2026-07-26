@@ -2,8 +2,8 @@
 Visit Lifecycle Router - Handle QR scanning, visit creation, approval/rejection, and checkout
 """
 
-from fastapi import APIRouter, HTTPException, status, Depends, Body
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, HTTPException, status, Depends, Body, Query
+from pydantic import BaseModel, Field, ValidationError
 from typing import Optional, List
 from datetime import datetime, timedelta, timezone
 from bson import ObjectId
@@ -1303,6 +1303,55 @@ async def get_history_visits(
     async for visit in visits_collection.find(query).sort("created_at", -1).limit(1000):
         visits.append(map_visit_to_response(visit))
     return visits
+
+
+@router.get("/history/guard", response_model=List[VisitResponse])
+async def get_guard_visit_history(
+    limit: int = Query(1000, ge=1, le=5000),
+    _current_user: dict = Depends(get_current_guard),
+):
+    """
+    Society-wide visit history for the guard app.
+
+    Guards need past visits to autofill a returning visitor's details, but
+    /visits/history is owner-scoped (owner role + owner's flat_id), so it is
+    unusable from Orbit. This returns the most recent visits across all flats,
+    collapsed to one entry per person so a frequent visitor yields a single
+    autofill match instead of one row per visit.
+    """
+    visits_collection = get_visits_collection()
+
+    seen: set[tuple[str, str]] = set()
+    results: List[VisitResponse] = []
+
+    # Scan a bounded window: repeat visitors collapse, so read more documents
+    # than the requested limit without letting a large collection run away.
+    scan_limit = min(max(limit * 5, 2000), 20000)
+
+    cursor = visits_collection.find({}).sort("created_at", -1).limit(scan_limit)
+    async for visit in cursor:
+        name = visit.get("name_snapshot")
+        if not isinstance(name, str) or not name.strip():
+            # Legacy/partial documents cannot be mapped or matched on.
+            continue
+
+        phone = visit.get("phone_snapshot") or ""
+        identity = (name.strip().casefold(), str(phone).strip())
+        if identity in seen:
+            continue
+        seen.add(identity)
+
+        try:
+            results.append(map_visit_to_response(visit))
+        except (KeyError, TypeError, ValidationError):
+            # Historical documents can be missing required fields (e.g. a null
+            # owner_id). Skip them instead of failing the whole lookup.
+            continue
+
+        if len(results) >= limit:
+            break
+
+    return results
 
 
 async def get_owner_flat_id(user_id: str, db) -> str:

@@ -11,7 +11,7 @@ import { Button, Input } from "@sm-visitor/ui";
 import { PhotoCapture } from "@/components/PhotoCapture";
 import { OwnerSelect } from "@/components/OwnerSelect";
 import { GlassCard } from "@/components/GlassCard";
-import { visitorsAPI } from "@/lib/api";
+import { visitorsAPI, visitsAPI } from "@/lib/api";
 import toast from "react-hot-toast";
 import { ArrowLeft, UserCheck, Clock, CreditCard, Camera, User } from "lucide-react";
 import {
@@ -169,23 +169,32 @@ function RegularVisitorContent() {
     const loadLookupRecords = async () => {
       try {
         setIsLookupLoading(true);
-        const [activeRegular, pendingRegular, historyRegular] = await Promise.all([
-          visitorsAPI.getRegularVisitors(),
-          visitorsAPI.getPendingRegular(),
-          visitorsAPI.getHistoryRegular(),
+        // allSettled, not all: one failing source must not discard the others,
+        // which would leave autofill with no records at all.
+        const [regularVisitors, pastVisits] = await Promise.allSettled([
+          visitorsAPI.getLookupVisitors(),
+          visitsAPI.getLookupHistory(),
         ]);
 
+        if (regularVisitors.status === "rejected") {
+          console.error("Failed to load visitor autofill records:", regularVisitors.reason);
+        }
+        if (pastVisits.status === "rejected") {
+          console.error("Failed to load visit autofill records:", pastVisits.reason);
+        }
+
         const combined = dedupeOrbitAutofillRecords([
-          ...activeRegular.map(normalizeOrbitAutofillRecord),
-          ...pendingRegular.map(normalizeOrbitAutofillRecord),
-          ...historyRegular.map(normalizeOrbitAutofillRecord),
+          ...(regularVisitors.status === "fulfilled" ? regularVisitors.value : []).map(
+            normalizeOrbitAutofillRecord
+          ),
+          ...(pastVisits.status === "fulfilled" ? pastVisits.value : []).map(
+            normalizeOrbitAutofillRecord
+          ),
         ]);
 
         if (isActive) {
           setLookupRecords(combined);
         }
-      } catch (error) {
-        console.error("Failed to load autofill records:", error);
       } finally {
         if (isActive) {
           setIsLookupLoading(false);
