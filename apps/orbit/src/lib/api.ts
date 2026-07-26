@@ -112,8 +112,16 @@ export const visitsAPI = {
     return response.data;
   },
 
-  getHistory: async (signal?: AbortSignal) => {
-    const response = await apiClient.get("/visits/history", { signal });
+  /**
+   * Past visits for autofill lookups.
+   * Uses the guard-scoped endpoint - /visits/history requires the owner role
+   * and an owner flat_id, so it always fails from Orbit.
+   */
+  getLookupHistory: async (signal?: AbortSignal) => {
+    const response = await apiClient.get("/visits/history/guard", {
+      params: { limit: 1000 },
+      signal,
+    });
     return response.data;
   },
 
@@ -185,24 +193,19 @@ export const visitorsAPI = {
     const response = await apiClient.post("/visitors/regular/guard", data);
     return response.data;
   },
-  getRegularVisitors: async (signal?: AbortSignal) => {
-    const response = await apiClient.get("/visitors/", { signal });
+  /**
+   * Regular visitors for autofill lookups - current and historical.
+   * include_inactive keeps deactivated/rejected registrations in the result so
+   * an older visitor is still recallable; limit lifts the default page size,
+   * which otherwise silently truncates to the newest records.
+   */
+  getLookupVisitors: async (signal?: AbortSignal) => {
+    const response = await apiClient.get("/visitors/", {
+      params: { include_inactive: true, limit: 1000 },
+      signal,
+    });
     return normalizeRegularVisitorList(response.data).filter(
-      (visitor) => visitor.visitor_type === "regular" && visitor.approval_status === "approved"
-    );
-  },
-  getPendingRegular: async (signal?: AbortSignal) => {
-    const response = await apiClient.get("/visitors/", { signal });
-    return normalizeRegularVisitorList(response.data).filter(
-      (visitor) => visitor.visitor_type === "regular" && visitor.approval_status === "pending"
-    );
-  },
-  getHistoryRegular: async (signal?: AbortSignal) => {
-    const response = await apiClient.get("/visitors/", { signal });
-    return normalizeRegularVisitorList(response.data).filter(
-      (visitor) =>
-        visitor.visitor_type === "regular" &&
-        (visitor.approval_status === "approved" || visitor.approval_status === "rejected")
+      (visitor) => visitor.visitor_type === "regular" && visitor.approval_status !== "deleted"
     );
   },
   getRegularVisitor: async (visitorId: string, signal?: AbortSignal) => {
