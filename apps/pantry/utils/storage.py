@@ -19,14 +19,19 @@ class PhotoStorage:
         os.makedirs(self.local_buffer_path, exist_ok=True)
 
     async def _upload_to_cloudinary(self, photo_data: bytes, filename: str) -> str:
-        """Upload bytes to Cloudinary and return the secure URL."""
+        """Upload bytes to Cloudinary and return the secure URL. Fallback to local."""
         from utils.cloudinary_storage import cloudinary_storage
         unique_id = f"{uuid.uuid4().hex}_{os.path.splitext(filename)[0]}"
         success, result = await asyncio.to_thread(
             cloudinary_storage.upload_photo, photo_data, f"{unique_id}.jpg", unique_id
         )
         if not success:
-            raise RuntimeError(f"Cloudinary upload failed: {result}")
+            print(f"Cloudinary upload failed ({result}), falling back to local storage")
+            local_filename = f"{unique_id}.jpg"
+            full_path = os.path.join(self.local_buffer_path, local_filename)
+            with open(full_path, "wb") as f:
+                f.write(photo_data)
+            return f"/uploads/buffer/{local_filename}"
         return result
 
     async def save_regular_visitor_photo(self, photo_data: bytes, filename: str) -> str:

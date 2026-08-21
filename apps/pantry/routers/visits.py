@@ -8,6 +8,7 @@ from typing import Optional, List
 from datetime import datetime, timedelta, timezone
 from bson import ObjectId
 from bson.errors import InvalidId
+from pymongo import ReturnDocument
 import random
 
 from database import (
@@ -112,6 +113,9 @@ class VisitResponse(BaseModel):
     guard_name: Optional[str] = None
     entry_time: Optional[datetime]
     exit_time: Optional[datetime]
+    # Computed from the same current-day lifecycle boundary used by Orbit.
+    # This prevents legacy history without exit_time from being called active.
+    is_current_active: bool = False
     status: str
     approval_status: Optional[str] = None
     approved_at: Optional[datetime] = None
@@ -130,6 +134,16 @@ class VisitResponse(BaseModel):
 def map_visit_to_response(v: dict) -> VisitResponse:
     """Helper to map MongoDB visit document to VisitResponse"""
     status = normalize_approval_status(v.get("status"))
+    created_at = v["created_at"]
+    today_start_ist = get_ist_now().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start_utc = today_start_ist.astimezone(timezone.utc).replace(tzinfo=None)
+    created_at_normalized = normalize_datetime(created_at, assume_utc=True)
+    today_start_normalized = normalize_datetime(today_start_utc, assume_utc=True)
+    is_current_active = bool(
+        v.get("entry_time")
+        and not v.get("exit_time")
+        and created_at_normalized >= today_start_normalized
+    )
     return VisitResponse(
         id=str(v["_id"]),
         visitor_id=v.get("visitor_id"),
@@ -143,6 +157,7 @@ def map_visit_to_response(v: dict) -> VisitResponse:
         guard_id=v["guard_id"],
         entry_time=v.get("entry_time"),
         exit_time=v.get("exit_time"),
+        is_current_active=is_current_active,
         status=status,
         approval_status=status,
         approved_at=v.get("approved_at"),
@@ -155,7 +170,7 @@ def map_visit_to_response(v: dict) -> VisitResponse:
         is_all_flats=v.get("is_all_flats", False),
         valid_flats=v.get("valid_flats"),
         target_flat_ids=v.get("target_flat_ids"),
-        created_at=v["created_at"],
+        created_at=created_at,
     )
 
 
@@ -187,6 +202,7 @@ def map_regular_visitor_to_today_response(visitor: dict) -> VisitResponse:
         guard_id=str(visitor.get("created_by") or owner_id or visitor["_id"]),
         entry_time=created_at,
         exit_time=None,
+        is_current_active=False,
         status=status,
         approval_status=status,
         approved_at=visitor.get("approved_at") or visitor.get("updated_at") or created_at,
@@ -1000,6 +1016,9 @@ async def get_todays_visits(
         "visitor_type": "regular",
         "approval_status": {"$in": ["approved", "auto_approved"]},
         "is_active": True,
+        # A guard-approved regular visitor now has a real visit document. Do
+        # not emit the registration as a second, synthetic Today row.
+        "checked_in_visit_id": {"$exists": False},
         "created_at": {"$gte": today_start_utc},
     }
 
@@ -1052,40 +1071,33 @@ async def checkout_visit(
             status_code=status.HTTP_404_NOT_FOUND, detail="Visit not found"
         )
 
+    if not visit.get("entry_time"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Visit has not been checked in",
+        )
+
     if visit.get("exit_time"):
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Visit already checked out"
+            status_code=status.HTTP_409_CONFLICT, detail="Visit already checked out"
         )
 
-    # Update visit
-    await visits.update_one(
-        {"_id": ObjectId(visit_id)},
-        {"$set": {"exit_time": get_utc_now(), "updated_at": get_utc_now()}},
+    # Match the active state as part of the update. This makes checkout safe
+    # when two guards submit it at the same time and preserves the first exit time.
+    checkout_time = get_utc_now()
+    updated_visit = await visits.find_one_and_update(
+        {"_id": ObjectId(visit_id), "entry_time": {"$ne": None}, "exit_time": None},
+        {"$set": {"exit_time": checkout_time, "updated_at": checkout_time}},
+        return_document=ReturnDocument.AFTER,
     )
 
-    # Fetch updated visit
-    updated_visit = await visits.find_one({"_id": ObjectId(visit_id)})
     if updated_visit is None:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Visit not found",
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Visit was already checked out",
         )
 
-    return VisitResponse(
-        id=str(updated_visit["_id"]),
-        visitor_id=updated_visit.get("visitor_id"),
-        name_snapshot=updated_visit["name_snapshot"],
-        phone_snapshot=updated_visit.get("phone_snapshot"),
-        photo_snapshot_url=updated_visit["photo_snapshot_url"],
-        purpose=updated_visit["purpose"],
-        owner_id=updated_visit["owner_id"],
-        guard_id=updated_visit["guard_id"],
-        entry_time=updated_visit.get("entry_time"),
-        exit_time=updated_visit.get("exit_time"),
-        status=updated_visit["status"],
-        qr_token=updated_visit.get("qr_token"),
-        created_at=updated_visit["created_at"],
-    )
+    return map_visit_to_response(updated_visit)
 
 
 @router.delete("/{visit_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -1648,12 +1660,19 @@ async def get_guard_dashboard_stats(
             "visitor_type": "regular",
             "approval_status": {"$in": ["approved", "auto_approved"]},
             "is_active": True,
+            "checked_in_visit_id": {"$exists": False},
             "created_at": {"$gte": today_start_utc},
         }
     )
 
+    # Active Now is the current-day visit lifecycle, not every legacy record
+    # which predates exit_time. The guard's Today view uses this same boundary.
     active_now_count = await visits_collection.count_documents(
-        {"entry_time": {"$ne": None}, "exit_time": None}
+        {
+            "created_at": {"$gte": today_start_utc},
+            "entry_time": {"$ne": None},
+            "exit_time": None,
+        }
     )
 
     approved_regular_visitors = await visitors_collection.find(

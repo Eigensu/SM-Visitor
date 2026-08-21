@@ -81,6 +81,7 @@ interface ExtendedRegularVisitorHistoryItem extends RegularVisitorHistoryItem {
   id_number?: string | null;
   id_photo_url?: string | null;
   id_card_photo_url?: string | null;
+  checked_in_visit_id?: string | null;
 }
 
 interface Visit {
@@ -98,6 +99,7 @@ interface Visit {
   visitor_type?: "adhoc" | "regular";
   entry_time?: string | null;
   exit_time?: string | null;
+  is_current_active?: boolean;
   guard_id?: string;
   qr_token?: string | null;
 }
@@ -165,6 +167,7 @@ const mapAdhocVisit = (v: ExtendedVisitHistoryItem): Visit => ({
   visitor_type: "adhoc",
   entry_time: v.entry_time,
   exit_time: v.exit_time,
+  is_current_active: v.is_current_active,
   guard_id: v.guard_id,
   qr_token: v.qr_token,
 });
@@ -197,6 +200,18 @@ const csvEscape = (value: unknown): string => {
     return `"${stringValue.replace(/\"/g, '""')}"`;
   }
   return stringValue;
+};
+
+const getDisplayStatus = (visitor: Visit): StatusType => {
+  if (visitor.exit_time) return "out";
+  if (visitor.is_current_active) return "active";
+  return visitor.status;
+};
+
+const getStatusLabel = (visitor: Visit) => {
+  if (visitor.exit_time) return "Out";
+  if (visitor.is_current_active) return "Active";
+  return undefined;
 };
 
 export default function Visitors() {
@@ -333,9 +348,12 @@ export default function Visitors() {
 
       const transformedVisits: Visit[] = [
         ...historyVisits.map((item) => mapAdhocVisit(item as ExtendedVisitHistoryItem)),
-        ...historyRegularVisitors.map((item) =>
-          mapRegularVisit(item as ExtendedRegularVisitorHistoryItem)
-        ),
+        // Guard-approved registrations have a corresponding visit row with
+        // the actual in/out times. Keep that row and avoid a duplicate profile
+        // row in the resident history.
+        ...historyRegularVisitors
+          .filter((item) => !(item as ExtendedRegularVisitorHistoryItem).checked_in_visit_id)
+          .map((item) => mapRegularVisit(item as ExtendedRegularVisitorHistoryItem)),
       ].sort((a, b) => getDateTimestamp(b.createdAt) - getDateTimestamp(a.createdAt));
 
       setVisits(transformedVisits);
@@ -566,94 +584,21 @@ export default function Visitors() {
       return;
     }
 
-    const headers = [
-      "Full Name",
-      "Phone Number",
-      "Visitor Type",
-      "Purpose",
-      "Validity Period",
-      "Owner / Flat Assignment",
-      "Visitor Photo",
-      "Card Type",
-      "Card Number",
-      "ID Card Photo",
-      "Created Time",
-      "Approved Time",
-      "Entry Time",
-      "Exit Time",
-      "Status",
-      "QR Information",
-      "Guard Information",
-    ];
+    const headers = ["Visitor", "Phone", "Purpose", "Date", "In-Time", "Out-Time", "Status"];
 
     const rows = filteredVisitors.map((visitor) => {
-      const regularRaw = regularVisitMap[visitor.id] || {};
       const adhocRaw = adhocVisitMap[visitor.id] || {};
-
-      const isRegular = visitor.visitor_type === "regular";
-      const isTemporaryGuest = Boolean(
-        regularRaw.pass_type === "temporary" || regularRaw.qr_validity_hours
-      );
-      const visitorType = isRegular ? getRegularVisitorTypeLabel(regularRaw) : "Guest";
-      const ownerAssignment = isRegular
-        ? visitor.owner_id || regularRaw.flat_id || regularRaw.assigned_owner_id || "N/A"
-        : visitor.is_all_flats
-          ? "Society"
-          : visitor.target_flat_ids?.join(", ") || visitor.owner_id || adhocRaw.owner_id || "N/A";
-      const visitorPhoto = isRegular
-        ? visitor.photo || regularRaw.photo_url || ""
-        : visitor.photo || adhocRaw.photo_snapshot_url || "";
-      const cardType = isRegular
-        ? regularRaw.card_type || regularRaw.id_card_type || "N/A"
-        : adhocRaw.id_type || "N/A";
-      const cardNumber = isRegular
-        ? regularRaw.card_number || regularRaw.id_card_number || "N/A"
-        : adhocRaw.id_number || "N/A";
-      const idCardPhoto = isRegular
-        ? regularRaw.id_card_photo_url || regularRaw.id_photo_url || "N/A"
-        : adhocRaw.id_photo_url || "N/A";
-      const createdTime = isRegular
-        ? formatMaybeDateTime(regularRaw.created_at || visitor.createdAt, "N/A")
-        : formatMaybeDateTime(adhocRaw.created_at || visitor.createdAt, "N/A");
-      const approvedTime = isRegular
-        ? formatMaybeDateTime(regularRaw.approved_at || regularRaw.updated_at, "N/A")
-        : formatMaybeDateTime(adhocRaw.approved_at || adhocRaw.updated_at, "N/A");
       const entryRaw = visitor.entry_time || adhocRaw.entry_time || null;
       const exitRaw = visitor.exit_time || adhocRaw.exit_time || null;
-      const guardInfo =
-        (adhocRaw as { guard_name?: string }).guard_name ||
-        adhocRaw.guard_id ||
-        visitor.guard_id ||
-        regularRaw.guard_name ||
-        regularRaw.created_by_role ||
-        regularRaw.created_by ||
-        "N/A";
-      const qrInfo = isRegular
-        ? regularRaw.qr_token
-          ? `${isTemporaryGuest ? `${regularRaw.qr_validity_hours}h pass` : "QR pass"} available`
-          : "N/A"
-        : adhocRaw.qr_token
-          ? "QR pass available"
-          : "N/A";
 
       return [
         visitor.name,
         visitor.phone,
-        visitorType,
-        isRegular ? regularRaw.default_purpose || visitor.purpose : visitor.purpose,
-        isRegular ? getValidityLabel(regularRaw) : "N/A",
-        ownerAssignment,
-        visitorPhoto,
-        cardType,
-        cardNumber,
-        idCardPhoto,
-        createdTime,
-        approvedTime,
-        entryRaw ? formatDateTime(entryRaw) : "Not Entered Yet",
-        exitRaw ? formatDateTime(exitRaw) : "N/A",
-        visitor.status,
-        qrInfo,
-        guardInfo,
+        visitor.purpose,
+        formatDateTime(entryRaw || visitor.createdAt, { day: "numeric", month: "short" }),
+        entryRaw ? formatDateTime(entryRaw, { hour: "2-digit", minute: "2-digit" }) : "",
+        exitRaw ? formatDateTime(exitRaw, { hour: "2-digit", minute: "2-digit" }) : "",
+        getStatusLabel(visitor) || visitor.status,
       ];
     });
 
@@ -789,7 +734,9 @@ export default function Visitors() {
                   <TableHead className="font-semibold">Visitor</TableHead>
                   <TableHead className="font-semibold">Phone</TableHead>
                   <TableHead className="font-semibold">Purpose</TableHead>
-                  <TableHead className="font-semibold">Date & Time</TableHead>
+                  <TableHead className="font-semibold">Date</TableHead>
+                  <TableHead className="font-semibold">In-Time</TableHead>
+                  <TableHead className="font-semibold">Out-Time</TableHead>
                   <TableHead className="font-semibold">Status</TableHead>
                   <TableHead className="font-semibold">Actions</TableHead>
                   <TableHead className="w-10"></TableHead>
@@ -834,9 +781,24 @@ export default function Visitors() {
                     </TableCell>
                     <TableCell className="text-muted-foreground">{visitor.phone}</TableCell>
                     <TableCell>{visitor.purpose}</TableCell>
-                    <TableCell className="text-muted-foreground">{visitor.date}</TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {formatDateTime(visitor.entry_time || visitor.createdAt, {
+                        day: "numeric",
+                        month: "short",
+                      })}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {visitor.entry_time
+                        ? formatDateTime(visitor.entry_time, { hour: "2-digit", minute: "2-digit" })
+                        : "—"}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {visitor.exit_time
+                        ? formatDateTime(visitor.exit_time, { hour: "2-digit", minute: "2-digit" })
+                        : "—"}
+                    </TableCell>
                     <TableCell>
-                      <StatusBadge status={visitor.status} />
+                      <StatusBadge status={getDisplayStatus(visitor)} />
                     </TableCell>
                     <TableCell>
                       {visitor.status === "pending" && visitor.visitor_type === "adhoc" && (
@@ -916,7 +878,7 @@ export default function Visitors() {
                       <p className="text-sm text-muted-foreground">{visitor.phone}</p>
                     </div>
                   </div>
-                  <StatusBadge status={visitor.status} />
+                  <StatusBadge status={getDisplayStatus(visitor)} />
                 </div>
                 <div className="flex items-center justify-between text-sm">
                   <div className="flex flex-col">
@@ -928,7 +890,24 @@ export default function Visitors() {
                         : visitor.target_flat_ids?.join(", ") || visitor.owner_id}
                     </span>
                   </div>
-                  <span className="text-muted-foreground">{visitor.date}</span>
+                  <div className="text-right text-muted-foreground">
+                    <p>
+                      {formatDateTime(visitor.entry_time || visitor.createdAt, {
+                        day: "numeric",
+                        month: "short",
+                      })}
+                    </p>
+                    <p className="text-xs">
+                      In{" "}
+                      {visitor.entry_time
+                        ? formatDateTime(visitor.entry_time, { hour: "2-digit", minute: "2-digit" })
+                        : "—"}{" "}
+                      · Out{" "}
+                      {visitor.exit_time
+                        ? formatDateTime(visitor.exit_time, { hour: "2-digit", minute: "2-digit" })
+                        : "—"}
+                    </p>
+                  </div>
                 </div>
 
                 {visitor.status === "pending" && (

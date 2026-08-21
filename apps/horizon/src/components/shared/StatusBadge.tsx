@@ -7,6 +7,7 @@ export type StatusType =
   | "deleted"
   | "expired"
   | "active"
+  | "out"
   | "auto_approved";
 
 interface StatusBadgeProps {
@@ -39,6 +40,10 @@ const statusConfig: Record<StatusType, { label: string; className: string }> = {
     label: "Active",
     className: "bg-primary/10 text-primary border-primary/20",
   },
+  out: {
+    label: "Out",
+    className: "bg-muted text-muted-foreground border-border",
+  },
   auto_approved: {
     label: "Auto Approved",
     className: "bg-success/10 text-success border-success/20",
@@ -70,6 +75,7 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
           status === "pending" && "animate-pulse bg-pending",
           (status === "rejected" || status === "deleted") && "bg-destructive",
           status === "expired" && "bg-muted-foreground",
+          status === "out" && "bg-muted-foreground",
           (status === "active" || status === "auto_approved") && "bg-primary"
         )}
       />

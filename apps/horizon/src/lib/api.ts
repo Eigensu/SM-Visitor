@@ -45,6 +45,7 @@ export interface VisitHistoryItem {
   created_at: string;
   entry_time?: string | null;
   exit_time?: string | null;
+  is_current_active?: boolean;
   updated_at?: string | null;
   qr_token?: string | null;
   is_all_flats?: boolean;
@@ -79,6 +80,7 @@ export interface RegularVisitorHistoryItem {
   vehicle_number?: string | null;
   vehicle_type?: string | null;
   approved_at?: string | null;
+  checked_in_visit_id?: string | null;
   guard_name?: string | null;
   pass_type?: string | null;
   qr_validity_hours?: number | null;
@@ -122,6 +124,7 @@ export interface VisitTimelineDetails {
   created_at: string;
   entry_time?: string | null;
   exit_time?: string | null;
+  is_current_active?: boolean;
   updated_at?: string | null;
   qr_token?: string | null;
   approved_at?: string | null;

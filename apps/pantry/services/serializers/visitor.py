@@ -95,6 +95,7 @@ def serialize_visitor(visitor: dict) -> dict:
             if approved_at and hasattr(approved_at, "isoformat")
             else approved_at
         ),
+        "checked_in_visit_id": visitor.get("checked_in_visit_id"),
         "pass_type": visitor.get("pass_type")
         or ("temporary" if visitor.get("qr_validity_hours") else "permanent"),
         "is_active": visitor.get("is_active", True),

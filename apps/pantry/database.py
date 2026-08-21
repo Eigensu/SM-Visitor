@@ -30,7 +30,8 @@ async def connect_to_mongo():
     Establish connection to MongoDB
     """
     try:
-        _state.client = AsyncIOMotorClient(MONGODB_URL)
+        import certifi
+        _state.client = AsyncIOMotorClient(MONGODB_URL, tlsCAFile=certifi.where())
         _state.database = _state.client[DATABASE_NAME]
 
         # Test connection
@@ -93,6 +94,7 @@ async def create_indexes():
         (database.visits, "guard_id", {}),
         (database.visits, "status", {}),
         (database.visits, "entry_time", {}),
+        (database.visits, "exit_time", {}),
         (database.temporary_qr, "token", {"unique": True}),
         (database.temporary_qr, "owner_id", {}),
         (database.temporary_qr, "expires_at", {}),
@@ -104,6 +106,7 @@ async def create_indexes():
 
     compound_ops = [
         (database.visits, [("owner_id", 1), ("entry_time", -1)], {}),
+        (database.visits, [("created_at", 1), ("entry_time", 1), ("exit_time", 1)], {}),
         (database.notifications, [("recipient_id", 1), ("is_read", 1)], {}),
     ]
 

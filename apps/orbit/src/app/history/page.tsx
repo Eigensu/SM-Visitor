@@ -6,7 +6,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Button } from "@sm-visitor/ui";
+import { Button, Modal } from "@sm-visitor/ui";
 import { StatusBadge } from "@sm-visitor/ui";
 import { Spinner } from "@sm-visitor/ui";
 import { GlassCard } from "@/components/GlassCard";
@@ -36,6 +36,7 @@ interface Visit {
   guard_name?: string;
   entry_time?: string;
   exit_time?: string;
+  is_current_active?: boolean;
   status: "pending" | "approved" | "rejected" | "auto_approved" | "deleted";
   is_all_flats?: boolean;
   valid_flats?: string[];
@@ -55,6 +56,11 @@ export default function HistoryPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedVisit, setSelectedVisit] = useState<OrbitRecordDetails | null>(null);
   const [isLoadingDetails, setIsLoadingDetails] = useState(false);
+  const [checkoutVisit, setCheckoutVisit] = useState<Visit | null>(null);
+  const [isCheckingOut, setIsCheckingOut] = useState(false);
+
+  const isActiveVisit = (visit: Visit) =>
+    visit.source_record_type !== "regular_visitor" && visit.is_current_active === true;
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -91,7 +97,7 @@ export default function HistoryPage() {
     }
     if (statusFilter !== "all") {
       if (statusFilter === "active") {
-        filtered = filtered.filter((v) => v.entry_time && !v.exit_time);
+        filtered = filtered.filter(isActiveVisit);
       } else {
         filtered = filtered.filter((v) => v.status === statusFilter);
       }
@@ -115,13 +121,26 @@ export default function HistoryPage() {
     }
   };
 
-  const handleCheckout = async (visitId: string) => {
+  const handleCheckout = async () => {
+    if (!checkoutVisit) return;
     try {
-      await visitsAPI.checkout(visitId);
+      setIsCheckingOut(true);
+      const updatedVisit = await visitsAPI.checkout(checkoutVisit.id);
+      setTodayVisits(
+        todayVisits.map((visit) =>
+          visit.id === checkoutVisit.id ? { ...visit, exit_time: updatedVisit.exit_time } : visit
+        )
+      );
+      setCheckoutVisit(null);
       toast.success("Visitor checked out successfully!");
-      fetchVisits();
     } catch (error: any) {
+      if (error.response?.status === 409) {
+        setCheckoutVisit(null);
+        void fetchVisits();
+      }
       toast.error(error.response?.data?.detail || "Failed to checkout visitor");
+    } finally {
+      setIsCheckingOut(false);
     }
   };
 
@@ -213,7 +232,7 @@ export default function HistoryPage() {
           <GlassCard className="p-4">
             <p className="text-sm text-gray-600">Active Now</p>
             <p className="text-2xl font-bold text-primary">
-              {todayVisits.filter((v) => v.entry_time && !v.exit_time).length}
+              {todayVisits.filter(isActiveVisit).length}
             </p>
           </GlassCard>
         </div>
@@ -275,9 +294,9 @@ export default function HistoryPage() {
                     >
                       {isLoadingDetails ? "..." : "Details"}
                     </Button>
-                    {visit.entry_time && !visit.exit_time && (
-                      <Button onClick={() => handleCheckout(visit.id)} size="sm">
-                        Check Out
+                    {isActiveVisit(visit) && (
+                      <Button onClick={() => setCheckoutVisit(visit)} size="sm">
+                        OUT
                       </Button>
                     )}
                     {visit.status === "pending" && (
@@ -299,6 +318,38 @@ export default function HistoryPage() {
         open={selectedVisit !== null}
         onClose={() => setSelectedVisit(null)}
       />
+
+      <Modal
+        isOpen={checkoutVisit !== null}
+        onClose={() => !isCheckingOut && setCheckoutVisit(null)}
+        title="Mark visitor as checked out?"
+        size="sm"
+      >
+        <div className="space-y-5">
+          <div className="space-y-1 text-sm text-gray-600">
+            <p>
+              <span className="font-medium text-gray-900">Visitor:</span>{" "}
+              {checkoutVisit?.name_snapshot}
+            </p>
+            <p>
+              <span className="font-medium text-gray-900">Entry time:</span>{" "}
+              {checkoutVisit?.entry_time ? formatTime(checkoutVisit.entry_time) : "N/A"}
+            </p>
+          </div>
+          <div className="flex justify-end gap-3">
+            <Button
+              variant="secondary"
+              onClick={() => setCheckoutVisit(null)}
+              disabled={isCheckingOut}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleCheckout} isLoading={isCheckingOut}>
+              Confirm OUT
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

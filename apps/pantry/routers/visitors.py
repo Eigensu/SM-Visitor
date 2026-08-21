@@ -3,8 +3,9 @@ from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import datetime
 from bson import ObjectId
+from pymongo import ReturnDocument
 
-from database import get_visitors_collection, get_database
+from database import get_visitors_collection, get_visits_collection, get_database
 from middleware.auth import get_current_owner, get_current_user, get_current_guard
 from utils.jwt_utils import create_qr_token
 from utils.qr_utils import generate_qr_image_with_details
@@ -247,6 +248,7 @@ class VisitorResponse(BaseModel):
     qr_expires_at: Optional[datetime] = None
     pass_type: Optional[str] = None
     approved_at: Optional[datetime] = None
+    checked_in_visit_id: Optional[str] = None
     guard_name: Optional[str] = None
 
 
@@ -657,6 +659,21 @@ async def approve_regular_visitor(
             status_code=status.HTTP_404_NOT_FOUND, detail="Visitor request not found"
         )
 
+    # An approval for a guard-initiated registration happens while the visitor
+    # is at the gate. It therefore needs the same concrete visit/check-in event
+    # as the ad-hoc approval flow, rather than only activating a QR profile.
+    if visitor.get("approval_status") == "approved":
+        return VisitorWithQRResponse(
+            **serialize_visitor(visitor),
+            qr_image_url="",
+        )
+
+    if visitor.get("approval_status") != "pending":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Visitor is {visitor.get('approval_status')}, cannot approve",
+        )
+
     # Compute expiration for temporary visitors at approval time
     from datetime import timedelta
 
@@ -673,19 +690,62 @@ async def approve_regular_visitor(
         }
     )
 
-    # Update to active
-    await visitors.update_one(
-        {"_id": ObjectId(visitor_id)},
+    approved_at = get_utc_now()
+    updated_visitor = await visitors.find_one_and_update(
+        {"_id": ObjectId(visitor_id), "approval_status": "pending"},
         {
             "$set": {
                 "approval_status": "approved",
                 "is_active": True,
                 "qr_token": qr_token,
                 "qr_expires_at": expires_at,
-                "approved_at": get_utc_now(),
-                "updated_at": get_utc_now(),
+                "approved_at": approved_at,
+                "updated_at": approved_at,
             }
         },
+        return_document=ReturnDocument.AFTER,
+    )
+
+    if updated_visitor is None:
+        # A simultaneous approval won the race. Return its result without
+        # creating a second entry event.
+        latest_visitor = await visitors.find_one({"_id": ObjectId(visitor_id)})
+        if latest_visitor and latest_visitor.get("approval_status") == "approved":
+            return VisitorWithQRResponse(
+                **serialize_visitor(latest_visitor),
+                qr_image_url="",
+            )
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Approval changed")
+
+    owner_flat_id = await get_current_owner_flat_id(current_user)
+    visit_doc = {
+        "visitor_id": visitor_id,
+        "name_snapshot": updated_visitor["name"],
+        "phone_snapshot": updated_visitor.get("phone"),
+        "photo_snapshot_url": updated_visitor.get("photo_url"),
+        "purpose": updated_visitor.get("default_purpose")
+        or updated_visitor.get("category_label")
+        or "Visit",
+        "owner_id": owner_flat_id or updated_visitor.get("flat_id") or "",
+        "target_flat_ids": [owner_flat_id] if owner_flat_id else [],
+        "guard_id": str(updated_visitor.get("created_by") or ""),
+        "entry_time": approved_at,
+        "exit_time": None,
+        "status": "approved",
+        "approved_at": approved_at,
+        "qr_token": qr_token,
+        "id_type": updated_visitor.get("id_card_type"),
+        "id_number": updated_visitor.get("id_card_number"),
+        "id_photo_url": updated_visitor.get("id_card_photo_url"),
+        "vehicle_number": updated_visitor.get("vehicle_number"),
+        "vehicle_type": updated_visitor.get("vehicle_type"),
+        "created_at": approved_at,
+        "updated_at": approved_at,
+    }
+    visit_result = await get_visits_collection().insert_one(visit_doc)
+    await visitors.update_one(
+        {"_id": ObjectId(visitor_id)},
+        {"$set": {"checked_in_visit_id": str(visit_result.inserted_id)}},
     )
 
     # FIX: Offload CPU-intensive QR generation
@@ -707,24 +767,19 @@ async def approve_regular_visitor(
     from utils.sse_manager import sse_manager
 
     await sse_manager.send_event(
-        visitor["created_by"],
+            updated_visitor["created_by"],
         "VISITOR_APPROVED",
         {
             "visitor_id": visitor_id,
-            "visitor_name": visitor["name"],
+            "visit_id": str(visit_result.inserted_id),
+            "visitor_name": updated_visitor["name"],
             "qr_token": qr_token,
         },
     )
 
     return VisitorWithQRResponse(
         **serialize_visitor(
-            visitor
-            | {
-                "approval_status": ApprovalStatus.APPROVED,
-                "is_active": True,
-                "qr_token": qr_token,
-                    "approved_at": get_utc_now(),
-            }
+            updated_visitor | {"checked_in_visit_id": str(visit_result.inserted_id)}
         ),
         qr_image_url=qr_image_url,
     )
