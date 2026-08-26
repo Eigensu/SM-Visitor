@@ -2,10 +2,12 @@
 Database configuration and connection management using Motor (async MongoDB driver)
 """
 
-from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
-from typing import Optional
+import logging
 import os
+
+import certifi
 from dotenv import load_dotenv
+from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 
 load_dotenv()
 
@@ -18,8 +20,8 @@ class _MongoState:
     """Shared mutable state for MongoDB client and database handles."""
 
     def __init__(self):
-        self.client: Optional[AsyncIOMotorClient] = None
-        self.database: Optional[AsyncIOMotorDatabase] = None
+        self.client: AsyncIOMotorClient | None = None
+        self.database: AsyncIOMotorDatabase | None = None
 
 
 _state = _MongoState()
@@ -30,7 +32,6 @@ async def connect_to_mongo():
     Establish connection to MongoDB
     """
     try:
-        import certifi
         _state.client = AsyncIOMotorClient(MONGODB_URL, tlsCAFile=certifi.where())
         _state.database = _state.client[DATABASE_NAME]
 
@@ -72,7 +73,6 @@ async def create_indexes():
     Failures are non-fatal (e.g. Atlas quota exceeded) so the app can still
     serve reads with pre-existing indexes.
     """
-    import logging
     logger = logging.getLogger(__name__)
 
     database = get_database()
