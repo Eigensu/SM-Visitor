@@ -2,10 +2,12 @@
 Database configuration and connection management using Motor (async MongoDB driver)
 """
 
-from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
-from typing import Optional
+import logging
 import os
+
+import certifi
 from dotenv import load_dotenv
+from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 
 load_dotenv()
 
@@ -18,8 +20,8 @@ class _MongoState:
     """Shared mutable state for MongoDB client and database handles."""
 
     def __init__(self):
-        self.client: Optional[AsyncIOMotorClient] = None
-        self.database: Optional[AsyncIOMotorDatabase] = None
+        self.client: AsyncIOMotorClient | None = None
+        self.database: AsyncIOMotorDatabase | None = None
 
 
 _state = _MongoState()
@@ -30,7 +32,7 @@ async def connect_to_mongo():
     Establish connection to MongoDB
     """
     try:
-        _state.client = AsyncIOMotorClient(MONGODB_URL)
+        _state.client = AsyncIOMotorClient(MONGODB_URL, tlsCAFile=certifi.where())
         _state.database = _state.client[DATABASE_NAME]
 
         # Test connection
@@ -71,7 +73,6 @@ async def create_indexes():
     Failures are non-fatal (e.g. Atlas quota exceeded) so the app can still
     serve reads with pre-existing indexes.
     """
-    import logging
     logger = logging.getLogger(__name__)
 
     database = get_database()
@@ -93,6 +94,7 @@ async def create_indexes():
         (database.visits, "guard_id", {}),
         (database.visits, "status", {}),
         (database.visits, "entry_time", {}),
+        (database.visits, "exit_time", {}),
         (database.temporary_qr, "token", {"unique": True}),
         (database.temporary_qr, "owner_id", {}),
         (database.temporary_qr, "expires_at", {}),
@@ -104,6 +106,7 @@ async def create_indexes():
 
     compound_ops = [
         (database.visits, [("owner_id", 1), ("entry_time", -1)], {}),
+        (database.visits, [("created_at", 1), ("entry_time", 1), ("exit_time", 1)], {}),
         (database.notifications, [("recipient_id", 1), ("is_read", 1)], {}),
     ]
 

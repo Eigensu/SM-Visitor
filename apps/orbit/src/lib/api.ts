@@ -40,7 +40,6 @@ const clearAuthStorage = () => {
 // Create axios instance
 const apiClient: AxiosInstance = axios.create({
   baseURL: API_URL,
-  headers: {},
 });
 
 // Request interceptor - Add JWT token

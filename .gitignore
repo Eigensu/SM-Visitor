@@ -8,6 +8,7 @@ out/
 # Python
 apps/pantry/.venv/
 apps/pantry/__pycache__/
+apps/pantry/storage/
 *.py[cod]
 *.egg-info/
 
@@ -22,4 +23,3 @@ coverage/
 # Local environment
 .env
 env/
-
