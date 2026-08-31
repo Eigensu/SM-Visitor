@@ -184,7 +184,9 @@ export function PhotoCapture({
       if (onPhotoUploaded) onPhotoUploaded(response.photo_url);
     } catch (error: any) {
       console.error("Photo upload error:", error);
-      toast.error("Failed to save photo");
+      // The server says when storage is down and the photo needs retaking -
+      // "Failed to save photo" alone leaves the guard with no next step.
+      toast.error(error.response?.data?.detail || "Failed to save photo");
     } finally {
       setIsUploading(false);
     }

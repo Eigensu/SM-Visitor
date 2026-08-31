@@ -78,7 +78,9 @@ function PhotoUnavailable({
     } catch (error) {
       console.error("Failed to replace photo", error);
       const { default: toast } = await import("react-hot-toast");
-      toast.error("Could not save the new photo. Please try again.");
+      toast.error(
+        (error as any)?.response?.data?.detail || "Could not save the new photo. Please try again."
+      );
     } finally {
       setIsUploading(false);
     }

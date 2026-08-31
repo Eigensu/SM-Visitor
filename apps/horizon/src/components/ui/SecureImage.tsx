@@ -108,7 +108,9 @@ function PhotoUnavailable({
     } catch (error) {
       console.error("Failed to replace photo", error);
       const { toast } = await import("sonner");
-      toast.error("Could not save the new photo. Please try again.");
+      toast.error(
+        (error as any)?.response?.data?.detail || "Could not save the new photo. Please try again."
+      );
     } finally {
       setIsUploading(false);
     }
