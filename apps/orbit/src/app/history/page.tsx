@@ -252,6 +252,7 @@ export default function HistoryPage() {
               <GlassCard key={visit.id} className="p-4 hover:shadow-lg">
                 <div className="flex items-center gap-4">
                   <SecureImage
+                    width={64}
                     srcRaw={visit.photo_snapshot_url}
                     alt={visit.name_snapshot}
                     className="h-16 w-16 rounded-full border-2 border-gray-200 object-cover"

@@ -88,6 +88,7 @@ export default function NewVisitorPage() {
               <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted">
                 {record.photoUrl ? (
                   <SecureImage
+                    width={40}
                     srcRaw={record.photoUrl}
                     alt={record.name}
                     className="h-full w-full object-cover"

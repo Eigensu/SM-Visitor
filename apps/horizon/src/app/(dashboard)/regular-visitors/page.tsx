@@ -88,6 +88,17 @@ export default function RegularVisitorsPage() {
     fetchVisitors();
   }, []);
 
+  const handlePhotoReuploaded = (visitorId: string, photoUrl: string) => {
+    const applyPhoto = (visitor: any) =>
+      visitor && (visitor._id || visitor.id) === visitorId
+        ? { ...visitor, photo_url: photoUrl, photo_needs_reupload: false }
+        : visitor;
+
+    setVisitors((prev) => prev.map(applyPhoto));
+    setInfoVisitor((prev: any) => applyPhoto(prev));
+    toast.success("Photo updated");
+  };
+
   const handleDelete = async (visitorId: string) => {
     if (!confirm("Are you sure you want to delete this visitor?")) return;
 
@@ -176,6 +187,12 @@ export default function RegularVisitorsPage() {
                     srcRaw={visitor.photo_url}
                     alt={visitor.name}
                     className="h-16 w-16 rounded-full object-cover ring-2 ring-primary/20"
+                    width={64}
+                    unavailable={Boolean(visitor.photo_needs_reupload)}
+                    reupload={{ visitorId: visitor._id || visitor.id }}
+                    onReuploaded={(photoUrl) =>
+                      handlePhotoReuploaded(visitor._id || visitor.id, photoUrl)
+                    }
                   />
                 ) : (
                   <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted ring-2 ring-primary/20">
@@ -314,6 +331,12 @@ export default function RegularVisitorsPage() {
                     srcRaw={infoVisitor.photo_url}
                     alt={infoVisitor.name}
                     className="h-20 w-20 rounded-full object-cover ring-2 ring-primary/20"
+                    width={80}
+                    unavailable={Boolean(infoVisitor.photo_needs_reupload)}
+                    reupload={{ visitorId: infoVisitor._id || infoVisitor.id }}
+                    onReuploaded={(photoUrl) =>
+                      handlePhotoReuploaded(infoVisitor._id || infoVisitor.id, photoUrl)
+                    }
                   />
                 ) : (
                   <div className="flex h-20 w-20 items-center justify-center rounded-full bg-muted ring-2 ring-primary/20">

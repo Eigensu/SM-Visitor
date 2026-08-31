@@ -87,6 +87,7 @@ export function WaitingScreen({
               {visit.photo_snapshot_url && (
                 <div className="flex justify-center">
                   <SecureImage
+                    width={96}
                     srcRaw={visit.photo_snapshot_url}
                     alt={visit.name_snapshot}
                     className="h-24 w-24 rounded-full border-2 border-gray-300 object-cover"

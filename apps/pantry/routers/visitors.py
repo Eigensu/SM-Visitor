@@ -6,7 +6,12 @@ from bson import ObjectId
 from pymongo import ReturnDocument
 
 from database import get_visitors_collection, get_visits_collection, get_database
-from middleware.auth import get_current_owner, get_current_user, get_current_guard
+from middleware.auth import (
+    get_current_owner,
+    get_current_user,
+    get_current_guard,
+    require_role,
+)
 from utils.jwt_utils import create_qr_token
 from utils.qr_utils import generate_qr_image_with_details
 from utils.storage import photo_storage
@@ -250,6 +255,10 @@ class VisitorResponse(BaseModel):
     approved_at: Optional[datetime] = None
     checked_in_visit_id: Optional[str] = None
     guard_name: Optional[str] = None
+    # True when the stored URL points at a Cloudinary account we no longer
+    # deliver from, so the apps should ask for the photo to be taken again.
+    photo_needs_reupload: bool = False
+    id_card_photo_needs_reupload: bool = False
 
 
 class VisitorWithQRResponse(VisitorResponse):
@@ -1004,6 +1013,90 @@ async def update_visitor(
 
     # Fetch updated visitor
     updated_visitor = await visitors.find_one({"_id": ObjectId(visitor_id)})
+
+    return serialize_visitor(updated_visitor)
+
+
+@router.post("/{visitor_id}/photo", response_model=VisitorResponse)
+async def replace_visitor_photo(
+    visitor_id: str,
+    photo: UploadFile = File(...),
+    target: str = Form("photo"),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Replace a visitor's photo with a freshly captured one.
+
+    Used when the stored photo can no longer be delivered - the usual cause is
+    the image living in a Cloudinary account that was replaced or suspended.
+    Those bytes are gone for good, so the only repair is to take the photo
+    again, which is why this accepts a plain upload rather than a URL.
+
+    - **target**: `photo` for the visitor photo, `id_card` for the ID card scan
+    """
+    await require_role(current_user, ["guard", "owner", "admin"])
+
+    if target not in ("photo", "id_card"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="target must be 'photo' or 'id_card'",
+        )
+
+    visitors = get_visitors_collection()
+
+    try:
+        visitor = await visitors.find_one({"_id": ObjectId(visitor_id)})
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid visitor ID"
+        )
+
+    if not visitor:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Visitor not found"
+        )
+
+    # Guards work the gate for every resident, so they may refresh any photo.
+    # An owner may only touch visitors they registered or are responsible for.
+    if current_user.get("role") == "owner":
+        user_id = get_user_id(current_user)
+        owned_by = {
+            str(visitor.get("created_by")),
+            str(visitor.get("assigned_owner_id")),
+        }
+        if user_id not in owned_by:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
+            )
+
+    if photo.content_type not in ("image/jpeg", "image/png"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only JPEG and PNG images are allowed",
+        )
+
+    photo_data = await photo.read()
+    max_size_mb = 10 if target == "id_card" else 5
+    is_valid, error_msg = await photo_storage.validate_photo(
+        photo_data, max_size_mb=max_size_mb
+    )
+    if not is_valid:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error_msg)
+
+    field = "photo_url" if target == "photo" else "id_card_photo_url"
+
+    new_url = await photo_storage.save_regular_visitor_photo(
+        photo_data, photo.filename or f"{target}_{visitor_id}.jpg"
+    )
+
+    # The old asset is deliberately left in place. Every visit copies the
+    # visitor's photo URL into its own snapshot, so the same URL is referenced
+    # by the whole entry history - deleting it here would blank out the past.
+    updated_visitor = await visitors.find_one_and_update(
+        {"_id": ObjectId(visitor_id)},
+        {"$set": {field: new_url, "updated_at": get_utc_now()}},
+        return_document=ReturnDocument.AFTER,
+    )
 
     return serialize_visitor(updated_visitor)
 

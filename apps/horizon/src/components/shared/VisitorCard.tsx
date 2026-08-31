@@ -43,6 +43,7 @@ export function VisitorCard({
           <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl bg-primary/10">
             {visitor.photo ? (
               <SecureImage
+                width={48}
                 srcRaw={visitor.photo}
                 alt={visitor.name}
                 className="h-full w-full object-cover"

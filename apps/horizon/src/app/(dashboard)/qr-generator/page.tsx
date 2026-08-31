@@ -308,6 +308,7 @@ export default function QRGenerator() {
                             <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted">
                               {visitor.photoUrl ? (
                                 <SecureImage
+                                  width={40}
                                   srcRaw={visitor.photoUrl}
                                   alt={visitor.name || "Visitor"}
                                   className="h-full w-full object-cover"
@@ -376,6 +377,7 @@ export default function QRGenerator() {
                 <div className="rounded-md border border-border/60 p-3">
                   <p className="mb-2 text-xs font-medium text-muted-foreground">Saved Photo</p>
                   <SecureImage
+                    width={64}
                     srcRaw={visitorPhotoUrl}
                     alt={guestName || "Visitor photo"}
                     className="h-16 w-16 rounded-full object-cover"

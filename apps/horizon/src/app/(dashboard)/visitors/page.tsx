@@ -9,6 +9,7 @@ import { VisitorTimeline, type VisitorTimelineVisit } from "@/components/shared/
 import { Button } from "@sm-visitor/ui";
 import { Input } from "@sm-visitor/ui";
 import { Spinner } from "@sm-visitor/ui";
+import { compressImageFile } from "@sm-visitor/ui";
 import {
   Table,
   TableBody,
@@ -293,6 +294,7 @@ export default function Visitors() {
               <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted">
                 {record.photoUrl ? (
                   <SecureImage
+                    width={40}
                     srcRaw={record.photoUrl}
                     alt={record.name}
                     className="h-full w-full object-cover"
@@ -750,6 +752,7 @@ export default function Visitors() {
                         <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg bg-primary/10">
                           {visitor.photo ? (
                             <SecureImage
+                              width={36}
                               srcRaw={visitor.photo}
                               alt={visitor.name}
                               className="h-full w-full object-cover"
@@ -865,6 +868,7 @@ export default function Visitors() {
                     <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-lg bg-primary/10">
                       {visitor.photo ? (
                         <SecureImage
+                          width={40}
                           srcRaw={visitor.photo}
                           alt={visitor.name}
                           className="h-full w-full object-cover"
@@ -987,6 +991,7 @@ export default function Visitors() {
                   <div className="flex h-20 w-20 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary/10">
                     {detailsData.visitorPhoto ? (
                       <SecureImage
+                        width={80}
                         srcRaw={detailsData.visitorPhoto}
                         alt={detailsData.fullName}
                         className="h-full w-full object-cover"
@@ -1074,6 +1079,8 @@ export default function Visitors() {
                         <div className="flex min-h-44 items-center justify-center overflow-hidden rounded-lg border border-border/60 bg-muted/20">
                           {detailsData.visitorPhoto ? (
                             <SecureImage
+                              width={448}
+                              height={176}
                               srcRaw={detailsData.visitorPhoto}
                               alt={detailsData.fullName}
                               className="h-44 w-full bg-black/5 object-contain"
@@ -1090,6 +1097,8 @@ export default function Visitors() {
                         <div className="flex min-h-44 items-center justify-center overflow-hidden rounded-lg border border-border/60 bg-muted/20">
                           {detailsData.idCardPhoto ? (
                             <SecureImage
+                              width={448}
+                              height={176}
                               srcRaw={detailsData.idCardPhoto}
                               alt={`${detailsData.fullName} ID Card`}
                               className="h-44 w-full bg-black/5 object-contain"
@@ -1250,9 +1259,10 @@ export default function Visitors() {
                 <input
                   type="file"
                   accept="image/*"
-                  onChange={(e) => {
-                    const file =
+                  onChange={async (e) => {
+                    const selected =
                       e.target.files && e.target.files.length > 0 ? e.target.files[0] : null;
+                    const file = selected ? await compressImageFile(selected) : null;
                     setPreApproveForm((prev) => ({
                       ...prev,
                       photo: file,

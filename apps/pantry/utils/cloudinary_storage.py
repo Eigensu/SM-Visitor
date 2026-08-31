@@ -16,6 +16,8 @@ from config import (
     CLOUDINARY_API_KEY,
     CLOUDINARY_API_SECRET,
     CLOUDINARY_FOLDER,
+    CLOUDINARY_UPLOAD_MAX_DIMENSION,
+    CLOUDINARY_UPLOAD_QUALITY,
 )
 
 
@@ -72,6 +74,21 @@ class CloudinaryStorage:
                 public_id=pid,
                 overwrite=True,
                 resource_type="image",
+                # Store everything as JPEG so a stray PNG screenshot does not
+                # get kept at several times the size of the photo it shows.
+                format="jpg",
+                # Shrink and re-encode before storing. `c_limit` never upscales,
+                # so a photo already under the cap is stored as-is. This is the
+                # single biggest lever on credit usage: storage is billed on
+                # what we keep, and every delivery is billed on what we stored.
+                transformation=[
+                    {
+                        "width": CLOUDINARY_UPLOAD_MAX_DIMENSION,
+                        "height": CLOUDINARY_UPLOAD_MAX_DIMENSION,
+                        "crop": "limit",
+                        "quality": CLOUDINARY_UPLOAD_QUALITY,
+                    }
+                ],
             )
 
             secure_url = upload_result.get("secure_url")

@@ -47,6 +47,23 @@ CLOUDINARY_API_KEY = os.getenv("CLOUDINARY_API_KEY", "")
 CLOUDINARY_API_SECRET = os.getenv("CLOUDINARY_API_SECRET", "")
 CLOUDINARY_FOLDER = os.getenv("CLOUDINARY_FOLDER", "sm-visitor/photos")
 
+# Cloud names we no longer deliver from (e.g. an account replaced after it hit
+# its plan quota). Comma separated. URLs pointing at these are reported to the
+# apps as needing a fresh photo. Any cloud name that simply differs from
+# CLOUDINARY_CLOUD_NAME is treated the same way, so this list is only needed
+# for clouds that are still technically reachable but should not be used.
+CLOUDINARY_RETIRED_CLOUD_NAMES = {
+    name.strip().lower()
+    for name in os.getenv("CLOUDINARY_RETIRED_CLOUD_NAMES", "").split(",")
+    if name.strip()
+}
+
+# Photos are downscaled and re-encoded on the way in. Visitor snapshots are
+# only ever shown as small avatars, so storing 4000px camera originals burns
+# storage and delivery credits for pixels nobody sees.
+CLOUDINARY_UPLOAD_MAX_DIMENSION = int(os.getenv("CLOUDINARY_UPLOAD_MAX_DIMENSION", "1280"))
+CLOUDINARY_UPLOAD_QUALITY = os.getenv("CLOUDINARY_UPLOAD_QUALITY", "auto:good")
+
 # CORS
 DEFAULT_ALLOWED_ORIGINS = [
     "http://localhost:3000",

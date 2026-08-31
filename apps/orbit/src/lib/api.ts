@@ -223,6 +223,23 @@ export const visitorsAPI = {
     const response = await apiClient.delete(`/visitors/${visitorId}`);
     return response.data;
   },
+  /**
+   * Replace a stored photo that can no longer be delivered - the usual cause
+   * is the image living in a Cloudinary account that was replaced. Returns the
+   * updated visitor, including the new photo URL.
+   */
+  replaceVisitorPhoto: async (
+    visitorId: string,
+    file: File,
+    target: "photo" | "id_card" = "photo"
+  ) => {
+    const formData = new FormData();
+    formData.append("photo", file);
+    formData.append("target", target);
+
+    const response = await apiClient.post(`/visitors/${visitorId}/photo`, formData);
+    return response.data;
+  },
 };
 
 // Uploads API
