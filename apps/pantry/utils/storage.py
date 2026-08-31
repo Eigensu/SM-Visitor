@@ -29,7 +29,7 @@ class PhotoStorage:
 
     async def _upload_to_cloudinary(self, photo_data: bytes, filename: str) -> str:
         """
-        Upload bytes to Cloudinary and return the secure URL.
+        Upload bytes to Cloudinary and return the storage key to persist.
 
         A failure here is reported, never worked around. This used to fall back
         to writing the file into the local buffer directory and returning a
@@ -50,11 +50,11 @@ class PhotoStorage:
         return result
 
     async def save_regular_visitor_photo(self, photo_data: bytes, filename: str) -> str:
-        """Upload regular visitor photo to Cloudinary. Returns Cloudinary URL."""
+        """Upload a regular visitor photo. Returns the storage key to persist."""
         return await self._upload_to_cloudinary(photo_data, filename)
 
     async def save_new_visitor_photo_buffer(self, photo_data: bytes, filename: str) -> str:
-        """Upload new visitor/buffer photo to Cloudinary. Returns Cloudinary URL."""
+        """Upload a new visitor photo. Returns the storage key to persist."""
         return await self._upload_to_cloudinary(photo_data, filename)
 
     # ── Backward-compat GridFS reads (used by migration script) ──────────────
@@ -111,17 +111,18 @@ class PhotoStorage:
             return False
 
     async def delete_regular_visitor_photo(self, file_id_or_url: str) -> bool:
-        """Delete from Cloudinary (URL) or GridFS (24-char hex ID)."""
-        if file_id_or_url.startswith("http"):
+        """Delete from Cloudinary (storage key or URL) or GridFS (24-char hex ID)."""
+        from utils.photo_urls import is_storage_key, storage_key_from_url
+
+        public_id = (
+            file_id_or_url
+            if is_storage_key(file_id_or_url)
+            else storage_key_from_url(file_id_or_url)
+        )
+        if public_id:
             try:
                 import cloudinary.uploader
-                parts = file_id_or_url.split("/upload/")
-                if len(parts) == 2:
-                    segment = parts[1]
-                    if "/" in segment and segment.split("/")[0].startswith("v"):
-                        segment = segment.split("/", 1)[1]
-                    public_id = segment.rsplit(".", 1)[0]
-                    await asyncio.to_thread(cloudinary.uploader.destroy, public_id)
+                await asyncio.to_thread(cloudinary.uploader.destroy, public_id)
                 return True
             except Exception as e:
                 print(f"Error deleting Cloudinary photo: {e}")

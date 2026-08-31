@@ -152,7 +152,8 @@ async def upload(photo_data: bytes, filename: str) -> Optional[str]:
 
     Goes through the app's own storage wrapper so a rescued photo gets exactly
     the same downscaling and re-encoding as a freshly captured one, rather than
-    restoring the oversized originals that caused the quota problem.
+    restoring the oversized originals that caused the quota problem. Returns
+    the storage key, which is what records hold.
     """
     from utils.cloudinary_storage import cloudinary_storage
 
@@ -169,7 +170,12 @@ async def upload(photo_data: bytes, filename: str) -> Optional[str]:
 async def rescue_files(
     source: str, filenames: list[str], mapping: dict
 ) -> tuple[int, list[str], list[str]]:
-    """Download and re-upload each file. Returns (uploaded, missing, failed)."""
+    """
+    Download and re-upload each file. Returns (uploaded, missing, failed).
+
+    `mapping` collects filename -> storage key, which is what gets written back
+    to the records.
+    """
     uploaded = 0
     missing: list[str] = []
     failed: list[str] = []
@@ -197,17 +203,17 @@ async def rescue_files(
                     print(f"  [gone]   {filename}")
                     return
 
-                url = await upload(photo_data, filename)
-                if not url:
+                key = await upload(photo_data, filename)
+                if not key:
                     failed.append(filename)
                     abort.set()
                     return
 
                 async with checkpoint_lock:
-                    mapping[filename] = url
+                    mapping[filename] = key
                     save_mapping(mapping)
                     uploaded += 1
-                print(f"  [saved]  {filename} -> {url[:70]}")
+                print(f"  [saved]  {filename} -> {key}")
 
         await asyncio.gather(*(rescue_one(name) for name in filenames))
 
@@ -219,19 +225,19 @@ async def rescue_files(
 
 
 async def apply_updates(db, references: list[dict], mapping: dict) -> tuple[int, int]:
-    """Point each document field at its rescued Cloudinary URL."""
+    """Point each document field at its rescued asset's storage key."""
     updated = failed = 0
 
     for ref in references:
-        url = mapping.get(ref["filename"])
-        if not url:
+        key = mapping.get(ref["filename"])
+        if not key:
             continue
         try:
             # Matching on the old value as well means a record somebody changed
             # while this was running is left alone instead of being clobbered.
             result = await db[ref["collection"]].update_one(
                 {"_id": ref["id"], ref["field"]: ref["value"]},
-                {"$set": {ref["field"]: url}},
+                {"$set": {ref["field"]: key}},
             )
             if result.matched_count:
                 updated += 1

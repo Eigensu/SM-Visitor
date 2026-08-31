@@ -3,7 +3,7 @@ Visit Lifecycle Router - Handle QR scanning, visit creation, approval/rejection,
 """
 
 from fastapi import APIRouter, HTTPException, status, Depends, Body, Query
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 from typing import Optional, List
 from datetime import datetime, timedelta, timezone
 from bson import ObjectId
@@ -19,6 +19,7 @@ from database import (
 )
 from middleware.auth import get_current_guard, get_current_owner, get_current_user
 from utils.jwt_utils import decode_qr_token
+from utils.photo_urls import normalize_photo_ref, to_delivery_url
 from utils.sse_manager import sse_manager
 from utils.time_utils import get_ist_now, get_utc_now, is_within_schedule, normalize_datetime
 from services.serializers.visitor import normalize_approval_status
@@ -128,6 +129,15 @@ class VisitResponse(BaseModel):
     is_all_flats: bool = False
     valid_flats: Optional[List[str]] = None
     target_flat_ids: Optional[List[str]] = None
+
+    # Visits are built in a dozen places across this router, all of them
+    # copying a stored reference straight out of a document. Converting here
+    # rather than at each site means a new construction site cannot forget to
+    # do it and ship a raw storage key to the apps.
+    @field_validator("photo_snapshot_url", "id_photo_url", mode="after")
+    @classmethod
+    def _build_photo_delivery_url(cls, value: Optional[str]) -> Optional[str]:
+        return to_delivery_url(value)
     created_at: datetime
 
 
@@ -342,7 +352,7 @@ async def scan_qr_code(
                 "visitor_id": str(visitor["_id"]),
                 "name": visitor["name"],
                 "phone": visitor.get("phone"),
-                "photo_url": visitor["photo_url"],
+                "photo_url": to_delivery_url(visitor["photo_url"]),
                 "purpose": visitor.get("default_purpose", "Visit"),
                 "visitor_type": "regular",
                 "owner_id": resolved_owner_flat,
@@ -511,7 +521,7 @@ async def start_visit(
                 "visitor_id": str(visitor["_id"]),
                 "name_snapshot": visitor["name"],
                 "phone_snapshot": visitor.get("phone"),
-                "photo_snapshot_url": visitor["photo_url"],
+                "photo_snapshot_url": normalize_photo_ref(visitor["photo_url"]),
                 "purpose": qr_request.purpose
                 or visitor.get("default_purpose", "Visit"),
                 "owner_id": (
@@ -612,7 +622,7 @@ async def start_visit(
                     "visitor_name": visit_doc["name_snapshot"],
                     "visitor_phone": visit_doc["phone_snapshot"],
                     "purpose": visit_doc["purpose"],
-                    "photo_url": visit_doc["photo_snapshot_url"],
+                    "photo_url": to_delivery_url(visit_doc["photo_snapshot_url"]),
                     "guard_id": current_user["user_id"],
                 },
                 db,
@@ -627,7 +637,7 @@ async def start_visit(
                     "visitor_id": visit_doc.get("visitor_id"),
                     "name_snapshot": visit_doc["name_snapshot"],
                     "phone_snapshot": visit_doc["phone_snapshot"],
-                    "photo_snapshot_url": visit_doc["photo_snapshot_url"],
+                    "photo_snapshot_url": to_delivery_url(visit_doc["photo_snapshot_url"]),
                     "purpose": visit_doc["purpose"],
                     "owner_id": visit_doc["owner_id"],
                     "guard_id": visit_doc["guard_id"],
@@ -668,7 +678,7 @@ async def start_visit(
                     "visitor_id": visit_doc.get("visitor_id"),
                     "name_snapshot": visit_doc["name_snapshot"],
                     "phone_snapshot": visit_doc["phone_snapshot"],
-                    "photo_snapshot_url": visit_doc["photo_snapshot_url"],
+                    "photo_snapshot_url": to_delivery_url(visit_doc["photo_snapshot_url"]),
                     "purpose": visit_doc["purpose"],
                     "owner_id": visit_doc["owner_id"],
                     "guard_id": visit_doc["guard_id"],
@@ -705,7 +715,10 @@ async def start_visit(
             "visitor_id": None,
             "name_snapshot": new_request.name,
             "phone_snapshot": new_request.phone,
-            "photo_snapshot_url": new_request.photo_url,  # Local buffer path
+            # Orbit posts back whatever /uploads returned it. Reducing it to a
+            # storage key here keeps the stored shape identical to every other
+            # write, whichever client version sent it.
+            "photo_snapshot_url": normalize_photo_ref(new_request.photo_url),
             "purpose": new_request.purpose,
             "owner_id": target_flat_ids[0] if target_flat_ids else new_request.owner_id,
             "target_flat_ids": target_flat_ids,
@@ -730,7 +743,7 @@ async def start_visit(
                 "visitor_name": new_request.name,
                 "visitor_phone": new_request.phone,
                 "purpose": new_request.purpose,
-                "photo_url": new_request.photo_url,
+                "photo_url": to_delivery_url(visit_doc["photo_snapshot_url"]),
                 "guard_id": current_user["user_id"],
             },
             db,
@@ -745,7 +758,7 @@ async def start_visit(
                 "visitor_id": None,
                 "name_snapshot": visit_doc["name_snapshot"],
                 "phone_snapshot": visit_doc["phone_snapshot"],
-                "photo_snapshot_url": visit_doc["photo_snapshot_url"],
+                "photo_snapshot_url": to_delivery_url(visit_doc["photo_snapshot_url"]),
                 "purpose": visit_doc["purpose"],
                 "owner_id": visit_doc["owner_id"],
                 "guard_id": visit_doc["guard_id"],
@@ -1488,7 +1501,7 @@ async def get_recent_activity(
                 "visitor_id": v.get("visitor_id"),
                 "name_snapshot": v.get("name_snapshot", "Unknown"),
                 "phone_snapshot": v.get("phone_snapshot"),
-                "photo_snapshot_url": v.get("photo_snapshot_url"),
+                "photo_snapshot_url": to_delivery_url(v.get("photo_snapshot_url")),
                 "purpose": v.get("purpose", "Visit"),
                 "owner_id": v.get("owner_id", flat_id),
                 "guard_id": v.get("guard_id", "system"),
@@ -1508,7 +1521,7 @@ async def get_recent_activity(
                 "visitor_id": str(r.get("_id", "unknown")),
                 "name_snapshot": r.get("name", "Unknown"),
                 "phone_snapshot": r.get("phone"),
-                "photo_snapshot_url": r.get("photo_url"),
+                "photo_snapshot_url": to_delivery_url(r.get("photo_url")),
                 "purpose": f"Staff Registration: {r.get('category_label') or r.get('category') or 'Staff'}",
                 "owner_id": flat_id,
                 "guard_id": str(r.get("created_by", "system")),
@@ -1822,7 +1835,7 @@ async def get_visit_details(
         "visitor_id": visit.get("visitor_id"),
         "name_snapshot": visit["name_snapshot"],
         "phone_snapshot": visit.get("phone_snapshot"),
-        "photo_snapshot_url": visit["photo_snapshot_url"],
+        "photo_snapshot_url": to_delivery_url(visit["photo_snapshot_url"]),
         "purpose": visit["purpose"],
         "owner_id": visit["owner_id"],
         "guard_id": visit["guard_id"],

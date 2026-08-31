@@ -41,6 +41,21 @@ S3_REGION = os.getenv("S3_REGION", "us-east-1")
 S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY", "")
 S3_SECRET_KEY = os.getenv("S3_SECRET_KEY", "")
 
+# Which image host delivers visitor photos. Records store a provider-independent
+# storage key, so moving to another host is this variable plus a copy of the
+# files - not a rewrite of every row, which is what an account switch cost us
+# the first time.
+PHOTO_PROVIDER = os.getenv("PHOTO_PROVIDER", "cloudinary").strip().lower()
+
+SUPPORTED_PHOTO_PROVIDERS = ("cloudinary",)
+
+if PHOTO_PROVIDER not in SUPPORTED_PHOTO_PROVIDERS:
+    # Fail at boot rather than on the first photo somebody tries to load.
+    raise RuntimeError(
+        f"PHOTO_PROVIDER={PHOTO_PROVIDER!r} is not supported. "
+        f"Expected one of: {', '.join(SUPPORTED_PHOTO_PROVIDERS)}"
+    )
+
 # Cloudinary Configuration
 CLOUDINARY_CLOUD_NAME = os.getenv("CLOUDINARY_CLOUD_NAME", "")
 CLOUDINARY_API_KEY = os.getenv("CLOUDINARY_API_KEY", "")

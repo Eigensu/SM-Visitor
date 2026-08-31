@@ -14,6 +14,7 @@ from middleware.auth import (
 )
 from utils.jwt_utils import create_qr_token
 from utils.qr_utils import generate_qr_image_with_details
+from utils.photo_urls import normalize_photo_ref, to_delivery_url
 from utils.storage import photo_storage
 from utils.sse_manager import sse_manager
 from utils.time_utils import get_ist_now, get_utc_now
@@ -308,32 +309,32 @@ async def create_regular_visitor(
             )
         request.valid_flats = [owner_flat_id]
 
-    photo_file_id: Optional[str] = None
+    photo_key: Optional[str] = None
     if photo is not None:
         # Validate and save uploaded photo to GridFS
         photo_data = await photo.read()
         is_valid, error_msg = await photo_storage.validate_photo(photo_data)
         if not is_valid:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error_msg)
-        photo_file_id = await photo_storage.save_regular_visitor_photo(
+        photo_key = await photo_storage.save_regular_visitor_photo(
             photo_data, photo.filename or "visitor_photo.jpg"
         )
     elif request.photo_id:
         # Backward compatibility: allow legacy clients that pass photo_id from upload endpoint
-        photo_file_id = normalize_photo_file_id(request.photo_id)
+        photo_key = normalize_photo_file_id(request.photo_id)
     else:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Either photo upload or photo_id must be provided.",
         )
 
-    id_card_photo_file_id: Optional[str] = None
+    id_card_photo_key: Optional[str] = None
     if id_card_photo is not None:
         id_card_photo_data = await id_card_photo.read()
         is_valid, error_msg = await photo_storage.validate_photo(id_card_photo_data)
         if not is_valid:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error_msg)
-        id_card_photo_file_id = await photo_storage.save_regular_visitor_photo(
+        id_card_photo_key = await photo_storage.save_regular_visitor_photo(
             id_card_photo_data, id_card_photo.filename or "id_card_photo.jpg"
         )
 
@@ -341,13 +342,13 @@ async def create_regular_visitor(
     visitor_doc = {
         "name": request.name,
         "phone": request.phone,
-        "photo_url": photo_file_id,  # GridFS file ID
+        "photo_url": photo_key,  # provider-independent storage key
         "visitor_type": "regular",
         "created_by": get_user_id(current_user),
         "default_purpose": request.default_purpose,
         "id_card_type": request.id_card_type,
         "id_card_number": request.id_card_number,
-        "id_card_photo_url": id_card_photo_file_id,
+        "id_card_photo_url": id_card_photo_key,
         "vehicle_number": request.vehicle_number,
         "vehicle_type": request.vehicle_type,
         # Category
@@ -515,17 +516,17 @@ async def create_regular_visitor_by_guard(
 
     # Save photo
     photo_data = await photo.read()
-    photo_file_id = await photo_storage.save_regular_visitor_photo(
+    photo_key = await photo_storage.save_regular_visitor_photo(
         photo_data, photo.filename or "visitor_photo.jpg"
     )
 
-    id_card_photo_file_id: Optional[str] = None
+    id_card_photo_key: Optional[str] = None
     if id_card_photo is not None:
         id_card_photo_data = await id_card_photo.read()
         is_valid, error_msg = await photo_storage.validate_photo(id_card_photo_data)
         if not is_valid:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error_msg)
-        id_card_photo_file_id = await photo_storage.save_regular_visitor_photo(
+        id_card_photo_key = await photo_storage.save_regular_visitor_photo(
             id_card_photo_data, id_card_photo.filename or "id_card_photo.jpg"
         )
 
@@ -533,7 +534,7 @@ async def create_regular_visitor_by_guard(
     visitor_doc = {
         "name": request.name,
         "phone": request.phone,
-        "photo_url": photo_file_id,
+        "photo_url": photo_key,
         "visitor_type": "regular",
         "created_by": get_user_id(current_user),
         "created_by_role": "guard",
@@ -546,7 +547,7 @@ async def create_regular_visitor_by_guard(
         "default_purpose": request.default_purpose,
         "id_card_type": request.id_card_type,
         "id_card_number": request.id_card_number,
-        "id_card_photo_url": id_card_photo_file_id,
+        "id_card_photo_url": id_card_photo_key,
         "vehicle_number": request.vehicle_number,
         "vehicle_type": request.vehicle_type,
         "category": request.category,
@@ -585,7 +586,7 @@ async def create_regular_visitor_by_guard(
         "name": request.name,
         "phone": request.phone,
         "category": request.category,
-        "photo_url": photo_file_id,
+        "photo_url": to_delivery_url(photo_key),
         "guard_id": get_user_id(current_user),
         "qr_validity_hours": request.qr_validity_hours,
         "flat_id": request_flat_id,
@@ -731,7 +732,7 @@ async def approve_regular_visitor(
         "visitor_id": visitor_id,
         "name_snapshot": updated_visitor["name"],
         "phone_snapshot": updated_visitor.get("phone"),
-        "photo_snapshot_url": updated_visitor.get("photo_url"),
+        "photo_snapshot_url": normalize_photo_ref(updated_visitor.get("photo_url")),
         "purpose": updated_visitor.get("default_purpose")
         or updated_visitor.get("category_label")
         or "Visit",
@@ -745,7 +746,7 @@ async def approve_regular_visitor(
         "qr_token": qr_token,
         "id_type": updated_visitor.get("id_card_type"),
         "id_number": updated_visitor.get("id_card_number"),
-        "id_photo_url": updated_visitor.get("id_card_photo_url"),
+        "id_photo_url": normalize_photo_ref(updated_visitor.get("id_card_photo_url")),
         "vehicle_number": updated_visitor.get("vehicle_number"),
         "vehicle_type": updated_visitor.get("vehicle_type"),
         "created_at": approved_at,
