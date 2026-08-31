@@ -135,12 +135,27 @@ def _configure_cloudinary() -> None:
     )
 
 
-def _copy_one(source_url: str, key: str) -> Optional[str]:
+def _is_missing_source(message: str) -> bool:
+    """
+    Distinguish an asset that is not in the source account from a broken run.
+
+    A missing asset is a fact about that one photo and the other two thousand
+    should still be copied. Anything else - bad credentials, a suspended
+    account, a rate limit - will fail on every asset, so it stops the run.
+    """
+    lowered = message.lower()
+    return "not found" in lowered or "404" in lowered
+
+
+def _copy_one(source_url: str, key: str) -> tuple[str, Optional[str]]:
     """
     Have Cloudinary pull one asset from the old account into the new one.
 
     `public_id` carries the full folder path, so no `folder` argument here -
     passing both would nest the folder inside itself.
+
+    Returns (outcome, public_id) where outcome is "copied", "missing" or
+    "error".
     """
     import cloudinary.uploader
 
@@ -161,27 +176,37 @@ def _copy_one(source_url: str, key: str) -> Optional[str]:
             ],
         )
     except Exception as e:  # noqa: BLE001
+        if _is_missing_source(str(e)):
+            return "missing", None
         print(f"    [ERROR] {key}: {e}")
-        return None
+        return "error", None
 
     landed = result.get("public_id")
     if landed != key:
         # The records are about to be pointed at `key`. If the asset landed
         # anywhere else they would resolve to nothing.
         print(f"    [ERROR] {key}: asset landed at {landed!r} instead")
-        return None
-    return landed
+        return "error", None
+    return "copied", landed
 
 
-async def copy_assets(sources: dict[str, str], mapping: dict) -> tuple[int, list[str]]:
-    """Copy each distinct asset across. Returns (copied, failed keys)."""
+async def copy_assets(
+    sources: dict[str, str], mapping: dict
+) -> tuple[int, list[str], list[str]]:
+    """
+    Copy each distinct asset across. Returns (copied, missing keys, failed keys).
+
+    An asset the source account does not have is skipped and recorded: that is
+    a fact about one photo, and the rest still need copying. A different kind
+    of failure stops the run, because it will repeat on every remaining asset.
+    """
     copied = 0
+    missing: list[str] = []
     failed: list[str] = []
+    total = len(sources)
 
     semaphore = asyncio.Semaphore(CONCURRENCY)
     checkpoint_lock = asyncio.Lock()
-    # A suspended source account, or wrong credentials, fails on every asset.
-    # Stop at the first failure instead of grinding through hundreds.
     abort = asyncio.Event()
 
     async def copy_one(key: str, source_url: str) -> None:
@@ -192,8 +217,15 @@ async def copy_assets(sources: dict[str, str], mapping: dict) -> tuple[int, list
             if abort.is_set():
                 return
 
-            landed = await asyncio.to_thread(_copy_one, source_url, key)
-            if not landed:
+            outcome, landed = await asyncio.to_thread(_copy_one, source_url, key)
+
+            if outcome == "missing":
+                async with checkpoint_lock:
+                    missing.append(key)
+                print(f"  [gone]   {key}")
+                return
+
+            if outcome != "copied":
                 failed.append(key)
                 abort.set()
                 return
@@ -202,16 +234,18 @@ async def copy_assets(sources: dict[str, str], mapping: dict) -> tuple[int, list
                 mapping[key] = landed
                 save_mapping(mapping)
                 copied += 1
-            print(f"  [copied] {key}")
+                done = copied + len(missing)
+            print(f"  [copied] {done}/{total}  {key}")
 
     await asyncio.gather(*(copy_one(k, url) for k, url in sources.items()))
 
     if abort.is_set():
-        print("\n[ABORTED] A copy failed. The source account may have been suspended")
-        print("again, or the credentials in .env are not the destination account.")
-        print("Copies already made are checkpointed - re-running resumes.")
+        print("\n[ABORTED] A copy failed for a reason other than a missing asset -")
+        print("the source account may have been suspended again, or the credentials")
+        print("in .env are not the destination account. Copies already made are")
+        print("checkpointed, so re-running resumes.")
 
-    return copied, failed
+    return copied, missing, failed
 
 
 async def repoint(db, references: list[dict], mapping: dict) -> tuple[int, int]:
@@ -300,7 +334,7 @@ async def main() -> None:
     _configure_cloudinary()
 
     print(f"\n=== Copying {len(pending)} photo(s) ===")
-    copied, failed = await copy_assets(pending, mapping)
+    copied, missing, failed = await copy_assets(pending, mapping)
 
     updated = update_failed = 0
     if mapping:
@@ -309,11 +343,21 @@ async def main() -> None:
 
     print(f"\n{'=' * 55}")
     print(f"Photos copied:           {copied}")
+    print(f"Not in the old account:  {len(missing)}")
     print(f"Copy failures:           {len(failed)}")
     print(f"Record fields repointed: {updated}")
     if update_failed:
         print(f"Record write failures:   {update_failed}")
     print(f"{'=' * 55}")
+
+    if missing:
+        print(f"\n{len(missing)} photo(s) are not in {source_cloud} at all, so there is")
+        print("nothing to copy. Their records keep the old URL and will show the")
+        print("re-upload prompt in the apps:")
+        for key in missing[:10]:
+            print(f"  {key}")
+        if len(missing) > 10:
+            print(f"  ... and {len(missing) - 10} more")
 
     client.close()
 
@@ -322,8 +366,11 @@ async def main() -> None:
         sys.exit(1)
 
     if copied:
-        print("\nDone. Those records now hold a plain storage key and resolve")
-        print(f"against {CLOUDINARY_CLOUD_NAME}. The old account is no longer referenced.")
+        print("\nDone. The records copied above now hold a plain storage key and")
+        print(f"resolve against {CLOUDINARY_CLOUD_NAME}.")
+        if missing:
+            print(f"{source_cloud} is still referenced by the records whose photo it")
+            print("does not have; those need a fresh capture through the apps.")
         if os.path.exists(MAPPING_FILE):
             os.remove(MAPPING_FILE)
             print(f"Removed checkpoint file: {MAPPING_FILE}")
