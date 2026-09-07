@@ -19,6 +19,13 @@ ACTIVE_URL = f"https://res.cloudinary.com/{ACTIVE_CLOUD}/image/upload/v178815739
 RETIRED_URL = f"https://res.cloudinary.com/{RETIRED_CLOUD}/image/upload/v1712345678/{KEY}.jpg"
 GRIDFS_ID = "68b0f1c2d3e4f5a6b7c8d9e0"
 BUFFER_PATH = "/uploads/buffer/abc123_visitor.jpg"
+# The same thing, as other hosts actually recorded it.
+BUFFER_PATH_SHAPES = [
+    BUFFER_PATH,
+    "./uploads/buffer/c866d0c7-2f47-4682-9499-59432df63012.jpg",
+    "./uploads\\buffer\\26890e31-4b20-48ec-acb9-402d34c0c6c7.JPG",
+    "uploads/buffer/abc123_visitor.jpg",
+]
 
 
 @pytest.fixture
@@ -51,6 +58,26 @@ def test_a_url_carrying_transformations_still_yields_the_bare_key(refs):
 
 def test_a_key_is_left_alone(refs):
     assert refs.normalize_photo_ref(KEY) == KEY
+
+
+@pytest.mark.parametrize("path", BUFFER_PATH_SHAPES)
+def test_every_shape_of_buffer_path_is_recognised(refs, path):
+    # Missing one means it is taken for a storage key, and a delivery URL gets
+    # built around a path that was only ever on a container's local disk.
+    assert refs.is_local_buffer_path(path) is True
+    assert refs.is_storage_key(path) is False
+    assert refs.to_delivery_url(path) == path
+    assert refs.normalize_photo_ref(path) == path
+
+
+def test_a_dot_in_the_public_id_is_not_mistaken_for_an_extension(refs):
+    # Photos imported under their original filename keep it as the public id,
+    # and those carry dots. Stripping everything after the last one truncated
+    # the key to an asset that does not exist.
+    dotted = "sm-visitor/photos/WhatsApp Image 2026-01-27 at 22.43.04"
+    url = f"https://res.cloudinary.com/{ACTIVE_CLOUD}/image/upload/{dotted}.jpg"
+    assert refs.normalize_photo_ref(url) == dotted
+    assert refs.normalize_photo_ref(f"https://res.cloudinary.com/{ACTIVE_CLOUD}/image/upload/{dotted}") == dotted
 
 
 def test_a_retired_url_is_kept_so_it_keeps_reporting_as_unreachable(refs):

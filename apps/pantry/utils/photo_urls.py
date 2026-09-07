@@ -40,6 +40,12 @@ _CLOUDINARY_UPLOAD_MARKER = "/upload/"
 _CLOUDINARY_DELIVERY_PATH = "/image/upload/"
 
 _GRIDFS_ID_RE = re.compile(r"^[a-f0-9]{24}$", re.IGNORECASE)
+# Only these are stripped as a delivery format. A public id is free to contain
+# a dot - "WhatsApp Image 2026-01-27 at 22.43.04" is a real one - and treating
+# whatever follows the last dot as an extension silently truncates the key.
+_DELIVERY_EXTENSIONS = frozenset(
+    ("jpg", "jpeg", "png", "webp", "gif", "avif", "heic", "heif", "bmp", "tif", "tiff")
+)
 _VERSION_SEGMENT_RE = re.compile(r"^v\d+$")
 # A Cloudinary transformation segment is a comma-separated list of short
 # `key_value` pairs, e.g. `c_limit,w_256,q_auto`.
@@ -55,7 +61,20 @@ def is_gridfs_id(value: Optional[str]) -> bool:
 
 
 def is_local_buffer_path(value: Optional[str]) -> bool:
-    return isinstance(value, str) and value.strip().startswith("/uploads/")
+    """
+    True for a path written to the API container's own disk.
+
+    These were recorded in several shapes depending on which host wrote them -
+    with a leading `./`, and with Windows separators - and every one of them
+    has to be recognised. Anything not matched here is taken for a storage key
+    and gets a delivery URL built around it, which can only 404.
+    """
+    if not isinstance(value, str):
+        return False
+    path = value.strip().replace("\\", "/")
+    if path.startswith("./"):
+        path = path[2:]
+    return path.startswith("/uploads/") or path.startswith("uploads/")
 
 
 def is_storage_key(value: Optional[str]) -> bool:
@@ -107,7 +126,10 @@ def storage_key_from_url(photo_url: Optional[str]) -> Optional[str]:
     # Cloudinary serves a public id with no extension in its stored format, so
     # dropping it here keeps the key honest about identity rather than encoding
     # a format the next provider may not use.
-    return key.rsplit(".", 1)[0] or None
+    head, dot, tail = key.rpartition(".")
+    if dot and tail.lower() in _DELIVERY_EXTENSIONS:
+        key = head
+    return key or None
 
 
 def normalize_photo_ref(value: Optional[str]) -> Optional[str]:
