@@ -10,6 +10,16 @@ import uuid
 from config import LOCAL_STORAGE_PATH
 
 
+class PhotoUploadError(Exception):
+    """
+    Raised when a photo could not be stored durably.
+
+    Callers must not treat this as recoverable on the server's behalf. The
+    guard is standing in front of the visitor when this happens, so the right
+    answer is to tell them the photo did not save and let them retake it.
+    """
+
+
 class PhotoStorage:
     """Handles photo storage via Cloudinary. GridFS reads kept for migration."""
 
@@ -18,29 +28,33 @@ class PhotoStorage:
         os.makedirs(self.local_buffer_path, exist_ok=True)
 
     async def _upload_to_cloudinary(self, photo_data: bytes, filename: str) -> str:
-        """Upload bytes to Cloudinary and return the secure URL. Fallback to local."""
+        """
+        Upload bytes to Cloudinary and return the storage key to persist.
+
+        A failure here is reported, never worked around. This used to fall back
+        to writing the file into the local buffer directory and returning a
+        `/uploads/buffer/...` path, which reads as success to every caller. The
+        API container has no persistent volume, so those files were destroyed by
+        the next deploy and the records kept pointing at them - a Cloudinary
+        outage turned into permanently lost photos with nothing in the UI to
+        show for it. Failing loudly costs the guard one retake instead.
+        """
         from utils.cloudinary_storage import cloudinary_storage
         unique_id = f"{uuid.uuid4().hex}_{os.path.splitext(filename)[0]}"
         success, result = await asyncio.to_thread(
             cloudinary_storage.upload_photo, photo_data, f"{unique_id}.jpg", unique_id
         )
         if not success:
-            print(f"Cloudinary upload failed ({result}), falling back to local storage")
-            local_filename = f"{unique_id}.jpg"
-            # Fallback writes to the local buffer directory. The returned URL
-            # is automatically served by the GET /uploads/buffer/{filename} endpoint.
-            full_path = os.path.join(self.local_buffer_path, local_filename)
-            with open(full_path, "wb") as f:
-                f.write(photo_data)
-            return f"/uploads/buffer/{local_filename}"
+            print(f"[PhotoStorage] Cloudinary upload failed: {result}")
+            raise PhotoUploadError(result)
         return result
 
     async def save_regular_visitor_photo(self, photo_data: bytes, filename: str) -> str:
-        """Upload regular visitor photo to Cloudinary. Returns Cloudinary URL."""
+        """Upload a regular visitor photo. Returns the storage key to persist."""
         return await self._upload_to_cloudinary(photo_data, filename)
 
     async def save_new_visitor_photo_buffer(self, photo_data: bytes, filename: str) -> str:
-        """Upload new visitor/buffer photo to Cloudinary. Returns Cloudinary URL."""
+        """Upload a new visitor photo. Returns the storage key to persist."""
         return await self._upload_to_cloudinary(photo_data, filename)
 
     # ── Backward-compat GridFS reads (used by migration script) ──────────────
@@ -97,17 +111,18 @@ class PhotoStorage:
             return False
 
     async def delete_regular_visitor_photo(self, file_id_or_url: str) -> bool:
-        """Delete from Cloudinary (URL) or GridFS (24-char hex ID)."""
-        if file_id_or_url.startswith("http"):
+        """Delete from Cloudinary (storage key or URL) or GridFS (24-char hex ID)."""
+        from utils.photo_urls import is_storage_key, storage_key_from_url
+
+        public_id = (
+            file_id_or_url
+            if is_storage_key(file_id_or_url)
+            else storage_key_from_url(file_id_or_url)
+        )
+        if public_id:
             try:
                 import cloudinary.uploader
-                parts = file_id_or_url.split("/upload/")
-                if len(parts) == 2:
-                    segment = parts[1]
-                    if "/" in segment and segment.split("/")[0].startswith("v"):
-                        segment = segment.split("/", 1)[1]
-                    public_id = segment.rsplit(".", 1)[0]
-                    await asyncio.to_thread(cloudinary.uploader.destroy, public_id)
+                await asyncio.to_thread(cloudinary.uploader.destroy, public_id)
                 return True
             except Exception as e:
                 print(f"Error deleting Cloudinary photo: {e}")

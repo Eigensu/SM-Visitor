@@ -1,5 +1,7 @@
 from enum import Enum
 
+from utils.photo_urls import is_unreachable_photo_url, to_delivery_url
+
 
 VALID_APPROVAL_STATUSES = {
     "pending",
@@ -62,13 +64,21 @@ def serialize_visitor(visitor: dict) -> dict:
     expires_at = visitor.get("qr_expires_at")
     approved_at = visitor.get("approved_at") or visitor.get("updated_at")
 
+    # 5. Records store a provider-independent storage key; the delivery URL is
+    # built here, from whichever image host is configured. Reachability is
+    # judged on the stored reference, since a legacy URL pointing at an account
+    # we no longer deliver from cannot be recovered server-side - the apps ask
+    # for a new photo instead of rendering a broken image.
+    photo_ref = visitor.get("photo_url")
+    id_card_photo_ref = visitor.get("id_card_photo_url") or visitor.get("id_photo_url")
+
     return {
         "id": str(visitor["_id"]),  # primary stable id field
         "_id": str(visitor["_id"]),
         "visitor_id": str(visitor["_id"]),
         "name": visitor.get("name"),
         "phone": visitor.get("phone"),
-        "photo_url": visitor.get("photo_url"),
+        "photo_url": to_delivery_url(photo_ref),
         "visitor_type": visitor.get("visitor_type", "new"),
         "created_by": str(visitor.get("created_by")),
         "created_by_role": created_by_role,
@@ -80,7 +90,7 @@ def serialize_visitor(visitor: dict) -> dict:
         "valid_flats": visitor.get("valid_flats", []),
         "card_type": visitor.get("id_card_type") or visitor.get("card_type"),
         "card_number": visitor.get("id_card_number") or visitor.get("card_number"),
-        "id_card_photo_url": visitor.get("id_card_photo_url") or visitor.get("id_photo_url"),
+        "id_card_photo_url": to_delivery_url(id_card_photo_ref),
         "vehicle_number": visitor.get("vehicle_number"),
         "vehicle_type": visitor.get("vehicle_type"),
         "qr_token": visitor.get("qr_token"),
@@ -110,4 +120,6 @@ def serialize_visitor(visitor: dict) -> dict:
         "category_label": visitor.get("category_label"),
         "guard_name": visitor.get("guard_name"),
         "created_at": visitor.get("created_at"),
+        "photo_needs_reupload": is_unreachable_photo_url(photo_ref),
+        "id_card_photo_needs_reupload": is_unreachable_photo_url(id_card_photo_ref),
     }

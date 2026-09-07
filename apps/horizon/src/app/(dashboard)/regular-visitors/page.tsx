@@ -4,8 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { PageContainer } from "@/components/shared/PageContainer";
 import { GlassCard } from "@/components/shared/GlassCard";
-import { Button } from "@sm-visitor/ui";
-import { Spinner } from "@sm-visitor/ui";
+import { Button, Spinner } from "@sm-visitor/ui";
 import { Plus, User, QrCode, Trash2, Calendar, Clock, Shield, Info } from "lucide-react";
 import { visitorsAPI } from "@/lib/api";
 import SecureImage from "@/components/ui/SecureImage";
@@ -54,22 +53,43 @@ const DAY_LABELS: Record<number, string> = {
   7: "Sun",
 };
 
-const getCategoryLabel = (visitor: any): string =>
+type RegularVisitor = {
+  _id?: string;
+  id?: string;
+  name?: string;
+  phone?: string | null;
+  photo_url?: string | null;
+  photo_needs_reupload?: boolean;
+  id_card_photo_url?: string | null;
+  id_card_photo_needs_reupload?: boolean;
+  category?: string;
+  category_label?: string;
+  default_purpose?: string | null;
+  created_at?: string;
+  approval_status?: string;
+  auto_approval?: { rule?: string; rule_label?: string };
+  schedule?: {
+    enabled?: boolean;
+    days_of_week?: number[];
+    time_windows?: Array<{ start_time: string; end_time: string }>;
+  };
+  is_all_flats?: boolean;
+  valid_flats?: string[] | null;
+  qr_token?: string | null;
+};
+
+const getCategoryLabel = (visitor: RegularVisitor): string =>
   visitor.category_label || CATEGORY_LABELS[visitor.category || "other"] || "Other";
 
-const getVisitorPhotoSrc = (photoUrl: string, apiBaseUrl: string | undefined): string =>
-  `${apiBaseUrl}/uploads/photo/regular/${photoUrl}${
-    typeof window !== "undefined" ? `?token=${localStorage.getItem("auth_token") || ""}` : ""
-  }`;
+const getVisitorId = (visitor: RegularVisitor): string => visitor._id || visitor.id || "";
 
 export default function RegularVisitorsPage() {
   const router = useRouter();
-  const [visitors, setVisitors] = useState<any[]>([]);
+  const [visitors, setVisitors] = useState<RegularVisitor[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
-  const [qrVisitor, setQrVisitor] = useState<any | null>(null);
-  const [infoVisitor, setInfoVisitor] = useState<any | null>(null);
-  const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL;
+  const [qrVisitor, setQrVisitor] = useState<RegularVisitor | null>(null);
+  const [infoVisitor, setInfoVisitor] = useState<RegularVisitor | null>(null);
 
   const fetchVisitors = async () => {
     try {
@@ -88,6 +108,26 @@ export default function RegularVisitorsPage() {
     fetchVisitors();
   }, []);
 
+  const handlePhotoReuploaded = (
+    visitorId: string,
+    photoUrl: string,
+    field: "photo" | "id_card" = "photo"
+  ) => {
+    const applyPhoto = (visitor: RegularVisitor) =>
+      getVisitorId(visitor) === visitorId
+        ? {
+            ...visitor,
+            ...(field === "id_card"
+              ? { id_card_photo_url: photoUrl, id_card_photo_needs_reupload: false }
+              : { photo_url: photoUrl, photo_needs_reupload: false }),
+          }
+        : visitor;
+
+    setVisitors((prev) => prev.map(applyPhoto));
+    setInfoVisitor((prev) => (prev ? applyPhoto(prev) : prev));
+    toast.success("Photo updated");
+  };
+
   const handleDelete = async (visitorId: string) => {
     if (!confirm("Are you sure you want to delete this visitor?")) return;
 
@@ -101,7 +141,7 @@ export default function RegularVisitorsPage() {
     }
   };
 
-  const formatSchedule = (visitor: any) => {
+  const formatSchedule = (visitor: RegularVisitor) => {
     const schedule = visitor.schedule;
     if (!schedule?.enabled) return "No schedule";
 
@@ -114,7 +154,140 @@ export default function RegularVisitorsPage() {
   };
 
   const filteredVisitors =
-    selectedCategory === "all" ? visitors : visitors.filter((v) => v.category === selectedCategory);
+    selectedCategory === "all"
+      ? visitors
+      : visitors.filter((visitor) => visitor.category === selectedCategory);
+  const emptyStateMessage =
+    selectedCategory === "all"
+      ? "No regular visitors yet. Add one to get started!"
+      : `No ${CATEGORY_LABELS[selectedCategory]} visitors found.`;
+  let visitorContent;
+
+  if (isLoading) {
+    visitorContent = (
+      <div className="flex h-60 items-center justify-center">
+        <Spinner size="lg" />
+      </div>
+    );
+  } else if (filteredVisitors.length === 0) {
+    visitorContent = (
+      <GlassCard className="py-12 text-center">
+        <p className="text-muted-foreground">{emptyStateMessage}</p>
+      </GlassCard>
+    );
+  } else {
+    visitorContent = (
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+        {filteredVisitors.map((visitor, index) => (
+          <GlassCard key={`${getVisitorId(visitor) || "visitor"}-${index}`} className="p-6">
+            {/* Header with Photo */}
+            <div className="mb-4 flex items-start gap-4">
+              {visitor.photo_url ? (
+                <SecureImage
+                  srcRaw={visitor.photo_url}
+                  alt={visitor.name || "Visitor"}
+                  className="h-16 w-16 rounded-full object-cover ring-2 ring-primary/20"
+                  width={64}
+                  unavailable={Boolean(visitor.photo_needs_reupload)}
+                  reupload={{ visitorId: getVisitorId(visitor) }}
+                  onReuploaded={(photoUrl) =>
+                    handlePhotoReuploaded(getVisitorId(visitor), photoUrl)
+                  }
+                />
+              ) : (
+                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted ring-2 ring-primary/20">
+                  <User className="h-8 w-8 text-muted-foreground" />
+                </div>
+              )}
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <h3 className="font-semibold text-foreground">
+                    {visitor.name || "Unknown visitor"}
+                  </h3>
+                  <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-bold text-blue-700">
+                    PERMANENT QR
+                  </span>
+                </div>
+                <p className="text-sm text-muted-foreground">{visitor.phone || "No phone"}</p>
+              </div>
+            </div>
+
+            <div className="mt-4 flex items-center justify-between border-t border-gray-100 pt-3">
+              <div className="flex items-center gap-1.5 text-xs font-medium text-gray-500">
+                <div
+                  className={`h-2 w-2 rounded-full ${visitor.auto_approval?.rule === "manual" ? "bg-yellow-400" : "bg-green-400"}`}
+                />
+                {APPROVAL_LABELS[visitor.auto_approval?.rule || "always"]}
+              </div>
+              <div className="flex items-center gap-1.5 text-xs text-gray-400">
+                {visitor.schedule?.enabled ? "📅 Scheduled" : "🔓 24/7 Access"}
+              </div>
+            </div>
+
+            {/* Category Badge */}
+            <div className="mb-3 flex items-center gap-2">
+              <span className="text-2xl">{CATEGORY_ICONS[visitor.category || "other"]}</span>
+              <span className="text-sm font-medium text-foreground">
+                {getCategoryLabel(visitor)}
+              </span>
+            </div>
+
+            {/* Schedule Info */}
+            <div className="mb-3 flex items-start gap-2 text-sm text-muted-foreground">
+              <Calendar className="mt-0.5 h-4 w-4 flex-shrink-0" />
+              <span>{formatSchedule(visitor)}</span>
+            </div>
+
+            {/* Auto-approval Rule */}
+            <div className="mb-1.5 flex items-start gap-2 text-sm text-muted-foreground">
+              <Clock className="mt-0.5 h-4 w-4 flex-shrink-0" />
+              <span>{visitor.auto_approval?.rule_label || "Always auto-approve"}</span>
+            </div>
+
+            {/* Targeting Info */}
+            <div className="mb-4 flex items-start gap-2 text-sm">
+              <Shield className="mt-0.5 h-4 w-4 flex-shrink-0 text-primary" />
+              <span className="font-medium text-primary">
+                {visitor.is_all_flats
+                  ? "Valid for All Flats"
+                  : `Valid for: ${visitor.valid_flats?.join(", ") || "Selected Flat"}`}
+              </span>
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1"
+                onClick={() => setQrVisitor(visitor)}
+              >
+                <QrCode className="mr-2 h-4 w-4" />
+                QR Code
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1"
+                onClick={() => setInfoVisitor(visitor)}
+              >
+                <Info className="mr-2 h-4 w-4" />
+                View Info
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                onClick={() => handleDelete(getVisitorId(visitor))}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+          </GlassCard>
+        ))}
+      </div>
+    );
+  }
 
   return (
     <PageContainer
@@ -153,121 +326,7 @@ export default function RegularVisitorsPage() {
         </div>
       </GlassCard>
 
-      {isLoading ? (
-        <div className="flex h-60 items-center justify-center">
-          <Spinner size="lg" />
-        </div>
-      ) : filteredVisitors.length === 0 ? (
-        <GlassCard className="py-12 text-center">
-          <p className="text-muted-foreground">
-            {selectedCategory === "all"
-              ? "No regular visitors yet. Add one to get started!"
-              : `No ${CATEGORY_LABELS[selectedCategory]} visitors found.`}
-          </p>
-        </GlassCard>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {filteredVisitors.map((visitor, index) => (
-            <GlassCard key={`${visitor._id || "visitor"}-${index}`} className="p-6">
-              {/* Header with Photo */}
-              <div className="mb-4 flex items-start gap-4">
-                {visitor.photo_url ? (
-                  <SecureImage
-                    srcRaw={visitor.photo_url}
-                    alt={visitor.name}
-                    className="h-16 w-16 rounded-full object-cover ring-2 ring-primary/20"
-                  />
-                ) : (
-                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted ring-2 ring-primary/20">
-                    <User className="h-8 w-8 text-muted-foreground" />
-                  </div>
-                )}
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-semibold text-foreground">{visitor.name}</h3>
-                    <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-bold text-blue-700">
-                      PERMANENT QR
-                    </span>
-                  </div>
-                  <p className="text-sm text-muted-foreground">{visitor.phone || "No phone"}</p>
-                </div>
-              </div>
-
-              <div className="mt-4 flex items-center justify-between border-t border-gray-100 pt-3">
-                <div className="flex items-center gap-1.5 text-xs font-medium text-gray-500">
-                  <div
-                    className={`h-2 w-2 rounded-full ${visitor.auto_approval?.rule === "manual" ? "bg-yellow-400" : "bg-green-400"}`}
-                  />
-                  {APPROVAL_LABELS[visitor.auto_approval?.rule || "always"]}
-                </div>
-                <div className="flex items-center gap-1.5 text-xs text-gray-400">
-                  {visitor.schedule?.enabled ? "📅 Scheduled" : "🔓 24/7 Access"}
-                </div>
-              </div>
-
-              {/* Category Badge */}
-              <div className="mb-3 flex items-center gap-2">
-                <span className="text-2xl">{CATEGORY_ICONS[visitor.category || "other"]}</span>
-                <span className="text-sm font-medium text-foreground">
-                  {getCategoryLabel(visitor)}
-                </span>
-              </div>
-
-              {/* Schedule Info */}
-              <div className="mb-3 flex items-start gap-2 text-sm text-muted-foreground">
-                <Calendar className="mt-0.5 h-4 w-4 flex-shrink-0" />
-                <span>{formatSchedule(visitor)}</span>
-              </div>
-
-              {/* Auto-approval Rule */}
-              <div className="mb-1.5 flex items-start gap-2 text-sm text-muted-foreground">
-                <Clock className="mt-0.5 h-4 w-4 flex-shrink-0" />
-                <span>{visitor.auto_approval?.rule_label || "Always auto-approve"}</span>
-              </div>
-
-              {/* Targeting Info */}
-              <div className="mb-4 flex items-start gap-2 text-sm">
-                <Shield className="mt-0.5 h-4 w-4 flex-shrink-0 text-primary" />
-                <span className="font-medium text-primary">
-                  {visitor.is_all_flats
-                    ? "Valid for All Flats"
-                    : `Valid for: ${visitor.valid_flats?.join(", ") || "Selected Flat"}`}
-                </span>
-              </div>
-
-              {/* Actions */}
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="flex-1"
-                  onClick={() => setQrVisitor(visitor)}
-                >
-                  <QrCode className="mr-2 h-4 w-4" />
-                  QR Code
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="flex-1"
-                  onClick={() => setInfoVisitor(visitor)}
-                >
-                  <Info className="mr-2 h-4 w-4" />
-                  View Info
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="text-red-600 hover:bg-red-50 hover:text-red-700"
-                  onClick={() => handleDelete(visitor._id)}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-            </GlassCard>
-          ))}
-        </div>
-      )}
+      {visitorContent}
 
       {/* QR Code Modal */}
       <Dialog open={qrVisitor !== null} onOpenChange={(open) => !open && setQrVisitor(null)}>
@@ -282,7 +341,7 @@ export default function RegularVisitorsPage() {
                   value={qrVisitor.qr_token}
                   size={220}
                   level="H"
-                  includeMargin={false}
+                  marginSize={0}
                   bgColor="transparent"
                   fgColor="currentColor"
                   className="text-foreground"
@@ -312,8 +371,14 @@ export default function RegularVisitorsPage() {
                 {infoVisitor.photo_url ? (
                   <SecureImage
                     srcRaw={infoVisitor.photo_url}
-                    alt={infoVisitor.name}
+                    alt={infoVisitor.name || "Visitor"}
                     className="h-20 w-20 rounded-full object-cover ring-2 ring-primary/20"
+                    width={80}
+                    unavailable={Boolean(infoVisitor.photo_needs_reupload)}
+                    reupload={{ visitorId: getVisitorId(infoVisitor) }}
+                    onReuploaded={(photoUrl) =>
+                      handlePhotoReuploaded(getVisitorId(infoVisitor), photoUrl)
+                    }
                   />
                 ) : (
                   <div className="flex h-20 w-20 items-center justify-center rounded-full bg-muted ring-2 ring-primary/20">
@@ -321,13 +386,34 @@ export default function RegularVisitorsPage() {
                   </div>
                 )}
                 <div>
-                  <h3 className="text-lg font-semibold">{infoVisitor.name}</h3>
+                  <h3 className="text-lg font-semibold">{infoVisitor.name || "Unknown visitor"}</h3>
                   <p className="text-sm text-muted-foreground">{infoVisitor.phone || "No phone"}</p>
                   <span className="mt-1 inline-block rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700">
                     PERMANENT QR
                   </span>
                 </div>
               </div>
+
+              {(infoVisitor.id_card_photo_url || infoVisitor.id_card_photo_needs_reupload) && (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-foreground">ID Card Photo</p>
+                  <SecureImage
+                    srcRaw={infoVisitor.id_card_photo_url}
+                    alt={`${infoVisitor.name || "Visitor"} ID card`}
+                    className="h-40 w-full rounded-lg object-contain ring-1 ring-border"
+                    width={640}
+                    height={360}
+                    unavailable={Boolean(infoVisitor.id_card_photo_needs_reupload)}
+                    reupload={{
+                      visitorId: getVisitorId(infoVisitor),
+                      field: "id_card",
+                    }}
+                    onReuploaded={(photoUrl) =>
+                      handlePhotoReuploaded(getVisitorId(infoVisitor), photoUrl, "id_card")
+                    }
+                  />
+                </div>
+              )}
 
               <div className="divide-y divide-border rounded-lg border">
                 <div className="flex justify-between px-4 py-2.5 text-sm">

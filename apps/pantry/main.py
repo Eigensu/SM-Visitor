@@ -1,9 +1,11 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 from database import connect_to_mongo, close_mongo_connection
 from config import ALLOWED_ORIGINS
 from routers import auth, visitors, temp_qr, visits, uploads, events, users, notifications
+from utils.storage import PhotoUploadError
 
 
 @asynccontextmanager
@@ -33,6 +35,22 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.exception_handler(PhotoUploadError)
+async def photo_upload_error_handler(_request: Request, exc: PhotoUploadError):
+    """
+    Turn a failed photo upload into an honest, retryable error.
+
+    Registered globally so every route that stores a photo reports the same
+    thing, rather than each one having to remember to catch it and a missed
+    one surfacing as an opaque 500.
+    """
+    print(f"[PhotoUploadError] {exc}")
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content={"detail": "Photo storage is unavailable. Please retake the photo."},
+    )
+
 
 # Include routers
 app.include_router(auth.router)

@@ -132,6 +132,7 @@ export function VisitorTimeline({ visit }: VisitorTimelineProps) {
       <div className="mb-6 flex items-start gap-4">
         {visit.photo || visit.photo_snapshot_url ? (
           <SecureImage
+            width={64}
             srcRaw={visit.photo || visit.photo_snapshot_url}
             alt={visit.name || visit.name_snapshot || "Visitor"}
             className="h-16 w-16 rounded-full object-cover ring-2 ring-primary/20"

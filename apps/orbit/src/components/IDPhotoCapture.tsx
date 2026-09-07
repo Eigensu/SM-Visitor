@@ -5,7 +5,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Button } from "@sm-visitor/ui";
+import { Button, compressImageFile } from "@sm-visitor/ui";
 import { uploadsAPI } from "@/lib/api";
 import { CreditCard, Camera, Upload, CheckCircle, X } from "lucide-react";
 import SecureImage from "@/components/ui/SecureImage";
@@ -18,6 +18,9 @@ interface IDPhotoCaptureProps {
 }
 
 type State = "idle" | "camera" | "preview";
+
+// An ID card has to stay readable, so it keeps more detail than a portrait.
+const ID_CARD_COMPRESSION = { maxDimension: 1600, quality: 0.85 };
 
 export function IDPhotoCapture({
   onPhotoUploaded,
@@ -59,19 +62,27 @@ export function IDPhotoCapture({
     canvas.width = videoRef.current.videoWidth;
     canvas.height = videoRef.current.videoHeight;
     canvas.getContext("2d")?.drawImage(videoRef.current, 0, 0);
-    canvas.toBlob((blob) => {
-      if (!blob) return;
-      const file = new File([blob], "id_card.jpg", { type: "image/jpeg" });
-      setPhotoFile(file);
-      setPreview(URL.createObjectURL(blob));
-      stopCamera();
-      setState("preview");
-    }, "image/jpeg");
+    canvas.toBlob(
+      async (blob) => {
+        if (!blob) return;
+        const file = await compressImageFile(
+          new File([blob], "id_card.jpg", { type: "image/jpeg" }),
+          ID_CARD_COMPRESSION
+        );
+        setPhotoFile(file);
+        setPreview(URL.createObjectURL(file));
+        stopCamera();
+        setState("preview");
+      },
+      "image/jpeg",
+      0.9
+    );
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = e.target.files?.[0];
+    if (!selected) return;
+    const file = await compressImageFile(selected, ID_CARD_COMPRESSION);
     setPhotoFile(file);
     setPreview(URL.createObjectURL(file));
     setState("preview");
@@ -112,6 +123,8 @@ export function IDPhotoCapture({
     return (
       <div className="flex items-center gap-3 rounded-lg border border-green-200 bg-green-50 p-3">
         <SecureImage
+          width={80}
+          height={56}
           srcRaw={uploadedUrl}
           alt="ID card"
           className="h-14 w-20 rounded object-cover border"

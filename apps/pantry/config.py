@@ -41,11 +41,43 @@ S3_REGION = os.getenv("S3_REGION", "us-east-1")
 S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY", "")
 S3_SECRET_KEY = os.getenv("S3_SECRET_KEY", "")
 
+# Which image host delivers visitor photos. Records store a provider-independent
+# storage key, so moving to another host is this variable plus a copy of the
+# files - not a rewrite of every row, which is what an account switch cost us
+# the first time.
+PHOTO_PROVIDER = os.getenv("PHOTO_PROVIDER", "cloudinary").strip().lower()
+
+SUPPORTED_PHOTO_PROVIDERS = ("cloudinary",)
+
+if PHOTO_PROVIDER not in SUPPORTED_PHOTO_PROVIDERS:
+    # Fail at boot rather than on the first photo somebody tries to load.
+    raise RuntimeError(
+        f"PHOTO_PROVIDER={PHOTO_PROVIDER!r} is not supported. "
+        f"Expected one of: {', '.join(SUPPORTED_PHOTO_PROVIDERS)}"
+    )
+
 # Cloudinary Configuration
 CLOUDINARY_CLOUD_NAME = os.getenv("CLOUDINARY_CLOUD_NAME", "")
 CLOUDINARY_API_KEY = os.getenv("CLOUDINARY_API_KEY", "")
 CLOUDINARY_API_SECRET = os.getenv("CLOUDINARY_API_SECRET", "")
 CLOUDINARY_FOLDER = os.getenv("CLOUDINARY_FOLDER", "sm-visitor/photos")
+
+# Cloud names we no longer deliver from (e.g. an account replaced after it hit
+# its plan quota). Comma separated. URLs pointing at these are reported to the
+# apps as needing a fresh photo. Any cloud name that simply differs from
+# CLOUDINARY_CLOUD_NAME is treated the same way, so this list is only needed
+# for clouds that are still technically reachable but should not be used.
+CLOUDINARY_RETIRED_CLOUD_NAMES = {
+    name.strip().lower()
+    for name in os.getenv("CLOUDINARY_RETIRED_CLOUD_NAMES", "").split(",")
+    if name.strip()
+}
+
+# Photos are downscaled and re-encoded on the way in. Visitor snapshots are
+# only ever shown as small avatars, so storing 4000px camera originals burns
+# storage and delivery credits for pixels nobody sees.
+CLOUDINARY_UPLOAD_MAX_DIMENSION = int(os.getenv("CLOUDINARY_UPLOAD_MAX_DIMENSION", "1280"))
+CLOUDINARY_UPLOAD_QUALITY = os.getenv("CLOUDINARY_UPLOAD_QUALITY", "auto:good")
 
 # CORS
 DEFAULT_ALLOWED_ORIGINS = [

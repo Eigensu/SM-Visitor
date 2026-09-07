@@ -48,6 +48,7 @@ export function RecordDetailsModal({ record, open, onClose }: RecordDetailsModal
               <div className="flex h-20 w-20 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary/10">
                 {record.visitorPhoto ? (
                   <SecureImage
+                    width={80}
                     srcRaw={record.visitorPhoto}
                     alt={record.fullName}
                     className="h-full w-full object-cover"
@@ -138,6 +139,8 @@ export function RecordDetailsModal({ record, open, onClose }: RecordDetailsModal
                     <div className="flex min-h-44 items-center justify-center overflow-hidden rounded-lg border border-border/60 bg-muted/20">
                       {record.visitorPhoto ? (
                         <SecureImage
+                          width={448}
+                          height={176}
                           srcRaw={record.visitorPhoto}
                           alt={record.fullName}
                           className="h-44 w-full bg-black/5 object-contain"
@@ -154,6 +157,8 @@ export function RecordDetailsModal({ record, open, onClose }: RecordDetailsModal
                     <div className="flex min-h-44 items-center justify-center overflow-hidden rounded-lg border border-border/60 bg-muted/20">
                       {record.idCardPhoto ? (
                         <SecureImage
+                          width={448}
+                          height={176}
                           srcRaw={record.idCardPhoto}
                           alt={`${record.fullName} ID Card`}
                           className="h-44 w-full bg-black/5 object-contain"

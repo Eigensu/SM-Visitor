@@ -37,6 +37,7 @@ export function VisitorPreview({ visitor, onSubmit, onCancel, isLoading }: Visit
           {visitor.photo_url && (
             <div className="flex justify-center">
               <SecureImage
+                width={128}
                 srcRaw={visitor.photo_url}
                 alt={visitor.name}
                 className="h-32 w-32 rounded-full border-4 border-blue-100 object-cover"

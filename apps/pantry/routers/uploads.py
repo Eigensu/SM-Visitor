@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from middleware.auth import get_current_user, get_current_guard, require_role
 from utils.storage import photo_storage
+from utils.photo_urls import to_delivery_url
 from config import PANTRY_URL, PHOTO_SIGNING_SECRET
 import hmac
 import hashlib
@@ -57,12 +58,12 @@ async def upload_regular_visitor_photo(
     if not is_valid:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error_msg)
 
-    cloudinary_url = await photo_storage.save_regular_visitor_photo(
+    storage_key = await photo_storage.save_regular_visitor_photo(
         photo_data, photo.filename or "visitor_photo.jpg"
     )
 
     return PhotoUploadResponse(
-        photo_url=cloudinary_url,
+        photo_url=to_delivery_url(storage_key),
         storage_type="cloudinary",
         message="Photo uploaded to Cloudinary",
     )
@@ -83,12 +84,12 @@ async def upload_new_visitor_photo(
     if not is_valid:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error_msg)
 
-    cloudinary_url = await photo_storage.save_new_visitor_photo_buffer(
+    storage_key = await photo_storage.save_new_visitor_photo_buffer(
         photo_data, photo.filename or "new_visitor_photo.jpg"
     )
 
     return PhotoUploadResponse(
-        photo_url=cloudinary_url,
+        photo_url=to_delivery_url(storage_key),
         storage_type="cloudinary",
         message="Photo uploaded to Cloudinary",
     )
@@ -109,12 +110,12 @@ async def upload_id_card_photo(
     if not is_valid:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error_msg)
 
-    cloudinary_url = await photo_storage.save_new_visitor_photo_buffer(
+    storage_key = await photo_storage.save_new_visitor_photo_buffer(
         photo_data, photo.filename or "id_card_photo.jpg"
     )
 
     return PhotoUploadResponse(
-        photo_url=cloudinary_url,
+        photo_url=to_delivery_url(storage_key),
         storage_type="cloudinary",
         message="ID card photo uploaded to Cloudinary",
     )

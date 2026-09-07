@@ -16,6 +16,8 @@ from config import (
     CLOUDINARY_API_KEY,
     CLOUDINARY_API_SECRET,
     CLOUDINARY_FOLDER,
+    CLOUDINARY_UPLOAD_MAX_DIMENSION,
+    CLOUDINARY_UPLOAD_QUALITY,
 )
 
 
@@ -55,7 +57,9 @@ class CloudinaryStorage:
             public_id: Explicit Cloudinary public_id (optional)
 
         Returns:
-            (True, secure_url) on success
+            (True, storage_key) on success - the folder-qualified public id,
+            which is what records store. The delivery URL is built from it at
+            serialization time so the stored value survives a change of host.
             (False, error_message) on failure
         """
         configured, error = self._is_configured()
@@ -72,13 +76,28 @@ class CloudinaryStorage:
                 public_id=pid,
                 overwrite=True,
                 resource_type="image",
+                # Store everything as JPEG so a stray PNG screenshot does not
+                # get kept at several times the size of the photo it shows.
+                format="jpg",
+                # Shrink and re-encode before storing. `c_limit` never upscales,
+                # so a photo already under the cap is stored as-is. This is the
+                # single biggest lever on credit usage: storage is billed on
+                # what we keep, and every delivery is billed on what we stored.
+                transformation=[
+                    {
+                        "width": CLOUDINARY_UPLOAD_MAX_DIMENSION,
+                        "height": CLOUDINARY_UPLOAD_MAX_DIMENSION,
+                        "crop": "limit",
+                        "quality": CLOUDINARY_UPLOAD_QUALITY,
+                    }
+                ],
             )
 
-            secure_url = upload_result.get("secure_url")
-            if not secure_url:
-                return False, "Cloudinary upload did not return a secure_url"
+            storage_key = upload_result.get("public_id")
+            if not storage_key:
+                return False, "Cloudinary upload did not return a public_id"
 
-            return True, secure_url
+            return True, storage_key
         except Exception as e:  # noqa: BLE001
             return False, f"Cloudinary upload failed: {e}"
 

@@ -5,7 +5,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Button } from "@sm-visitor/ui";
+import { Button, compressImageFile } from "@sm-visitor/ui";
 import { uploadsAPI } from "@/lib/api";
 import { resolveOrbitStoredPhotoUrl } from "@/lib/autofill";
 import toast from "react-hot-toast";
@@ -111,16 +111,17 @@ export function PhotoCapture({
     };
   }, [initialFile, initialPreviewUrl]);
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setPhotoFile(file);
-      setPhotoPreview(URL.createObjectURL(file));
-      setPhotoName(file.name);
-      setCameraState("preview");
-      setIsUploaded(false);
-      if (onFileSelected) onFileSelected(file);
-    }
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = e.target.files?.[0];
+    if (!selected) return;
+
+    const file = await compressImageFile(selected);
+    setPhotoFile(file);
+    setPhotoPreview(URL.createObjectURL(file));
+    setPhotoName(selected.name);
+    setCameraState("preview");
+    setIsUploaded(false);
+    if (onFileSelected) onFileSelected(file);
   };
 
   const stopCamera = () => {
@@ -142,19 +143,25 @@ export function PhotoCapture({
 
     ctx.drawImage(videoRef.current, 0, 0);
 
-    canvas.toBlob((blob) => {
-      if (blob) {
+    canvas.toBlob(
+      async (blob) => {
+        if (!blob) return;
         const filename = `visitor_${Date.now()}.jpg`;
-        const file = new File([blob], filename, { type: "image/jpeg" });
+        const file = await compressImageFile(new File([blob], filename, { type: "image/jpeg" }));
         setPhotoFile(file);
         setPhotoName(filename);
-        setPhotoPreview(URL.createObjectURL(blob));
+        setPhotoPreview(URL.createObjectURL(file));
         stopCamera();
         setCameraState("preview");
         setIsUploaded(false);
         if (onFileSelected) onFileSelected(file);
-      }
-    }, "image/jpeg");
+      },
+      "image/jpeg",
+      // The canvas already holds the camera's full resolution; encoding it at
+      // maximum quality only to downscale it a moment later wastes time on a
+      // phone. compressImageFile does the real sizing.
+      0.9
+    );
   };
 
   const retakePhoto = () => {
@@ -177,7 +184,9 @@ export function PhotoCapture({
       if (onPhotoUploaded) onPhotoUploaded(response.photo_url);
     } catch (error: any) {
       console.error("Photo upload error:", error);
-      toast.error("Failed to save photo");
+      // The server says when storage is down and the photo needs retaking -
+      // "Failed to save photo" alone leaves the guard with no next step.
+      toast.error(error.response?.data?.detail || "Failed to save photo");
     } finally {
       setIsUploading(false);
     }

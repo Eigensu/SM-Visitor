@@ -65,6 +65,15 @@ export default function StaffDirectoryPage() {
     }
   };
 
+  const handlePhotoReuploaded = (id: string, photoUrl: string) => {
+    setStaff((prev) =>
+      prev.map((s) =>
+        (s.id || s._id) === id ? { ...s, photo_url: photoUrl, photo_needs_reupload: false } : s
+      )
+    );
+    toast.success("Photo updated");
+  };
+
   const handleOpenEntryPass = (person: any) => {
     setSelectedPass(
       normalizeOrbitRecordDetails({
@@ -208,6 +217,12 @@ export default function StaffDirectoryPage() {
                                   srcRaw={person.photo_url}
                                   alt={person.name}
                                   className="h-full w-full object-cover"
+                                  width={64}
+                                  unavailable={Boolean(person.photo_needs_reupload)}
+                                  reupload={{ visitorId: person.id || person._id }}
+                                  onReuploaded={(photoUrl) =>
+                                    handlePhotoReuploaded(person.id || person._id, photoUrl)
+                                  }
                                 />
                               ) : (
                                 <User className="m-auto h-8 w-8 text-muted-foreground/50" />

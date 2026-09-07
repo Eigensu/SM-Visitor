@@ -20,3 +20,6 @@ tests
 !services/serializers/notification.py
 !scripts/
 !scripts/*.py
+
+# Local checkpoint files written by one-off migration/rescue scripts
+scripts/*_mapping.json
