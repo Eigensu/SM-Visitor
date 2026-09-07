@@ -1070,12 +1070,6 @@ async def replace_visitor_photo(
                 status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
             )
 
-    if photo.content_type not in ("image/jpeg", "image/png"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only JPEG and PNG images are allowed",
-        )
-
     photo_data = await photo.read()
     max_size_mb = 10 if target == "id_card" else 5
     is_valid, error_msg = await photo_storage.validate_photo(

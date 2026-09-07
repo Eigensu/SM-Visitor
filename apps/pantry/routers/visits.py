@@ -522,6 +522,7 @@ async def start_visit(
                 "name_snapshot": visitor["name"],
                 "phone_snapshot": visitor.get("phone"),
                 "photo_snapshot_url": normalize_photo_ref(visitor["photo_url"]),
+                "id_photo_url": normalize_photo_ref(visitor.get("id_card_photo_url")),
                 "purpose": qr_request.purpose
                 or visitor.get("default_purpose", "Visit"),
                 "owner_id": (
@@ -719,6 +720,13 @@ async def start_visit(
             # storage key here keeps the stored shape identical to every other
             # write, whichever client version sent it.
             "photo_snapshot_url": normalize_photo_ref(new_request.photo_url),
+            # The guard photographs the visitor's ID card during registration
+            # and Orbit posts it here. Without these the upload succeeded and
+            # the reference was then dropped, so the visit is the only place
+            # that ID would have lived and it was lost every time.
+            "id_type": new_request.id_type,
+            "id_number": new_request.id_number,
+            "id_photo_url": normalize_photo_ref(new_request.id_photo_url),
             "purpose": new_request.purpose,
             "owner_id": target_flat_ids[0] if target_flat_ids else new_request.owner_id,
             "target_flat_ids": target_flat_ids,
