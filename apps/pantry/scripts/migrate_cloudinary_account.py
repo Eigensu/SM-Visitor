@@ -5,9 +5,14 @@ Copy photos from a previous Cloudinary account into the active one.
 After an account is replaced, every record still points at the old cloud name
 and none of those photos load. Once the old account is reachable again the
 assets can be copied across under the same public id, which is also the
-storage key records now hold - so the records end up holding a plain key and
-resolve against whichever account is configured, with nothing account-specific
-left in the database.
+storage key records now hold.
+
+By default the records are then pointed at a delivery URL for the new account,
+because that renders on any version of the API. Run backfill_photo_keys.py
+afterwards, once an API that understands storage keys is deployed, to reduce
+those URLs to keys and leave nothing account-specific in the database. Passing
+--repoint-as key does both at once, but only do that if the deployed API
+already understands keys - it will not render them otherwise.
 
 Cloudinary fetches each asset itself from the source URL, so the bytes never
 travel through this machine. They are downscaled and re-encoded on the way in,
@@ -22,8 +27,12 @@ Run from the pantry app directory, with the ACTIVE account's credentials in
     # Report what would be copied. Nothing is uploaded, nothing is written.
     python scripts/migrate_cloudinary_account.py --from-cloud drsmvcisk
 
-    # Do it.
+    # Do it. Records end up holding a URL for the new account.
     python scripts/migrate_cloudinary_account.py --from-cloud drsmvcisk --apply
+
+    # Only when the deployed API already understands storage keys.
+    python scripts/migrate_cloudinary_account.py --from-cloud drsmvcisk --apply \
+        --repoint-as key
 
 Run it while the source account is reachable - if it is suspended again
 mid-run, stop and resume later: copies are checkpointed to
@@ -54,7 +63,11 @@ from config import (
     CLOUDINARY_UPLOAD_MAX_DIMENSION,
     CLOUDINARY_UPLOAD_QUALITY,
 )
-from utils.photo_urls import cloudinary_cloud_name, storage_key_from_url
+from utils.photo_urls import (
+    cloudinary_cloud_name,
+    storage_key_from_url,
+    to_delivery_url,
+)
 
 MONGODB_URL = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
 DATABASE_NAME = os.getenv("DATABASE_NAME", "sm_visitor")
@@ -248,20 +261,30 @@ async def copy_assets(
     return copied, missing, failed
 
 
-async def repoint(db, references: list[dict], mapping: dict) -> tuple[int, int]:
-    """Replace each old URL with the storage key now valid in both accounts."""
+async def repoint(
+    db, references: list[dict], mapping: dict, as_url: bool
+) -> tuple[int, int]:
+    """
+    Point each record at the copy that now lives in the active account.
+
+    `as_url` writes a full delivery URL; otherwise the bare storage key. The
+    key is the better thing to store, but only an API that knows how to build
+    a URL from one can render it, so writing URLs is what lets this run before
+    that API is deployed. `backfill_photo_keys.py` converts them afterwards.
+    """
     updated = failed = 0
 
     for ref in references:
         if ref["key"] not in mapping:
             continue
+        new_value = to_delivery_url(ref["key"]) if as_url else ref["key"]
         try:
             # Matching the old value as well leaves alone anything somebody
             # changed while this was running - a guard re-capturing a photo,
             # for instance.
             result = await db[ref["collection"]].update_one(
                 {"_id": ref["id"], ref["field"]: ref["value"]},
-                {"$set": {ref["field"]: ref["key"]}},
+                {"$set": {ref["field"]: new_value}},
             )
             updated += result.matched_count
         except Exception as e:  # noqa: BLE001
@@ -283,6 +306,15 @@ async def main() -> None:
     )
     parser.add_argument(
         "--apply", action="store_true", help="Copy and repoint. Without it, only report."
+    )
+    parser.add_argument(
+        "--repoint-as",
+        choices=("url", "key"),
+        default="url",
+        help="What to write on the records. 'url' (default) is readable by any "
+        "version of the API, so it is safe to run before deploying one that "
+        "understands keys. 'key' is the end state, reached either by this flag "
+        "or by running backfill_photo_keys.py later.",
     )
     args = parser.parse_args()
 
@@ -339,7 +371,9 @@ async def main() -> None:
     updated = update_failed = 0
     if mapping:
         print("\n=== Repointing records ===")
-        updated, update_failed = await repoint(db, references, mapping)
+        updated, update_failed = await repoint(
+            db, references, mapping, as_url=args.repoint_as == "url"
+        )
 
     print(f"\n{'=' * 55}")
     print(f"Photos copied:           {copied}")
@@ -366,8 +400,14 @@ async def main() -> None:
         sys.exit(1)
 
     if copied:
-        print("\nDone. The records copied above now hold a plain storage key and")
-        print(f"resolve against {CLOUDINARY_CLOUD_NAME}.")
+        if args.repoint_as == "url":
+            print(f"\nDone. The records copied above now hold a {CLOUDINARY_CLOUD_NAME}")
+            print("URL, which every version of the API can render. Run")
+            print("backfill_photo_keys.py --apply once an API that understands storage")
+            print("keys is deployed, to drop the account name back out of the database.")
+        else:
+            print("\nDone. The records copied above now hold a plain storage key and")
+            print(f"resolve against {CLOUDINARY_CLOUD_NAME}.")
         if missing:
             print(f"{source_cloud} is still referenced by the records whose photo it")
             print("does not have; those need a fresh capture through the apps.")
